@@ -1,0 +1,82 @@
+package io.github.houseelves.desk.agent;
+
+import java.util.List;
+
+/**
+ * What every agent run returns, enforced with Claude Code's --json-schema.
+ *
+ * @param reply your answer in the thread, Markdown
+ * @param draft something to post, or null when there's nothing to post (or the previous draft still stands)
+ */
+public record AgentOutput(String reply, DraftOut draft) {
+
+    /**
+     * @param kind     review (PRs only), comment, or issue (a new issue in another public repo, such as upstream)
+     * @param event    reviews only: COMMENT, APPROVE or REQUEST_CHANGES
+     * @param comments reviews only: inline comments on lines of the diff
+     * @param repo     issues only: owner/name of the repo to open it in
+     * @param title    issues only
+     * @param then     issues only, optional: a comment for this thread's item to draft once the issue is open, with
+     *                 {@value #ISSUE_LINK} where the new issue's link goes
+     */
+    public record DraftOut(String kind, String event, String body, List<InlineComment> comments, String repo,
+            String title, String then) {
+
+        public static final String ISSUE_LINK = "{issue}";
+
+        public DraftOut(String kind, String event, String body, List<InlineComment> comments) {
+            this(kind, event, body, comments, null, null, null);
+        }
+
+        public List<InlineComment> comments() {
+            return comments == null ? List.of() : comments;
+        }
+    }
+
+    /** @param line a line number in the new version of the file, inside the PR's diff */
+    public record InlineComment(String path, int line, String body) {
+    }
+
+    public static final String SCHEMA = """
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reply", "draft"],
+              "properties": {
+                "reply": {"type": "string", "description": "Your answer to the maintainer, in Markdown. Shown in the thread, never posted."},
+                "draft": {
+                  "description": "Text to post on GitHub under the maintainer's name, or null.",
+                  "anyOf": [
+                    {"type": "null"},
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["kind", "body"],
+                      "properties": {
+                        "kind": {"enum": ["review", "comment", "issue"]},
+                        "event": {"enum": ["COMMENT", "APPROVE", "REQUEST_CHANGES"]},
+                        "body": {"type": "string"},
+                        "repo": {"type": "string", "description": "issue only: owner/name of the public repo to open it in"},
+                        "title": {"type": "string", "description": "issue only: the issue's title"},
+                        "then": {"type": "string", "description": "issue only, optional: a comment for this item, drafted once the issue is open; {issue} is replaced by the new issue's URL"},
+                        "comments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["path", "line", "body"],
+                            "properties": {
+                              "path": {"type": "string", "description": "Path from the repo root"},
+                              "line": {"type": "integer", "description": "Line number in the new file; must be inside the diff"},
+                              "body": {"type": "string"}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """;
+}

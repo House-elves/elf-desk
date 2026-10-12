@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elf Desk</title>
+    <script>
+        // Apply the saved theme before first paint so the page doesn't flash.
+        try {
+            const t = localStorage.getItem('elfdesk.theme');
+            if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+        } catch (e) { /* no storage: follow the system */ }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script type="importmap">
+        {
+            "imports": {
+                "@quarkiverse/json-rpc-api": "/_static/quarkus-json-rpc-api/jsonrpc-api.js",
+                "@quarkiverse/json-rpc": "/_static/quarkus-json-rpc/jsonrpc-client.js",
+                "@quarkiverse/json-rpc/": "/_static/quarkus-json-rpc/"
+            }
+        }
+    </script>
+    {#bundle /}
+    <style>
+        /* Elf Desk: a calm morning work surface. One accent (cobalt); green / amber / red only for state. */
+        :root {
+            --bg: #f3f5f8;
+            --surface: #ffffff;
+            --surface-2: #eef1f5;
+            --ink: #151a22;
+            --muted: #5d6572;
+            --line: #e1e5eb;
+            --accent: #2f5bea;
+            --accent-ink: #ffffff;
+            --accent-soft: #e7edff;
+            --ok: #1d8049; --ok-soft: #e1f3e8;
+            --bad: #c3352a; --bad-soft: #fbe8e6;
+            --warn: #965c00; --warn-soft: #faefd8;
+            --idle: #6b7280; --idle-soft: #edf0f3;
+            --merged: #8250df; --merged-soft: #f1eafe;
+            --log-bg: #12161d; --log-ink: #c9d1dc;
+            --shadow: 0 1px 2px rgb(21 26 34 / 0.05), 0 6px 24px rgb(21 26 34 / 0.05);
+            --font: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+            --font-code: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+            --r-panel: 14px;
+            --r-control: 9px;
+            color-scheme: light;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg: #0e1116; --surface: #161a21; --surface-2: #1d222b; --ink: #e7eaf0; --muted: #949dab;
+                --line: #272d37; --accent: #7d9bff; --accent-ink: #0b1230; --accent-soft: #1b2447;
+                --ok: #52c58a; --ok-soft: #12291d; --bad: #ff7d72; --bad-soft: #351816;
+                --warn: #e8b14c; --warn-soft: #332610; --idle: #949dab; --idle-soft: #20252e;
+                --merged: #a371f7; --merged-soft: #2a1f45;
+                --log-bg: #0a0d12; --log-ink: #c9d1dc;
+                --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 24px rgb(0 0 0 / 0.25);
+                color-scheme: dark;
+            }
+        }
+        :root[data-theme="dark"] {
+            --bg: #0e1116; --surface: #161a21; --surface-2: #1d222b; --ink: #e7eaf0; --muted: #949dab;
+            --line: #272d37; --accent: #7d9bff; --accent-ink: #0b1230; --accent-soft: #1b2447;
+            --ok: #52c58a; --ok-soft: #12291d; --bad: #ff7d72; --bad-soft: #351816;
+            --warn: #e8b14c; --warn-soft: #332610; --idle: #949dab; --idle-soft: #20252e;
+            --merged: #a371f7; --merged-soft: #2a1f45;
+            --log-bg: #0a0d12; --log-ink: #c9d1dc;
+            --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 24px rgb(0 0 0 / 0.25);
+            color-scheme: dark;
+        }
+        html, body { margin: 0; background: var(--bg); color: var(--ink); }
+        body {
+            font: 15px/1.55 var(--font);
+            -webkit-font-smoothing: antialiased;
+        }
+    </style>
+</head>
+<body>
+    <elf-desk></elf-desk>
+</body>
+</html>

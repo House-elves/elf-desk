@@ -1,0 +1,210 @@
+package io.github.houseelves.desk.ci;
+
+import java.util.List;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import io.github.houseelves.desk.agent.Prompts;
+import io.github.houseelves.desk.github.GitHub;
+import io.github.houseelves.desk.runner.GitHubWriter;
+import io.github.houseelves.desk.runner.Live;
+import io.github.houseelves.desk.thread.DeskThread;
+import io.github.houseelves.desk.thread.GitHubAction;
+import io.github.houseelves.desk.thread.ThreadService;
+import io.github.houseelves.desk.thread.ThreadView;
+import io.github.houseelves.desk.thread.Turn;
+import io.quarkus.narayana.jta.QuarkusTransaction;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+/**
+ * Failing CI on a PR: what failed, re-running the failed GitHub Actions jobs,
+ * and starting the agent on "why is this failing" or "fix this" with the failed
+ * jobs' log tails in its prompt.
+ */
+@ApplicationScoped
+public class CiService {
+
+    /** How much of each failed job's log the agent sees, and for how many jobs. */
+    static final int LOG_TAIL_CHARS = 12_000;
+    static final int MAX_LOGS = 3;
+
+    @Inject
+    GitHub github;
+
+    @Inject
+    GitHubWriter writer;
+
+    @Inject
+    ThreadService threads;
+
+    @Inject
+    Live live;
+
+    @Inject
+    ObjectMapper mapper;
+
+    public GitHub.CiReport report(String itemKey, String token) {
+        return github.ci(token, repo(itemKey), number(itemKey));
+    }
+
+    /** Re-runs the failed jobs of every failed Actions workflow run on the PR's head. Returns how many runs. */
+    public int rerun(String itemKey, String login, String token) {
+        GitHub.CiReport ci = report(itemKey, token);
+        if (!ci.canRerun()) {
+            throw new IllegalStateException("You don't have write access to " + repo(itemKey) + ", which GitHub needs to "
+                    + "re-run its workflows." + (ci.own() ? " It's your PR, so use Re-run CI (close and reopen) instead." : ""));
+        }
+        if (ci.rerunnableRuns().isEmpty()) {
+            throw new IllegalStateException("Nothing to re-run: the failed checks aren't GitHub Actions jobs.");
+        }
+        for (Long run : ci.rerunnableRuns()) {
+            try {
+                writer.rerunFailedJobs(repo(itemKey), run);
+            } catch (GitHubWriter.WriteFailed e) {
+                throw new IllegalStateException("GitHub refused the re-run: " + gitHubMessage(e));
+            }
+        }
+        QuarkusTransaction.requiringNew().run(() -> {
+            DeskThread t = DeskThread.byKey(itemKey);
+            GitHubAction a = new GitHubAction();
+            a.threadId = t == null ? null : t.id;
+            a.kind = "rerun";
+            a.request = mapper.createObjectNode().put("item", itemKey).set("runs", mapper.valueToTree(ci.rerunnableRuns()))
+                    .toString();
+            a.resultUrl = "https://github.com/" + repo(itemKey) + "/pull/" + number(itemKey) + "/checks";
+            a.login = login;
+            a.persist();
+            if (t != null) {
+                Turn.add(t.id, Turn.SYSTEM, null, "You re-ran the failed CI jobs (" + ci.rerunnableRuns().size()
+                        + (ci.rerunnableRuns().size() == 1 ? " workflow run)." : " workflow runs)."));
+            }
+        });
+        live.changed(itemKey);
+        return ci.rerunnableRuns().size();
+    }
+
+    /**
+     * Re-runs CI on your own PR where you can't re-run the repo's workflows: closes and reopens it, which fires the
+     * PR's "reopened" event (part of GitHub's default pull_request triggers).
+     */
+    public void reopenToRerun(String itemKey, String login, String token) {
+        GitHub.CiReport ci = report(itemKey, token);
+        if (!ci.own()) throw new IllegalStateException("Close and reopen is only offered for your own PRs.");
+        try {
+            writer.close(repo(itemKey), number(itemKey));
+            writer.reopen(repo(itemKey), number(itemKey));
+        } catch (GitHubWriter.WriteFailed e) {
+            throw new IllegalStateException("GitHub refused it: " + gitHubMessage(e)
+                    + ". Check the PR on GitHub: it may be closed now.");
+        }
+        QuarkusTransaction.requiringNew().run(() -> {
+            DeskThread t = DeskThread.byKey(itemKey);
+            GitHubAction a = new GitHubAction();
+            a.threadId = t == null ? null : t.id;
+            a.kind = "reopen";
+            a.request = mapper.createObjectNode().put("item", itemKey).put("why", "re-run CI").toString();
+            a.resultUrl = "https://github.com/" + repo(itemKey) + "/pull/" + number(itemKey);
+            a.login = login;
+            a.persist();
+            if (t != null) Turn.add(t.id, Turn.SYSTEM, null, "You closed and reopened this PR to run CI again.");
+        });
+        live.changed(itemKey);
+    }
+
+    private String gitHubMessage(GitHubWriter.WriteFailed e) {
+        if (e.body == null || e.body.isBlank()) return e.getMessage();
+        try {
+            return mapper.readTree(e.body).path("message").asText(e.getMessage());
+        } catch (Exception ignored) {
+            return e.getMessage();
+        }
+    }
+
+    /** Approves the PR's workflow runs that wait for a maintainer, so CI runs. Returns how many runs. */
+    public int approve(String itemKey, String login, String token) {
+        GitHub.CiReport ci = report(itemKey, token);
+        if (ci.awaitingApproval().isEmpty()) throw new IllegalStateException("No workflow runs are waiting for approval.");
+        for (Long run : ci.awaitingApproval()) {
+            try {
+                writer.approveRun(repo(itemKey), run);
+            } catch (GitHubWriter.WriteFailed e) {
+                throw new IllegalStateException("GitHub refused the approval: " + gitHubMessage(e));
+            }
+        }
+        QuarkusTransaction.requiringNew().run(() -> {
+            DeskThread t = DeskThread.byKey(itemKey);
+            GitHubAction a = new GitHubAction();
+            a.threadId = t == null ? null : t.id;
+            a.kind = "approve-run";
+            a.request = mapper.createObjectNode().put("item", itemKey).set("runs", mapper.valueToTree(ci.awaitingApproval()))
+                    .toString();
+            a.resultUrl = "https://github.com/" + repo(itemKey) + "/pull/" + number(itemKey) + "/checks";
+            a.login = login;
+            a.persist();
+            if (t != null) Turn.add(t.id, Turn.SYSTEM, null, "You approved CI to run on this PR.");
+        });
+        live.changed(itemKey);
+        return ci.awaitingApproval().size();
+    }
+
+    /**
+     * "Why is this failing": the agent looks, with the failed checks and their log tails, and changes nothing.
+     * If it's already working on this PR, or already answered for this commit, this just returns the thread;
+     * {@code again} asks anyway.
+     */
+    public ThreadView why(String itemKey, String login, String token, boolean again) {
+        GitHub.CiReport ci = report(itemKey, token);
+        ThreadView existing = again ? null : threads.existing(itemKey, Prompts.CI_WHY, ci.headSha());
+        if (existing != null) return existing;
+        return threads.start(itemKey, Prompts.CI_WHY, null, login, token, failures(itemKey, ci, token),
+                mapper.createObjectNode().put("head", ci.headSha()));
+    }
+
+    public ThreadView why(String itemKey, String login, String token) {
+        return why(itemKey, login, token, false);
+    }
+
+    /** "Fix this": the agent commits a fix in its worktree; its commits become a push draft you confirm. */
+    public ThreadView fix(String itemKey, String login, String token) {
+        GitHub.CiReport ci = report(itemKey, token);
+        if (!ci.canPush()) {
+            throw new IllegalStateException("This PR's branch can't be pushed to from here: the author didn't allow "
+                    + "edits from maintainers.");
+        }
+        ThreadView existing = threads.existing(itemKey, Prompts.CI_FIX, ci.headSha());
+        if (existing != null) return existing;
+        ObjectNode extras = mapper.createObjectNode().put("head", ci.headSha());
+        extras.putObject("push").put("headRepo", ci.headRepo()).put("headRef", ci.headRef()).put("headSha", ci.headSha());
+        return threads.start(itemKey, Prompts.CI_FIX, null, login, token, failures(itemKey, ci, token), extras);
+    }
+
+    /** The "## CI failures" section of the prompt. Log text is untrusted data like everything else quoted. */
+    String failures(String itemKey, GitHub.CiReport ci, String token) {
+        StringBuilder sb = new StringBuilder("## CI failures on ").append(ci.headSha(), 0, Math.min(7, ci.headSha().length()))
+                .append("\n\n");
+        if (ci.failed().isEmpty()) sb.append("GitHub reports no failed checks right now (CI: ").append(ci.ci()).append(").\n");
+        for (GitHub.FailedCheck f : ci.failed()) {
+            sb.append("- ").append(f.name()).append(": ").append(f.conclusion());
+            if (f.url() != null) sb.append(" (").append(f.url()).append(')');
+            sb.append('\n');
+        }
+        List<GitHub.FailedCheck> withLogs = ci.failed().stream().filter(f -> f.jobId() != null).limit(MAX_LOGS).toList();
+        for (GitHub.FailedCheck f : withLogs) {
+            String log = github.jobLogTail(token, repo(itemKey), f.jobId(), LOG_TAIL_CHARS);
+            if (log == null) continue;
+            sb.append("\n<log job=\"").append(f.name()).append("\" note=\"last ").append(LOG_TAIL_CHARS)
+                    .append(" characters\">\n").append(log).append("\n</log>\n");
+        }
+        return sb.toString();
+    }
+
+    static String repo(String itemKey) {
+        return itemKey.substring(0, itemKey.indexOf('#'));
+    }
+
+    static int number(String itemKey) {
+        return Integer.parseInt(itemKey.substring(itemKey.indexOf('#') + 1));
+    }
+}

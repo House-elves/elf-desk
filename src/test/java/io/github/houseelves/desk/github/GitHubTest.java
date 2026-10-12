@@ -1,0 +1,229 @@
+package io.github.houseelves.desk.github;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.util.List;
+import java.util.Map;
+
+import org.junit.jupiter.api.Test;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+class GitHubTest {
+
+    final ObjectMapper mapper = new ObjectMapper();
+
+    JsonNode json(String s) throws Exception {
+        return mapper.readTree(s);
+    }
+
+    static final String PR_NODE = """
+            {"__typename": "PullRequest", "number": 50031, "title": "Dev UI: streaming", "url": "https://github.com/quarkusio/quarkus/pull/50031",
+             "createdAt": "2026-10-01T10:00:00Z", "updatedAt": "2026-10-05T10:00:00Z", "isDraft": false,
+             "headRefName": "devui-stream", "headRefOid": "9a1b", "reviewDecision": "CHANGES_REQUESTED", "mergeable": "MERGEABLE",
+             "repository": {"nameWithOwner": "quarkusio/quarkus"}, "author": {"login": "phillip-kruger"},
+             "assignees": {"nodes": [{"login": "phillip-kruger"}]}, "comments": {"totalCount": 3},
+             "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE"}}}]},
+             "latestOpinionatedReviews": {"nodes": [{"state": "CHANGES_REQUESTED"}]}}
+            """;
+
+    @Test
+    void parsesAPullRequest() throws Exception {
+        Item i = GitHub.toItem(json(PR_NODE));
+        assertEquals("quarkusio/quarkus#50031", i.key());
+        assertEquals(Item.Kind.PR, i.kind());
+        assertEquals("quarkusio", i.owner());
+        assertEquals("FAILURE", i.ci());
+        assertEquals("CHANGES_REQUESTED", i.reviewDecision());
+        assertEquals(List.of("phillip-kruger"), i.assignees());
+        assertEquals(3, i.comments());
+        assertEquals(false, i.approved());
+    }
+
+    @Test
+    void approvalFollowsGitHubsDecisionOrTheWritersReviews() {
+        // Repos that require reviews: GitHub's decision is the answer.
+        assertTrue(Item.isApproved("APPROVED", List.of()));
+        assertEquals(false, Item.isApproved("REVIEW_REQUIRED", List.of("APPROVED")));
+        assertEquals(false, Item.isApproved("CHANGES_REQUESTED", List.of("APPROVED")));
+        // Repos that don't: a writer approved, and no writer's latest review asks for changes.
+        assertTrue(Item.isApproved(null, List.of("APPROVED")));
+        assertEquals(false, Item.isApproved(null, List.of("APPROVED", "CHANGES_REQUESTED")));
+        assertEquals(false, Item.isApproved(null, List.of()));
+    }
+
+    @Test
+    void parsesAnIssueWithoutPrFields() throws Exception {
+        Item i = GitHub.toItem(json("""
+                {"__typename": "Issue", "number": 7, "title": "t", "url": "u", "createdAt": "2026-10-01T10:00:00Z",
+                 "updatedAt": "2026-10-02T10:00:00Z", "repository": {"nameWithOwner": "smallrye/smallrye-open-api"},
+                 "author": null, "assignees": {"nodes": []}, "comments": {"totalCount": 0}}
+                """));
+        assertEquals(Item.Kind.ISSUE, i.kind());
+        assertEquals("", i.author()); // deleted users ("ghost") come back as null
+        assertNull(i.draft());
+        assertNull(i.ci());
+        assertNull(i.approved());
+    }
+
+    @Test
+    void anyRunningCheckMeansInProgressEvenWhenGitHubSaysFailure() throws Exception {
+        // quarkusio/quarkus#56953 during a re-run: the gate status still fails, one job is running again.
+        assertEquals("PENDING", GitHub.ciState(json("""
+                {"state": "FAILURE", "contexts": {
+                  "checkRunCountsByState": [{"state": "IN_PROGRESS", "count": 1}, {"state": "SUCCESS", "count": 56}],
+                  "statusContextCountsByState": [{"state": "FAILURE", "count": 1}]}}""")));
+        assertEquals("PENDING", GitHub.ciState(json("""
+                {"state": "SUCCESS", "contexts": {"checkRunCountsByState": [],
+                  "statusContextCountsByState": [{"state": "PENDING", "count": 2}]}}""")));
+        assertEquals("FAILURE", GitHub.ciState(json("""
+                {"state": "FAILURE", "contexts": {"checkRunCountsByState": [{"state": "IN_PROGRESS", "count": 0},
+                  {"state": "FAILURE", "count": 1}], "statusContextCountsByState": []}}""")));
+        assertNull(GitHub.ciState(json("null")));
+    }
+
+    @Test
+    void newReviewRequestsAndOthersMentionsBringItemsBack() throws Exception {
+        assertEquals("Review requested", GitHub.reasonFor(json("""
+                [{"__typename": "ReviewRequestedEvent", "requestedReviewer": {"login": "Phillip-Kruger"}}]"""), "phillip-kruger"));
+        assertEquals("You were mentioned", GitHub.reasonFor(json("""
+                [{"__typename": "IssueComment", "author": {"login": "gsmet"}, "body": "cc @phillip-kruger, can you look?"}]"""),
+                "phillip-kruger"));
+        assertEquals("You were mentioned", GitHub.reasonFor(json("""
+                [{"__typename": "PullRequestReview", "author": {"login": "gsmet"}, "body": "",
+                  "comments": {"nodes": [{"body": "@phillip-kruger is this right?"}]}}]"""), "phillip-kruger"));
+        // Your own comments, other people's handles, and someone else's review request don't count.
+        assertNull(GitHub.reasonFor(json("""
+                [{"__typename": "IssueComment", "author": {"login": "phillip-kruger"}, "body": "@phillip-kruger note to self"},
+                 {"__typename": "IssueComment", "author": {"login": "x"}, "body": "@phillip-kruger-bot and @phillipkruger"},
+                 {"__typename": "ReviewRequestedEvent", "requestedReviewer": {"login": "gsmet"}}]"""), "phillip-kruger"));
+    }
+
+    @Test
+    void ciWaitingForApprovalIsNeverGreen() throws Exception {
+        // quarkusio/quarkus#56264: two bot checks passed, Quarkus CI waits for a maintainer.
+        assertEquals(List.of(37703109423L), GitHub.awaitingApproval(json("""
+                {"checkSuites": {"nodes": [{"conclusion": "SUCCESS", "workflowRun": null},
+                  {"conclusion": "ACTION_REQUIRED", "workflowRun": {"databaseId": 37703109423}}]}}""")));
+        Item green = GitHub.toItem(json(PR_NODE.replace("{\"state\": \"FAILURE\"}", "{\"state\": \"SUCCESS\"}")));
+        assertEquals("SUCCESS", green.ci());
+        Item waiting = green.withDetails("BLOCKED", true);
+        assertEquals(GitHub.AWAITING_APPROVAL, waiting.ci());
+        assertEquals("BLOCKED", waiting.mergeState());
+        assertEquals("SUCCESS", green.withDetails("CLEAN", false).ci());
+    }
+
+    @Test
+    void prWithoutChecksHasNoCi() throws Exception {
+        Item i = GitHub.toItem(json(PR_NODE.replace("{\"state\": \"FAILURE\"}", "null")));
+        assertNull(i.ci());
+    }
+
+    @Test
+    void followsPagesAndReportsTruncation() throws Exception {
+        GitHubApi api = mock(GitHubApi.class);
+        when(api.graphql(eq("Bearer t"), any())).thenReturn(
+                json("""
+                        {"data": {"search": {"issueCount": 1500, "pageInfo": {"hasNextPage": true, "endCursor": "c1"},
+                                             "nodes": [%s]}}}""".formatted(PR_NODE)),
+                json("""
+                        {"data": {"search": {"issueCount": 1500, "pageInfo": {"hasNextPage": false, "endCursor": null},
+                                             "nodes": [%s]}}}""".formatted(PR_NODE.replace("50031", "50032"))));
+
+        GitHub.SearchResult r = new GitHub(api).search("t", "is:open involves:@me", 1000);
+        assertEquals(2, r.items().size());
+        assertTrue(r.truncated());
+        verify(api, times(2)).graphql(eq("Bearer t"), any(Map.class));
+    }
+
+    @Test
+    void anEmptyPageEndsTheSearchEvenIfGitHubClaimsMore() throws Exception {
+        GitHubApi api = mock(GitHubApi.class);
+        when(api.graphql(eq("Bearer t"), any())).thenReturn(
+                json("""
+                        {"data": {"search": {"issueCount": 500, "pageInfo": {"hasNextPage": true, "endCursor": "c1"},
+                                             "nodes": [%s]}}}""".formatted(PR_NODE)),
+                json("""
+                        {"data": {"search": {"issueCount": 500, "pageInfo": {"hasNextPage": true, "endCursor": "c2"},
+                                             "nodes": []}}}"""));
+        GitHub.SearchResult r = new GitHub(api).search("t", "is:open involves:@me", 1000);
+        assertEquals(1, r.items().size());
+        verify(api, times(2)).graphql(eq("Bearer t"), any(Map.class));
+    }
+
+    @Test
+    void activityIsWhatOthersDidAfterYourLastReviewOrComment() throws Exception {
+        GitHub.Activity a = GitHub.activityFrom("quarkusio/quarkus#56953", json("""
+                {"headRefOid": "6c82981", "reviewDecision": "REVIEW_REQUIRED", "timelineItems": {"nodes": [
+                  {"__typename": "IssueComment", "createdAt": "2026-09-30T10:00:00Z", "body": "first", "author": {"login": "arnabnandy7"}, "url": "u0"},
+                  {"__typename": "PullRequestReview", "submittedAt": "2026-10-01T07:15:04Z", "state": "CHANGES_REQUESTED", "body": "fix the brace",
+                   "author": {"login": "phillip-kruger"}, "comments": {"totalCount": 2}, "url": "u1"},
+                  {"__typename": "PullRequestCommit", "url": "u2", "commit": {"oid": "6c82981ec2f", "messageHeadline": "Add missing closing brace",
+                   "committedDate": "2026-10-02T09:00:00Z", "author": {"name": "Arnab", "user": {"login": "arnabnandy7"}}}},
+                  {"__typename": "IssueComment", "createdAt": "2026-10-02T09:05:00Z", "body": "Done, <!-- bot -->please re-review", "author": {"login": "arnabnandy7"}, "url": "u3"},
+                  {"__typename": "IssueComment", "createdAt": "2026-10-02T10:00:00Z", "body": "thanks", "author": {"login": "phillip-kruger"}, "url": "u4"},
+                  {"__typename": "HeadRefForcePushedEvent", "createdAt": "2026-10-02T09:01:00Z", "actor": {"login": "arnabnandy7"}}
+                ]}}"""), "phillip-kruger");
+        // Your last comment (10:00) is the latest thing you did; nothing from others came after it.
+        assertEquals("your comment", a.sinceWhat());
+        assertTrue(a.events().isEmpty());
+
+        GitHub.Activity sinceReview = GitHub.activityFrom("k", json("""
+                {"headRefOid": "x", "timelineItems": {"nodes": [
+                  {"__typename": "PullRequestReview", "submittedAt": "2026-10-01T07:15:04Z", "state": "APPROVED", "body": "",
+                   "author": {"login": "phillip-kruger"}, "comments": {"totalCount": 0}},
+                  {"__typename": "PullRequestCommit", "commit": {"oid": "abcdef1234", "messageHeadline": "Address review",
+                   "committedDate": "2026-10-02T09:00:00Z", "author": {"name": "A", "user": {"login": "arnabnandy7"}}}},
+                  {"__typename": "IssueComment", "createdAt": "2026-10-02T09:05:00Z", "body": "Done <!-- hidden -->  please   look", "author": {"login": "arnabnandy7"}}
+                ]}}"""), "phillip-kruger");
+        assertEquals("your review", sinceReview.sinceWhat());
+        assertEquals(List.of("commit", "comment"), sinceReview.events().stream().map(GitHub.Event::kind).toList());
+        assertEquals("abcdef1 Address review", sinceReview.events().get(0).text());
+        assertEquals("Done please look", sinceReview.events().get(1).text());
+    }
+
+    @Test
+    void errorsWithoutDataFail() throws Exception {
+        GitHubApi api = mock(GitHubApi.class);
+        when(api.graphql(any(), any())).thenReturn(json("{\"errors\": [{\"message\": \"Bad credentials\"}]}"));
+        var e = assertThrows(GitHub.GitHubException.class, () -> new GitHub(api).viewerOrgs("t"));
+        assertEquals("Bad credentials", e.getMessage());
+    }
+
+    @Test
+    void linkedPrsKeepOpenPrsAndFixingWins() throws Exception {
+        GitHubApi api = mock(GitHubApi.class);
+        when(api.graphql(eq("Bearer t"), any())).thenReturn(json("""
+                {"data": {"i0": {"issue": {
+                  "closedByPullRequestsReferences": {"nodes": [
+                    {"number": 57310, "title": "Fix it", "url": "u1", "state": "OPEN", "isDraft": false,
+                     "author": {"login": "jnbdz"}, "repository": {"nameWithOwner": "quarkusio/quarkus"}}]},
+                  "timelineItems": {"nodes": [
+                    {"willCloseTarget": false, "source": {"number": 57310, "title": "Fix it", "url": "u1", "state": "OPEN",
+                     "isDraft": false, "author": {"login": "jnbdz"}, "repository": {"nameWithOwner": "quarkusio/quarkus"}}},
+                    {"willCloseTarget": false, "source": {"number": 9, "title": "Related", "url": "u2", "state": "OPEN",
+                     "isDraft": true, "author": {"login": "x"}, "repository": {"nameWithOwner": "other/repo"}}},
+                    {"willCloseTarget": true, "source": {"number": 8, "title": "Old", "url": "u3", "state": "CLOSED",
+                     "isDraft": false, "author": {"login": "x"}, "repository": {"nameWithOwner": "quarkusio/quarkus"}}},
+                    {"willCloseTarget": false, "source": {}}]}}},
+                 "i1": {"issue": {"closedByPullRequestsReferences": {"nodes": []}, "timelineItems": {"nodes": []}}}}}"""));
+        var links = new GitHub(api).linkedPrs("t", java.util.List.of("quarkusio/quarkus#57298", "quarkusio/quarkus#1"));
+        var prs = links.get("quarkusio/quarkus#57298");
+        assertEquals(2, prs.size());
+        assertEquals("quarkusio/quarkus#57310", prs.get(0).key());
+        assertTrue(prs.get(0).fixes());
+        assertEquals("other/repo#9", prs.get(1).key());
+        assertTrue(!prs.get(1).fixes() && prs.get(1).draft());
+        assertTrue(!links.containsKey("quarkusio/quarkus#1"));
+    }
+}
