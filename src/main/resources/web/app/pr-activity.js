@@ -84,7 +84,7 @@ class PrActivity extends LitElement {
         try {
             const desk = await api();
             await desk.start({ itemKey: this.itemKey, action: 'review', question: null });
-            location.hash = threadHref(this.itemKey);
+            if (location.hash !== threadHref(this.itemKey)) this._toggle(); // on the board: close, the row shows the agent working
         } catch (e) {
             this._error = errorMessage(e);
         } finally {

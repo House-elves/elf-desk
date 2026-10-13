@@ -25,8 +25,8 @@ public record ThreadView(
     public record JobView(long id, String action, String state, Instant created, Instant started, List<String> lines) {
     }
 
-    /** {@code draft} for reviews and comments, {@code push} for commits to push. */
-    public record DraftView(long id, String kind, AgentOutput.DraftOut draft, PushOut push, Instant created) {
+    /** {@code draft} for reviews, comments and issues, {@code push} for commits to push, {@code pr} for a new PR. */
+    public record DraftView(long id, String kind, AgentOutput.DraftOut draft, PushOut push, PrOut pr, Instant created) {
     }
 
     public record PostedView(String kind, String url, Instant at) {

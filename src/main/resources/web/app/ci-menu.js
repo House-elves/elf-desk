@@ -112,14 +112,15 @@ class CiMenu extends LitElement {
         this._error = null;
         try {
             const desk = await api();
-            if (what === 'why') await desk.ciWhy({ itemKey: this.itemKey });
-            else if (what === 'again') await desk.ciWhyAgain({ itemKey: this.itemKey });
-            else await desk.ciFix({ itemKey: this.itemKey });
-            // Opens the thread (or, if we're on it, shows its current state): an existing answer isn't asked again.
+            const v = what === 'why' ? await desk.ciWhy({ itemKey: this.itemKey })
+                : what === 'again' ? await desk.ciWhyAgain({ itemKey: this.itemKey })
+                : await desk.ciFix({ itemKey: this.itemKey });
+            // On the thread page, show its current state. On the board, stay there while the agent works (the row
+            // shows it); an answer it already gave for this commit (no job started) opens the thread.
+            this._open = false;
             if (location.hash === threadHref(this.itemKey)) {
-                this._open = false;
                 this.dispatchEvent(new CustomEvent('thread-changed', { bubbles: true, composed: true }));
-            } else {
+            } else if (!v?.job) {
                 location.hash = threadHref(this.itemKey);
             }
         } catch (e) {

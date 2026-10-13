@@ -93,11 +93,13 @@ class ConflictMenu extends LitElement {
         this._error = null;
         try {
             const desk = await api();
-            await desk.resolveConflicts({ itemKey: this.itemKey });
+            const v = await desk.resolveConflicts({ itemKey: this.itemKey });
+            // On the thread page, show its current state. On the board, stay there while the agent works (the row
+            // shows it); an answer it already gave for this commit (no job started) opens the thread.
+            this._open = false;
             if (location.hash === threadHref(this.itemKey)) {
-                this._open = false;
                 this.dispatchEvent(new CustomEvent('thread-changed', { bubbles: true, composed: true }));
-            } else {
+            } else if (!v?.job) {
                 location.hash = threadHref(this.itemKey);
             }
         } catch (e) {

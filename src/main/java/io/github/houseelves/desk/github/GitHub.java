@@ -230,6 +230,18 @@ public class GitHub {
                 }""", vars).path("repository").path("pullRequest").path("commits").path("totalCount").asInt();
     }
 
+    /** {@code fork} exists and is a fork of {@code parent}. */
+    public boolean isForkOf(String token, String fork, String parent) {
+        String[] parts = fork.split("/", 2);
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("owner", parts[0]);
+        vars.put("name", parts[1]);
+        JsonNode r = call(token, """
+                query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { isFork parent { nameWithOwner } } }""",
+                vars).path("repository");
+        return r.path("isFork").asBoolean() && parent.equalsIgnoreCase(r.path("parent").path("nameWithOwner").asText());
+    }
+
     /** The repo exists and is public (the desk only writes to public repos). */
     public boolean isPublic(String token, String repo) {
         String[] parts = repo.split("/", 2);

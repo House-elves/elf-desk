@@ -3,6 +3,7 @@ package io.github.houseelves.desk.runner;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -19,6 +20,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import io.github.houseelves.desk.triage.TriageRuns;
 import io.github.houseelves.desk.mvnpm.MvnpmRuns;
 import io.github.houseelves.desk.thread.ThreadService;
 import jakarta.enterprise.inject.Instance;
@@ -52,6 +54,10 @@ public class RunnerHub {
     @Inject
     Instance<MvnpmRuns> mvnpmRuns;
 
+    /** Lazy, for the same reason. */
+    @Inject
+    Instance<TriageRuns> triageRuns;
+
     private volatile WebSocketConnection runner;
     private volatile String runnerVersion = "";
 
@@ -66,6 +72,9 @@ public class RunnerHub {
     static final String SQUASH_SINCE = "0.9.0";
     static final String ASSIGN_SINCE = "0.10.0";
     static final String ISSUE_SINCE = "0.11.0";
+    public static final String TRIAGE_SINCE = "0.12.0";
+    public static final String EMAIL_TRIAGE_SINCE = "0.13.0";
+    static final String PR_SINCE = "0.14.0";
 
     /** Requests waiting for the runner's answer, by request id. */
     private final Map<String, CompletableFuture<JsonNode>> pending = new ConcurrentHashMap<>();
@@ -140,7 +149,16 @@ public class RunnerHub {
             mvnpmRuns.get().onState(units);
             return;
         }
-        if (type.equals("github.result") || type.equals("git.result") || type.equals("mvnpm.result")) {
+        if (type.equals("triage.state")) {
+            List<String> modes = new ArrayList<>();
+            msg.path("running").forEach(m -> modes.add(m.asText()));
+            Map<String, String> failed = new HashMap<>();
+            msg.path("failed").fields().forEachRemaining(f -> failed.put(f.getKey(), f.getValue().asText()));
+            triageRuns.get().onState(modes, failed);
+            return;
+        }
+        if (type.equals("github.result") || type.equals("git.result") || type.equals("mvnpm.result")
+                || type.equals("triage.result")) {
             CompletableFuture<JsonNode> answer = pending.get(msg.path("id").asText());
             if (answer != null) answer.complete(msg);
             return;
@@ -179,6 +197,7 @@ public class RunnerHub {
             runner = null;
             LOG.info("Runner disconnected");
             mvnpmRuns.get().onRunnerGone();
+            triageRuns.get().onRunnerGone();
             pending.values().forEach(p -> p.completeExceptionally(new IllegalStateException(
                     "The runner disconnected before GitHub answered. Check GitHub before trying again.")));
             live.runner(false);

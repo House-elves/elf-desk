@@ -29,7 +29,7 @@ systemctl --user enable elf-desk.service >/dev/null 2>&1 || true
 systemctl --user restart elf-desk.service
 
 for i in $(seq 1 60); do
-  if curl -fs -o /dev/null http://localhost:7480/q/health/ready; then echo "Elf Desk is up: http://$(hostname -I | awk '{print $1}'):7480"; exit 0; fi
+  if curl -fs -o /dev/null http://localhost:7777/q/health/ready; then echo "Elf Desk is up: http://$(hostname -I | awk '{print $1}'):7777"; exit 0; fi
   sleep 1
 done
 echo "Elf Desk didn't become ready; see: journalctl --user -u elf-desk -n 50" >&2

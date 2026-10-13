@@ -11,11 +11,12 @@ import java.util.List;
 public record AgentOutput(String reply, DraftOut draft) {
 
     /**
-     * @param kind     review (PRs only), comment, or issue (a new issue in another public repo, such as upstream)
+     * @param kind     review (PRs only), comment, issue (a new issue in another public repo, such as upstream), or pr
+     *                 (a fix for this issue: the PR's title and body for the commit the agent made)
      * @param event    reviews only: COMMENT, APPROVE or REQUEST_CHANGES
      * @param comments reviews only: inline comments on lines of the diff
      * @param repo     issues only: owner/name of the repo to open it in
-     * @param title    issues only
+     * @param title    issues and PRs
      * @param then     issues only, optional: a comment for this thread's item to draft once the issue is open, with
      *                 {@value #ISSUE_LINK} where the new issue's link goes
      */
@@ -53,11 +54,11 @@ public record AgentOutput(String reply, DraftOut draft) {
                       "additionalProperties": false,
                       "required": ["kind", "body"],
                       "properties": {
-                        "kind": {"enum": ["review", "comment", "issue"]},
+                        "kind": {"enum": ["review", "comment", "issue", "pr"]},
                         "event": {"enum": ["COMMENT", "APPROVE", "REQUEST_CHANGES"]},
                         "body": {"type": "string"},
                         "repo": {"type": "string", "description": "issue only: owner/name of the public repo to open it in"},
-                        "title": {"type": "string", "description": "issue only: the issue's title"},
+                        "title": {"type": "string", "description": "issue or pr: the title"},
                         "then": {"type": "string", "description": "issue only, optional: a comment for this item, drafted once the issue is open; {issue} is replaced by the new issue's URL"},
                         "comments": {
                           "type": "array",

@@ -11,7 +11,7 @@ import io.github.houseelves.desk.github.ItemContext;
 public final class Prompts {
 
     public static final String REVIEW = "review", INVESTIGATE = "investigate", ASK = "ask", REPLY = "reply",
-            CI_WHY = "ci-why", CI_FIX = "ci-fix", CONFLICTS = "conflicts";
+            CI_WHY = "ci-why", CI_FIX = "ci-fix", CONFLICTS = "conflicts", FIX = "fix";
 
     private static final int MAX_BODY = 12_000;
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
@@ -24,6 +24,7 @@ public final class Prompts {
         return switch (action) {
             case REVIEW -> "Review this PR.";
             case INVESTIGATE -> "Investigate this issue.";
+            case FIX -> "Fix it and draft a PR.";
             case CI_WHY -> "Why is CI failing?";
             case CI_FIX -> "Fix the CI failure.";
             case CONFLICTS -> "Resolve the merge conflicts.";
@@ -193,6 +194,24 @@ public final class Prompts {
                     `draft`: a `kind` "comment" for the issue only if a reply to the reporter would help \
                     (for example asking for a reproducer, or explaining the cause). Otherwise null.
                     """;
+            case FIX -> """
+                    Fix this issue, the way you proposed (or as the maintainer asked since). The repository's \
+                    default branch is checked out at its latest commit.
+
+                    1. First make sure nobody is fixing it already: an open PR listed above under "Open PRs linked \
+                    to this issue", or one you find searching the repo's open PRs. If there is one, change nothing: \
+                    say so in `reply`, point to it, and return `draft` as null.
+                    2. Make the smallest change that fixes it, in the style of the code around it, with a test where \
+                    the project tests this area.
+                    3. Build, and run the tests of the modules you touched.
+                    4. Commit it as ONE commit with `git commit` and a one-line message in the repository's style. \
+                    Don't push. No AI or agent attribution in the commit or the PR.
+
+                    `reply`: what you changed and why, and what you built and ran.
+                    `draft`: `kind` "pr" with `title` (the PR's title) and `body` (for reviewers: what it changes and \
+                    why, ending with "Fixes #%d"). The maintainer reviews it; opening the PR pushes your commit to \
+                    their fork. null if you committed nothing.
+                    """.formatted(ctx.number());
             case CI_WHY -> """
                     CI is failing on this PR. The failed checks and the end of their logs are above. Find out why: \
                     is it caused by this PR's change, by something else on the base branch, or is it flaky or \

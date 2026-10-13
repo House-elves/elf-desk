@@ -57,6 +57,17 @@ public class GitHubWriter {
         return write("POST", "/repos/" + repo + "/issues", Map.of("title", title, "body", body), RunnerHub.ISSUE_SINCE);
     }
 
+    /** Opens a PR from {@code head} ("you:branch", the runner refuses anyone else's fork) onto {@code base}. */
+    public JsonNode createPull(String repo, String title, String head, String base, String body) {
+        return write("POST", "/repos/" + repo + "/pulls", Map.of("title", title, "head", head, "base", base, "body", body),
+                RunnerHub.PR_SINCE);
+    }
+
+    /** Brings a branch of your fork up to date with its upstream, as GitHub's "Sync fork" does. */
+    public JsonNode syncFork(String fork, String branch) {
+        return write("POST", "/repos/" + fork + "/merge-upstream", Map.of("branch", branch), RunnerHub.PR_SINCE);
+    }
+
     /** Closes an issue or PR. */
     public JsonNode close(String repo, int number) {
         return write("PATCH", "/repos/" + repo + "/issues/" + number, Map.of("state", "closed"), RunnerHub.WRITES_SINCE);

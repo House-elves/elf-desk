@@ -42,6 +42,9 @@ public class DeskThread extends PanacheEntityBase {
     @Column(nullable = false)
     public Instant updated = Instant.now();
 
+    /** When the thread page last showed it: an agent answer after this is new. Null until it was opened. */
+    public Instant seen;
+
     public static DeskThread byKey(String itemKey) {
         return find("itemKey", itemKey).firstResult();
     }

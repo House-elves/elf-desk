@@ -5,6 +5,9 @@ import { currentTheme, setTheme } from './theme.js';
 import './desk-board.js';
 import './desk-settings.js';
 import './desk-thread.js';
+import './desk-email.js';
+import './desk-zulip.js';
+import './desk-dashboard.js';
 
 const THEMES = [
     { id: 'system', label: 'Match system', icon: svg`<rect x="2.5" y="3" width="11" height="8" rx="1.5"/><path d="M6 13.5h4M8 11v2.5"/>` },
@@ -112,8 +115,8 @@ class ElfDesk extends LitElement {
     }
 
     _viewFromHash() {
-        if (location.hash === '#settings') return 'settings';
-        return itemKeyFromHash(location.hash) ? 'thread' : 'board';
+        if (['#github', '#settings', '#email', '#zulip'].includes(location.hash)) return location.hash.slice(1);
+        return itemKeyFromHash(location.hash) ? 'thread' : 'dashboard';
     }
 
     _pickTheme(id) {
@@ -125,7 +128,7 @@ class ElfDesk extends LitElement {
         return html`
             <header>
                 <div class="bar">
-                    <a class="brand" href="#" aria-label="Elf Desk, board">
+                    <a class="brand" href="#" aria-label="Elf Desk, dashboard">
                         <svg viewBox="0 0 26 26" aria-hidden="true">
                             <rect width="26" height="26" rx="7" fill="var(--accent)"/>
                             <path d="M7 17.5h12M9 17.5V11l4-3.5 4 3.5v6.5" fill="none" stroke="var(--accent-ink)"
@@ -134,7 +137,10 @@ class ElfDesk extends LitElement {
                         <span>Elf Desk</span>
                     </a>
                     <nav aria-label="Views">
-                        <a href="#" aria-current=${this._view !== 'settings' ? 'page' : 'false'}>Board</a>
+                        <a href="#" aria-current=${this._view === 'dashboard' ? 'page' : 'false'}>Dashboard</a>
+                        <a href="#github" aria-current=${['github', 'thread'].includes(this._view) ? 'page' : 'false'}>GitHub</a>
+                        <a href="#email" aria-current=${this._view === 'email' ? 'page' : 'false'}>Email</a>
+                        <a href="#zulip" aria-current=${this._view === 'zulip' ? 'page' : 'false'}>Zulip</a>
                         <a href="#settings" aria-current=${this._view === 'settings' ? 'page' : 'false'}>Settings</a>
                     </nav>
                     <div class="right">
@@ -160,8 +166,11 @@ class ElfDesk extends LitElement {
             </header>
             <main>
                 ${this._view === 'settings' ? html`<desk-settings></desk-settings>`
+                    : this._view === 'email' ? html`<desk-email></desk-email>`
+                    : this._view === 'zulip' ? html`<desk-zulip></desk-zulip>`
                     : this._view === 'thread' ? html`<desk-thread .itemKey=${itemKeyFromHash(location.hash)}></desk-thread>`
-                    : html`<desk-board></desk-board>`}
+                    : this._view === 'github' ? html`<desk-board></desk-board>`
+                    : html`<desk-dashboard></desk-dashboard>`}
             </main>
         `;
     }

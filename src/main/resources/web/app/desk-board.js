@@ -15,11 +15,45 @@ const VERDICTS = {
 const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
 
 /** The last board this page saw: going back to the board shows it at once while it updates. */
-let lastBoard = null;
+export let lastBoard = null;
 
 /** "3 reviews", "1 review". */
-function count(n, one, many = `${one}s`) {
+export function count(n, one, many = `${one}s`) {
     return `${n} ${n === 1 ? one : many}`;
+}
+
+/** "a, b and c". */
+export function joinParts(parts) {
+    const joined = [];
+    parts.forEach((p, i) => {
+        if (i > 0) joined.push(i === parts.length - 1 ? ' and ' : ', ');
+        joined.push(p);
+    });
+    return joined;
+}
+
+/**
+ * What needs you on the board, in one sentence: "2 reviews are waiting for you and 1 of your PRs needs attention."
+ * `link(laneId, text)` renders the counts that lead to a lane.
+ */
+export function boardHeadline(b, link) {
+    const lane = id => b.lanes.find(l => l.id === id);
+    const review = lane('review').items.length;
+    const mine = lane('mine').items.filter(i => i.reviewDecision === 'CHANGES_REQUESTED'
+        || i.ci === 'FAILURE' || i.ci === 'ERROR' || i.mergeable === 'CONFLICTING').length;
+    const states = Object.values(b.threads ?? {});
+    const drafts = states.filter(t => t.state === 'draft').length;
+    const working = states.filter(t => t.state === 'working').length;
+    const answered = states.filter(t => t.state === 'answered').length;
+
+    const parts = [];
+    if (review) parts.push(html`${link('review', count(review, 'review'))} ${review === 1 ? 'is' : 'are'} waiting for you`);
+    if (mine) parts.push(html`${link('mine', count(mine, 'of your PRs', 'of your PRs'))} ${mine === 1 ? 'needs' : 'need'} attention`);
+    if (drafts) parts.push(html`${count(drafts, 'draft')} ${drafts === 1 ? 'is' : 'are'} ready to post`);
+    if (answered) parts.push(html`${count(answered, 'answer')} ${answered === 1 ? 'is' : 'are'} ready to read`);
+    if (working) parts.push(html`${parts.length ? 'an' : 'An'} agent is working on ${count(working, 'item')}`);
+    if (parts.length === 0) return 'Nothing needs you right now.';
+    return html`${joinParts(parts)}.`;
 }
 
 /** The morning board: what needs you in one sentence, then the lanes. */
@@ -134,6 +168,8 @@ class DeskBoard extends LitElement {
         this._confirmClose = null;
         this._moreFor = null;
         this._ignoring = null;
+        this._rebasing = null;
+        this._assigning = null;
         this._mvnpmStarting = null;
     }
 
@@ -304,8 +340,9 @@ class DeskBoard extends LitElement {
         this._error = null;
         try {
             const desk = await api();
+            // Stays on the board: the row shows "Agent working", then "Answer ready" or "Draft ready".
             await desk.start({ itemKey: item.key, action, question: null });
-            location.hash = threadHref(item.key);
+            this._softReload();
         } catch (e) {
             this._error = `Couldn't start the agent on ${item.key}: ${errorMessage(e)}`;
         } finally {
@@ -362,27 +399,7 @@ class DeskBoard extends LitElement {
     }
 
     _headline(b) {
-        const lane = id => b.lanes.find(l => l.id === id);
-        const review = lane('review').items.length;
-        const mine = lane('mine').items.filter(i => i.reviewDecision === 'CHANGES_REQUESTED'
-            || i.ci === 'FAILURE' || i.ci === 'ERROR' || i.mergeable === 'CONFLICTING').length;
-        const states = Object.values(b.threads ?? {});
-        const drafts = states.filter(t => t.state === 'draft').length;
-        const working = states.filter(t => t.state === 'working').length;
-
-        const link = (id, text) => html`<button @click=${() => this._jump(id)}>${text}</button>`;
-        const parts = [];
-        if (review) parts.push(html`${link('review', count(review, 'review'))} ${review === 1 ? 'is' : 'are'} waiting for you`);
-        if (mine) parts.push(html`${link('mine', count(mine, 'of your PRs', 'of your PRs'))} ${mine === 1 ? 'needs' : 'need'} attention`);
-        if (drafts) parts.push(html`${count(drafts, 'draft')} ${drafts === 1 ? 'is' : 'are'} ready to post`);
-        if (working) parts.push(html`${parts.length ? 'an' : 'An'} agent is working on ${count(working, 'item')}`);
-        if (parts.length === 0) return 'Nothing needs you right now.';
-        const joined = [];
-        parts.forEach((p, i) => {
-            if (i > 0) joined.push(i === parts.length - 1 ? ' and ' : ', ');
-            joined.push(p);
-        });
-        return html`${joined}.`;
+        return boardHeadline(b, (id, text) => html`<button @click=${() => this._jump(id)}>${text}</button>`);
     }
 
     _renderBoard(b) {
@@ -498,7 +515,8 @@ class DeskBoard extends LitElement {
         const t = this._board?.threads?.[item.key];
         if (!t) return [];
         if (t.state === 'working') return [html`<span class="chip run">${spinner}Agent working</span>`];
-        if (t.state === 'draft') return [html`<span class="chip ok">Draft ready</span>`];
+        if (t.state === 'draft') return [html`<a class="chip ok" href=${threadHref(item.key)}>Draft ready</a>`];
+        if (t.state === 'answered') return [html`<a class="chip ok" href=${threadHref(item.key)}>Answer ready</a>`];
         return [];
     }
 
@@ -567,8 +585,8 @@ class DeskBoard extends LitElement {
             <button class="sm quiet" ?disabled=${this._ignoring !== null} @click=${() => this._ignore(item, true)}
                 title="The PR covers it: move the issue to Ignored">${this._ignoring === item.key ? spinner : ''}Ignore</button>` : '';
         if (t) {
-            return html`<a class="btn sm ${t.state === 'draft' ? 'primary' : ''}" href=${threadHref(item.key)}>
-                ${t.state === 'draft' ? 'Review draft' : 'Open thread'}</a>${fixActs}${merge}${this._rebaseButton(item)}${this._assignButton(item, laneId)}${this._more(item, { withIgnore: !fix, withMergeAnyway: !ownReady })}`;
+            return html`<a class="btn sm ${['draft', 'answered'].includes(t.state) ? 'primary' : ''}" href=${threadHref(item.key)}>
+                ${{ draft: 'Review draft', answered: 'Read answer' }[t.state] ?? 'Open thread'}</a>${fixActs}${merge}${this._rebaseButton(item)}${this._assignButton(item, laneId)}${this._more(item, { withIgnore: !fix, withMergeAnyway: !ownReady })}`;
         }
         if (fix) return html`${fixActs}${this._assignButton(item, laneId)}${this._more(item, { withIgnore: false })}`;
         const starting = this._starting === item.key;

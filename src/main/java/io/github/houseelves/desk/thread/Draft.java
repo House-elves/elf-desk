@@ -19,7 +19,7 @@ import jakarta.persistence.Table;
 @Table(name = "draft")
 public class Draft extends PanacheEntityBase {
 
-    public static final String REVIEW = "review", COMMENT = "comment", PUSH = "push", ISSUE = "issue";
+    public static final String REVIEW = "review", COMMENT = "comment", PUSH = "push", ISSUE = "issue", PR = "pr";
     public static final String PENDING = "draft", POSTED = "posted", DISCARDED = "discarded";
 
     @Id

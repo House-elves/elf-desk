@@ -135,6 +135,17 @@ class ThreadFlowTest {
     }
 
     @Test
+    void anAnswerStaysNewOnTheBoardUntilTheThreadPageShowsIt() throws Exception {
+        threads.start(KEY, Prompts.REVIEW, null, "phillip-kruger", "gho_t");
+        assertEquals("working", threads.summaries().get(KEY).state());
+        threads.jobDone(openJob(), "s", output("Looks fine.", "null"), null);
+        assertEquals("answered", threads.summaries().get(KEY).state());
+
+        threads.seen(KEY);
+        assertEquals("idle", threads.summaries().get(KEY).state());
+    }
+
+    @Test
     void closingCallsGitHubAndIsAudited() throws Exception {
         threads.start(KEY, Prompts.REVIEW, null, "me", "t"); // a thread exists, so it gets a note
         when(writes.close("quarkusio/quarkus", 50087))
@@ -247,6 +258,50 @@ class ThreadFlowTest {
         GitHubAction audit = QuarkusTransaction.requiringNew().call(() -> GitHubAction.<GitHubAction>findAll().firstResult());
         assertEquals("issue", audit.kind);
 
+    }
+
+    @Test
+    void fixingAnIssueDraftsAPrFromYourForkAndOpensItOnlyWithTheConfirmation() throws Exception {
+        String issue = "quarkusio/quarkus#32850";
+        when(github.context(any(), eq("quarkusio/quarkus"), eq(32850)))
+                .thenReturn(Contexts.issue("quarkusio/quarkus", 32850, "MEMBER"));
+        assertThrows(IllegalArgumentException.class, () -> threads.start(KEY, Prompts.FIX, null, "phillip-kruger", "gho_t"));
+
+        threads.start(issue, Prompts.FIX, null, "phillip-kruger", "gho_t");
+        String fix = "a".repeat(40), base = "b".repeat(40);
+        threads.jobDone(threads.view(issue).job().id(), "s", output("Mapped the root logger.", """
+                {"kind": "pr", "title": "Let the Dev UI set the root log level", "body": "Lists the root logger."}
+                """), null, mapper.readTree("""
+                {"from": "%s", "to": "%s", "base": "main", "diffstat": " 1 file changed",
+                 "commits": [{"sha": "%s", "subject": "Dev UI: root logger level"}]}
+                """.formatted(base, fix, fix)));
+        ThreadView v = threads.view(issue);
+        assertEquals("pr", v.draft().kind());
+        assertEquals("Lists the root logger.\n\nFixes #32850", v.draft().pr().body());
+        long draftId = v.draft().id();
+
+        // No fork: refused before anything is sent.
+        when(github.isPublic("gho_t", "quarkusio/quarkus")).thenReturn(true);
+        when(github.isForkOf("gho_t", "phillip-kruger/quarkus", "quarkusio/quarkus")).thenReturn(false);
+        assertThrows(IllegalStateException.class, () -> poster.preview(draftId, "gho_t", "phillip-kruger"));
+
+        when(github.isForkOf("gho_t", "phillip-kruger/quarkus", "quarkusio/quarkus")).thenReturn(true);
+        when(github.linkedPrs(any(), eq(java.util.List.of(issue)))).thenReturn(Map.of(issue, java.util.List.of(
+                new GitHub.LinkedPr("quarkusio/quarkus#33000", "Root logger", "https://github.com/quarkusio/quarkus/pull/33000",
+                        "jdoe", false, false))));
+        Poster.Preview p = poster.preview(draftId, "gho_t", "phillip-kruger");
+        assertEquals("New PR on quarkusio/quarkus from phillip-kruger/quarkus:fix-32850-aaaaaaa", p.target());
+        assertTrue(p.warning().contains("quarkusio/quarkus#33000"));
+        verify(writes, never()).push(any(), anyInt(), any(), any(), any(), any(), any());
+
+        when(writes.createPull("quarkusio/quarkus", "Let the Dev UI set the root log level", "phillip-kruger:fix-32850-aaaaaaa",
+                "main", "Lists the root logger.\n\nFixes #32850"))
+                .thenReturn(mapper.readTree("{\"html_url\": \"https://github.com/quarkusio/quarkus/pull/57300\"}"));
+        Poster.Posted posted = poster.post(draftId, p.confirm(), "phillip-kruger");
+        assertEquals("https://github.com/quarkusio/quarkus/pull/57300", posted.url());
+        verify(writes).syncFork("phillip-kruger/quarkus", "main");
+        verify(writes).push("quarkusio/quarkus", 32850, "phillip-kruger/quarkus", "fix-32850-aaaaaaa", base, fix, null);
+        assertNull(threads.view(issue).draft());
     }
 
     @Test

@@ -53,9 +53,15 @@ public class Poster {
     /**
      * @param target  in words, where this goes: "Review on quarkusio/quarkus#50087"
      * @param confirm pass this to {@link #post} to send it
+     * @param warning something to know before sending it (a new PR: open PRs that already mention the issue)
      */
-    public record Preview(long draftId, String target, String kind, AgentOutput.DraftOut draft, PushOut push,
-            String url, String confirm) {
+    public record Preview(long draftId, String target, String kind, AgentOutput.DraftOut draft, PushOut push, PrOut pr,
+            String url, String confirm, String warning) {
+
+        Preview(long draftId, String target, String kind, AgentOutput.DraftOut draft, PushOut push, String url,
+                String confirm) {
+            this(draftId, target, kind, draft, push, null, url, confirm, null);
+        }
     }
 
     /** @param pushedTo the item whose PR branch was pushed to (CI starts again), or null for a review or comment */
@@ -66,13 +72,19 @@ public class Poster {
         return preview(draftId, null);
     }
 
+    public Preview preview(long draftId, String githubToken) {
+        return preview(draftId, githubToken, null);
+    }
+
     /**
      * @param githubToken your read token, to work out where a push goes when the draft doesn't say yet (commits
      *                    from a reply rather than "Fix this")
+     * @param login       you: a new PR comes from your fork
      */
-    public Preview preview(long draftId, String githubToken) {
+    public Preview preview(long draftId, String githubToken, String login) {
         resolvePushTarget(draftId, githubToken);
         checkIssueRepo(draftId, githubToken);
+        String warning = resolvePrTarget(draftId, githubToken, login);
         return QuarkusTransaction.requiringNew().call(() -> {
             Draft d = pendingDraft(draftId);
             DeskThread t = DeskThread.findById(d.threadId);
@@ -87,6 +99,11 @@ public class Poster {
                         : "Push " + push.commits().size() + (push.commits().size() == 1 ? " commit" : " commits")
                                 + " to " + push.headRepo() + ":" + push.headRef();
                 return new Preview(draftId, target, d.kind, null, push, t.url, token);
+            }
+            if (d.kind.equals(Draft.PR)) {
+                PrOut pr = mapper.readValue(d.payload, PrOut.class);
+                return new Preview(draftId, "New PR on " + pr.repo() + " from " + pr.headRepo() + ":" + pr.headRef(), d.kind,
+                        null, null, pr, "https://github.com/" + pr.repo() + "/pulls", token, warning);
             }
             AgentOutput.DraftOut out = mapper.readValue(d.payload, AgentOutput.DraftOut.class);
             if (d.kind.equals(Draft.ISSUE)) {
@@ -107,6 +124,7 @@ public class Poster {
         }
         DeskThread t = QuarkusTransaction.requiringNew().call(() -> DeskThread.findById(draft.threadId));
         if (draft.kind.equals(Draft.PUSH)) return push(draft, t, login);
+        if (draft.kind.equals(Draft.PR)) return openPr(draft, t, login);
         AgentOutput.DraftOut out = read(draft.payload);
         if (draft.kind.equals(Draft.ISSUE)) return openIssue(draft, out, t, login);
 
@@ -276,6 +294,96 @@ public class Poster {
             if (t != null) Turn.add(t.id, Turn.SYSTEM, null, "You assigned yourself on GitHub.");
         });
         live.changed(itemKey);
+    }
+
+    /**
+     * Fills in where a PR draft's commit goes: a new branch on your fork of the repo, which must exist and be public.
+     * Returns a warning when open PRs already mention the issue (check before opening another), or null.
+     */
+    private String resolvePrTarget(long draftId, String githubToken, String login) {
+        Draft d = QuarkusTransaction.requiringNew().call(() -> pendingDraft(draftId));
+        if (!d.kind.equals(Draft.PR)) return null;
+        if (githubToken == null || login == null) throw new IllegalStateException("Sign in again to open a PR");
+        PrOut pr = readPr(d.payload);
+        if (!github.isPublic(githubToken, pr.repo())) {
+            throw new IllegalStateException(pr.repo() + " isn't a public repo, so the desk won't open a PR there.");
+        }
+        String fork = login + "/" + pr.repo().substring(pr.repo().indexOf('/') + 1);
+        if (!github.isForkOf(githubToken, fork, pr.repo())) {
+            throw new IllegalStateException("You have no fork of " + pr.repo() + " at " + fork + ". Fork it on GitHub first,"
+                    + " then preview again.");
+        }
+        DeskThread t = QuarkusTransaction.requiringNew().call(() -> DeskThread.findById(d.threadId));
+        PrOut resolved = pr.withTarget(fork, "fix-" + t.number() + "-" + pr.to().substring(0, 7));
+        QuarkusTransaction.requiringNew().run(() -> {
+            Draft x = Draft.findById(draftId);
+            x.payload = mapper.valueToTree(resolved).toString();
+        });
+        List<GitHub.LinkedPr> open;
+        try {
+            open = github.linkedPrs(githubToken, List.of(t.itemKey)).getOrDefault(t.itemKey, List.of());
+        } catch (Exception e) {
+            return "Couldn't check for open PRs that already mention " + t.itemKey + ". Check on GitHub before opening this one.";
+        }
+        if (open.isEmpty()) return null;
+        return "Open PRs already mention " + t.itemKey + ": " + String.join(", ", open.stream()
+                .map(p -> p.key() + " (" + (p.fixes() ? "fixes it" : "mentions it") + ", by @" + p.author() + ")").toList())
+                + ". Make sure this isn't a duplicate.";
+    }
+
+    private PrOut readPr(String json) {
+        try {
+            return mapper.readValue(json, PrOut.class);
+        } catch (Exception e) {
+            throw new IllegalStateException("Unreadable PR draft", e);
+        }
+    }
+
+    /**
+     * Opens the PR: brings your fork's base branch up to date (so the push sends only the fix), pushes the commit to
+     * a new branch there (never a force push), and opens the PR from it. If the PR is refused after the push, the
+     * branch stays; opening again pushes nothing new.
+     */
+    private Posted openPr(Draft draft, DeskThread t, String login) {
+        PrOut pr = readPr(draft.payload);
+        if (pr.headRepo() == null || pr.headRef() == null) throw new IllegalStateException("Preview it again before opening the PR");
+        try {
+            writes.syncFork(pr.headRepo(), pr.base());
+        } catch (GitHubWriter.WriteFailed e) {
+            // Not needed for the push to work, only to keep it small (a fork whose branch diverged can't sync).
+        }
+        try {
+            writes.push(t.repo(), t.number(), pr.headRepo(), pr.headRef(), pr.from(), pr.to(), null);
+        } catch (GitHubWriter.WriteFailed e) {
+            throw new IllegalStateException("The push to " + pr.headRepo() + " didn't go through: " + e.getMessage());
+        }
+        String head = pr.headRepo().substring(0, pr.headRepo().indexOf('/')) + ":" + pr.headRef();
+        JsonNode response;
+        try {
+            response = writes.createPull(pr.repo(), pr.title(), head, pr.base(), pr.body());
+        } catch (GitHubWriter.WriteFailed e) {
+            throw new IllegalStateException("The commit is on " + pr.headRepo() + ":" + pr.headRef()
+                    + ", but GitHub refused the PR: " + githubMessage(e));
+        }
+        String url = response.path("html_url").asText(null);
+        if (url == null) throw new IllegalStateException("GitHub didn't say where the PR is. Check " + pr.repo());
+        QuarkusTransaction.requiringNew().run(() -> {
+            Draft d = Draft.findById(draft.id);
+            d.state = Draft.POSTED;
+            d.postedUrl = url;
+            d.postedAt = Instant.now();
+            GitHubAction a = new GitHubAction();
+            a.threadId = t.id;
+            a.draftId = draft.id;
+            a.kind = "pr";
+            a.request = draft.payload;
+            a.resultUrl = url;
+            a.login = login;
+            a.persist();
+            Turn.add(t.id, Turn.SYSTEM, null, "You opened the PR: " + url);
+        });
+        live.changed(t.itemKey);
+        return new Posted(url, null);
     }
 
     /** Fills in a push draft's target branch, and refuses when it can't be pushed to. */

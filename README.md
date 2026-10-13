@@ -6,12 +6,22 @@ Design doc: <https://claude.ai/artifact/HBSU81qqwHHQVUZ7v1VD3E>
 
 **Phases 1 and 2 are built:** the board, plus agent threads. **Review** (PRs), **Investigate** (issues) and **Ask** (either) start an agent on [elf-runner](../elf-runner), which streams its work into a thread on the item. You follow up in the thread, then edit, discard or post the draft it produces. Merging and opening PRs come in Phase 3.
 
+## Tabs
+
+- **Dashboard** (the start page): one sentence per tab on what needs you there.
+- **GitHub**: the board below. **Review**, **Investigate** and the CI and conflict actions start the agent and leave you on the board: the row shows **Agent working**, then **Answer ready** or **Draft ready**. **Ask** opens the item, since you type the question there.
+- **Fix it** (on an issue's page, once the agent has answered): the agent fixes the issue as one commit on the default branch and drafts the PR. **Open PR…** shows where it goes and warns about open PRs that already mention the issue; **Push and open PR** syncs your fork, pushes the commit to a new `fix-<issue>-<sha>` branch on it (never a force push) and opens the PR.
+- **Email**: **Triage email now** runs [daily-triage](../daily-triage) `--triage-only --no-email` through the runner. It marks noise read and labels it, as its 8 AM email run did, and lists what needs you per Gmail account. Its timer (`daily-triage.timer`) is disabled; `systemctl --user enable --now daily-triage.timer` brings the morning email back.
+- **Zulip**: **Check Zulip now** runs `daily-triage --zulip-only`: the last 24 hours plus older unread mentions, with a digest per topic, marking nothing read.
+
+The desk reads daily-triage's saved runs from `elfdesk.triage.runs-dir` (`~/.config/daily-triage/runs`) and never writes there.
+
 ## Threads and posting
 
 - **One thread per issue or PR,** backed by one resumable Claude session. Follow-ups continue it with the context it has already built up.
 - **Drafts.** When the agent has something postable (a review with inline comments, or a comment), it shows as a draft you can edit, discard or post. A newer draft replaces an older pending one.
 - **Posting takes two steps.** **Post…** shows exactly what will be sent and issues a one-time confirmation. **Post to GitHub** then sends it. If the draft changes in between, or ten minutes pass, you have to preview again. **Close** works the same way, with an inline confirmation. Every write is recorded in the `github_action` table.
-- **Writes go through the runner,** which sends them with the machine's `gh` login for its `GITHUB_USER`. That's the "GitHub CLI" app orgs already approve, so it works wherever Claude Code's `gh` does, and orgs with OAuth App access restrictions don't block it. The desk holds no write token, and its GitHub sign-in only reads (`read:org`). Only `Poster` asks the runner to write, and the runner accepts exactly three requests: post a review, post a comment, close an item. The agent, in its sandbox, has no credentials at all. Posting needs the runner online.
+- **Writes go through the runner,** which sends them with the machine's `gh` login for its `GITHUB_USER`. That's the "GitHub CLI" app orgs already approve, so it works wherever Claude Code's `gh` does, and orgs with OAuth App access restrictions don't block it. The desk holds no write token, and its GitHub sign-in only reads (`read:org`). Only `Poster` asks the runner to write, and the runner accepts only an allowlist of requests (see [elf-runner](../elf-runner)): reviews, comments, new issues and PRs, close and reopen, assign yourself, merges, CI re-runs and approvals. The agent, in its sandbox, has no credentials at all. Posting needs the runner online.
 
 ### mvnpm-dependabot
 
@@ -53,8 +63,8 @@ GitHub OAuth, via `quarkus-oidc`'s GitHub provider. Only logins on `elfdesk.allo
 Signed in to GitHub as **phillip-kruger**, open <https://github.com/settings/applications/new>:
 
 - **Application name:** Elf Desk (local)
-- **Homepage URL:** `http://localhost:7480`
-- **Authorization callback URL:** `http://localhost:7480/auth/callback`
+- **Homepage URL:** `http://houseelves.lan:7777`
+- **Authorization callback URL:** `http://houseelves.lan:7777/auth/callback`
 
 Register it, click **Generate a new client secret**, and put both values in `.env` in this directory (it's git-ignored):
 
@@ -69,7 +79,7 @@ The app asks only for `read:org`: the board reads public data, and writes go thr
 
 ### As a service (what you use)
 
-Elf Desk runs as a systemd user service, `elf-desk.service`, from a packaged build in `~/.local/share/elf-desk/app`. It listens on port 7480 (where the GitHub OAuth callback points), uses the `elfdesk` database in the `elf-desk-pg` container, and reads its secrets from `~/.config/elf-desk/env` (mode 600): `ELFDESK_GITHUB_CLIENT_ID`, `ELFDESK_GITHUB_CLIENT_SECRET`, `ELFDESK_RUNNER_TOKEN`, `ELFDESK_DB_PASSWORD`. It starts after its database and at boot (lingering is on).
+Elf Desk runs as a systemd user service, `elf-desk.service`, from a packaged build in `~/.local/share/elf-desk/app`. It listens on port 7777 (where the GitHub OAuth callback points), uses the `elfdesk` database in the `elf-desk-pg` container, and reads its secrets from `~/.config/elf-desk/env` (mode 600): `ELFDESK_GITHUB_CLIENT_ID`, `ELFDESK_GITHUB_CLIENT_SECRET`, `ELFDESK_RUNNER_TOKEN`, `ELFDESK_DB_PASSWORD`. It starts after its database and at boot (lingering is on).
 
 ```shell
 ./deploy.sh              # tests, build, install, restart; the only way changes reach the running desk
@@ -97,7 +107,7 @@ The database is the Podman Quadlet `~/.config/containers/systemd/elf-desk-pg.con
 | `ELFDESK_RUNNER_TOKEN` | none (refuse all) | Shared secret for elf-runner |
 | `elfdesk.mvnpm.config` | `~/.config/mvnpm-dependabot/config` | The mvnpm elf's config (for `REPOS`) |
 | `elfdesk.mvnpm.state-dir` | `~/.local/state/mvnpm-dependabot` | The mvnpm elf's `state.json` |
-| `quarkus.http.port` | `7480` | |
+| `quarkus.http.port` | `7777` | |
 | `QUARKUS_DATASOURCE_JDBC_URL` etc. | Dev Services | Postgres outside dev/test |
 
 ## Tests

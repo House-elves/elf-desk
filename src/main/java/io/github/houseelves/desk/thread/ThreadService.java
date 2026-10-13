@@ -73,8 +73,10 @@ public class ThreadService {
             Draft d = Draft.pendingFor(t.id);
             ThreadView.DraftView draft = d == null ? null
                     : d.kind.equals(Draft.PUSH)
-                            ? new ThreadView.DraftView(d.id, d.kind, null, mapper.readValue(d.payload, PushOut.class), d.created)
-                            : new ThreadView.DraftView(d.id, d.kind, readDraft(d.payload), null, d.created);
+                            ? new ThreadView.DraftView(d.id, d.kind, null, mapper.readValue(d.payload, PushOut.class), null, d.created)
+                    : d.kind.equals(Draft.PR)
+                            ? new ThreadView.DraftView(d.id, d.kind, null, null, mapper.readValue(d.payload, PrOut.class), d.created)
+                            : new ThreadView.DraftView(d.id, d.kind, readDraft(d.payload), null, null, d.created);
             List<ThreadView.PostedView> posted = Draft.<Draft>list("threadId = ?1 and state = ?2 order by postedAt",
                     t.id, Draft.POSTED).stream()
                     .map(x -> new ThreadView.PostedView(x.kind, x.postedUrl, x.postedAt)).toList();
@@ -83,16 +85,34 @@ public class ThreadService {
         });
     }
 
-    /** working (a job is open), draft (something waits to be posted) or idle, for every thread. */
+    /**
+     * For every thread: working (a job is open), draft (something waits to be posted), answered (the agent answered
+     * since the thread page last showed it) or idle.
+     */
     public Map<String, ThreadView.Summary> summaries() {
         return QuarkusTransaction.requiringNew().call(() -> {
             Map<String, ThreadView.Summary> out = new HashMap<>();
             for (DeskThread t : DeskThread.<DeskThread>listAll()) {
                 String state = Job.openFor(t.id) != null ? "working"
-                        : Draft.pendingFor(t.id) != null ? "draft" : "idle";
+                        : Draft.pendingFor(t.id) != null ? "draft"
+                        : unseenAnswer(t) ? "answered" : "idle";
                 out.put(t.itemKey, new ThreadView.Summary(t.itemKey, state));
             }
             return out;
+        });
+    }
+
+    private static boolean unseenAnswer(DeskThread t) {
+        return t.seen == null
+                ? Turn.count("threadId = ?1 and role = ?2", t.id, Turn.AGENT) > 0
+                : Turn.count("threadId = ?1 and role = ?2 and created > ?3", t.id, Turn.AGENT, t.seen) > 0;
+    }
+
+    /** The thread page showed the thread: its answers so far are no longer new. */
+    public void seen(String itemKey) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            DeskThread t = DeskThread.byKey(itemKey);
+            if (t != null) t.seen = Instant.now();
         });
     }
 
@@ -110,8 +130,8 @@ public class ThreadService {
      */
     public ThreadView start(String itemKey, String action, String question, String login, String token, String extra,
             ObjectNode checkoutExtras) {
-        if (!List.of(Prompts.REVIEW, Prompts.INVESTIGATE, Prompts.ASK, Prompts.CI_WHY, Prompts.CI_FIX, Prompts.CONFLICTS)
-                .contains(action)) {
+        if (!List.of(Prompts.REVIEW, Prompts.INVESTIGATE, Prompts.FIX, Prompts.ASK, Prompts.CI_WHY, Prompts.CI_FIX,
+                Prompts.CONFLICTS).contains(action)) {
             throw new IllegalArgumentException("Unknown action " + action);
         }
         if (action.equals(Prompts.ASK) && (question == null || question.isBlank())) {
@@ -124,7 +144,7 @@ public class ThreadService {
                 && ctx.kind() != Item.Kind.PR) {
             throw new IllegalArgumentException(itemKey + " is an issue, not a PR");
         }
-        if (action.equals(Prompts.INVESTIGATE) && ctx.kind() != Item.Kind.ISSUE) {
+        if ((action.equals(Prompts.INVESTIGATE) || action.equals(Prompts.FIX)) && ctx.kind() != Item.Kind.ISSUE) {
             throw new IllegalArgumentException(itemKey + " is a PR; use Review");
         }
         String material = ctx.kind() == Item.Kind.ISSUE ? join(extra, openPrsFor(token, itemKey)) : extra;
@@ -137,7 +157,8 @@ public class ThreadService {
             String prompt = fresh
                     ? Prompts.start(action, ctx, login, question, material)
                     : Prompts.again(action, ctx, question, material, login);
-            String untrusted = fresh ? ctx.untrustedText() : "";
+            // Every action sends the item's current text, which may have new comments since the last check.
+            String untrusted = ctx.untrustedText();
             ObjectNode checkout = (ObjectNode) mapper.readTree(checkout(ctx));
             checkout.put("reset", true); // a new action starts from the PR's current head
             if (Prompts.isOwn(ctx, login)) checkout.put("own", true); // your PR: reviews can only be COMMENT
@@ -216,6 +237,12 @@ public class ThreadService {
         String key = QuarkusTransaction.requiringNew().call(() -> {
             Draft d = pending(draftId);
             if (d.kind.equals(Draft.PUSH)) throw new IllegalArgumentException("Commits can't be edited here");
+            if (d.kind.equals(Draft.PR)) {
+                if (edited.title() == null || edited.title().isBlank()) throw new IllegalArgumentException("The PR needs a title");
+                PrOut pr = mapper.readValue(d.payload, PrOut.class);
+                d.payload = mapper.writeValueAsString(pr.withText(edited.title().trim(), edited.body() == null ? "" : edited.body()));
+                return threadKey(d.threadId);
+            }
             if (d.kind.equals(Draft.COMMENT) && !edited.comments().isEmpty()) {
                 throw new IllegalArgumentException("A comment can't have inline comments");
             }
@@ -307,7 +334,8 @@ public class ThreadService {
             if (session != null) t.claudeSession = session;
             t.updated = Instant.now();
             Turn.add(t.id, Turn.AGENT, j.action, result.reply());
-            if (result.draft() != null && result.draft().body() != null) {
+            // A "pr" draft is the text for the agent's commit: it becomes a PR draft with the commit, below.
+            if (result.draft() != null && result.draft().body() != null && !Draft.PR.equals(result.draft().kind())) {
                 Draft.update("state = ?1 where threadId = ?2 and state = ?3", Draft.DISCARDED, t.id, Draft.PENDING);
                 Draft d = new Draft();
                 d.threadId = t.id;
@@ -328,7 +356,8 @@ public class ThreadService {
                 }
                 d.persist();
             }
-            pushDraft(t, j, git);
+            if (t.itemKind.equals("PR")) pushDraft(t, j, git);
+            else prDraft(t, j, git, result.draft());
             return t.itemKey;
         });
         finish(jobId, key);
@@ -345,12 +374,41 @@ public class ThreadService {
             return;
         }
         if (git == null || !git.path("commits").isArray() || git.path("commits").isEmpty()) return;
-        if (!t.itemKind.equals("PR")) {
-            Turn.add(t.id, Turn.SYSTEM, null, "The agent made commits in its worktree; issues have no branch to push them to.");
-            return;
-        }
         JsonNode push = mapper.readTree(j.checkout).path("push");
         persistPush(t, j.id, pushOut(git, push.path("headRepo").asText(null), push.path("headRef").asText(null)));
+    }
+
+    /**
+     * The agent committed in an issue's worktree: offer its commit (the runner makes it one, on the default branch)
+     * as a new PR, with the title and body it drafted. Your fork and the branch are worked out when you preview.
+     */
+    private void prDraft(DeskThread t, Job j, JsonNode git, AgentOutput.DraftOut drafted) throws Exception {
+        if (git != null && git.hasNonNull("error")) {
+            Turn.add(t.id, Turn.SYSTEM, null, git.path("error").asText() + ". Nothing is offered as a PR.");
+            return;
+        }
+        if (git == null || !git.path("commits").isArray() || git.path("commits").isEmpty()) return;
+        if (git.path("commits").size() != 1 || git.path("base").asText("").isBlank()) {
+            Turn.add(t.id, Turn.SYSTEM, null, "The agent's commits couldn't be made into one commit on the default branch,"
+                    + " so nothing is offered as a PR.");
+            return;
+        }
+        PushOut.Commit commit = new PushOut.Commit(git.path("commits").get(0).path("sha").asText(),
+                git.path("commits").get(0).path("subject").asText());
+        boolean texts = drafted != null && Draft.PR.equals(drafted.kind());
+        String title = texts && drafted.title() != null && !drafted.title().isBlank() ? drafted.title().trim() : commit.subject();
+        String fixes = "Fixes #" + t.number();
+        String body = texts && drafted.body() != null && !drafted.body().isBlank() ? drafted.body().strip() : "";
+        if (!body.contains(fixes)) body = body.isEmpty() ? fixes : body + "\n\n" + fixes;
+        PrOut pr = new PrOut(t.repo(), git.path("base").asText(), null, null, title, body, git.path("from").asText(),
+                git.path("to").asText(), List.of(commit), git.path("diffstat").asText(""));
+        Draft.update("state = ?1 where threadId = ?2 and state = ?3", Draft.DISCARDED, t.id, Draft.PENDING);
+        Draft d = new Draft();
+        d.threadId = t.id;
+        d.jobId = j.id;
+        d.kind = Draft.PR;
+        d.payload = mapper.writeValueAsString(pr);
+        d.persist();
     }
 
     private PushOut pushOut(JsonNode git, String headRepo, String headRef) {

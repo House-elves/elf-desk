@@ -1,6 +1,7 @@
 package io.github.houseelves.desk.api;
 
 import java.util.List;
+import java.util.Locale;
 
 import io.github.houseelves.desk.agent.AgentOutput;
 import io.github.houseelves.desk.board.Board;
@@ -12,6 +13,8 @@ import io.github.houseelves.desk.github.Item;
 import io.github.houseelves.desk.ignore.IgnoreService;
 import io.github.houseelves.desk.runner.Live;
 import io.github.houseelves.desk.merge.MergeService;
+import io.github.houseelves.desk.triage.TriageElf;
+import io.github.houseelves.desk.triage.TriageRuns;
 import io.github.houseelves.desk.mvnpm.MvnpmElf;
 import io.github.houseelves.desk.mvnpm.MvnpmRuns;
 import io.github.houseelves.desk.runner.RunnerHub;
@@ -81,6 +84,12 @@ public class DeskApi {
     @Inject
     MvnpmRuns mvnpmRuns;
 
+    @Inject
+    TriageElf triage;
+
+    @Inject
+    TriageRuns triageRuns;
+
     // ---- board ----
 
     /** The board. {@code refresh} skips the short GitHub cache. */
@@ -94,7 +103,6 @@ public class DeskApi {
 
     // ---- threads ----
 
-    /** The thread for one item (owner/repo#number), or null if there is none yet. */
     /**
      * The item as it is on GitHub now (null once it's closed or merged), for the thread page: what it offers
      * depends on it, and it changes with what you do there. The board's copy is updated too.
@@ -104,8 +112,11 @@ public class DeskApi {
         return boards.refreshItem(user.login(), user.githubToken(), itemKey);
     }
 
+    /** The thread for one item (owner/repo#number), or null if there is none yet. Only the thread page asks: its answers count as seen. */
     public ThreadView thread(String itemKey) {
-        return threads.view(itemKey);
+        ThreadView v = threads.view(itemKey);
+        if (v != null && v.job() == null) threads.seen(itemKey);
+        return v;
     }
 
     /** Start an agent: action is review (PR), investigate (issue) or ask (question required). */
@@ -131,7 +142,7 @@ public class DeskApi {
 
     /** Step one of posting: exactly what will be sent, and a one-time confirmation. */
     public Poster.Preview previewPost(long draftId) {
-        return poster.preview(draftId, user.githubToken());
+        return poster.preview(draftId, user.githubToken(), user.login());
     }
 
     /** Step two: post to GitHub as you, through the runner's gh login. */
@@ -162,6 +173,34 @@ public class DeskApi {
     public MvnpmRuns.State mvnpmRun(String repo, Integer pr) {
         mvnpmRuns.run(repo, pr);
         return mvnpmRuns.state();
+    }
+
+    // ---- daily-triage: the email triage and the Zulip digest ----
+
+    /** Which daily-triage runs are going, and the log of any that failed. */
+    public TriageRuns.State triageState() {
+        return triageRuns.state();
+    }
+
+    /** Run daily-triage now: "email" (triage unread Gmail, nothing emailed) or "zulip" (the last day's digest). */
+    public TriageRuns.State triageRun(String mode) {
+        triageRuns.run(mode);
+        return triageRuns.state();
+    }
+
+    /** Saved runs of one kind ("email" or "zulip"), newest first. */
+    public List<TriageElf.RunInfo> triageRuns(String kind) {
+        return triage.runs(TriageElf.Kind.valueOf(kind.toUpperCase(Locale.ROOT)));
+    }
+
+    /** An email triage run (the newest when runId is null), or null when there is none. */
+    public TriageElf.Email email(String runId) {
+        return triage.email(runId);
+    }
+
+    /** A Zulip run (the newest when runId is null), or null when there is none. */
+    public TriageElf.Zulip zulip(String runId) {
+        return triage.zulip(runId);
     }
 
     // ---- what's new ----
