@@ -295,7 +295,7 @@ class ThreadFlowTest {
         verify(writes, never()).push(any(), anyInt(), any(), any(), any(), any(), any());
 
         when(writes.createPull("quarkusio/quarkus", "Let the Dev UI set the root log level", "phillip-kruger:fix-32850-aaaaaaa",
-                "main", "Lists the root logger.\n\nFixes #32850"))
+                "main", "Lists the root logger.\n\nFixes #32850", true))
                 .thenReturn(mapper.readTree("{\"html_url\": \"https://github.com/quarkusio/quarkus/pull/57300\"}"));
         Poster.Posted posted = poster.post(draftId, p.confirm(), "phillip-kruger");
         assertEquals("https://github.com/quarkusio/quarkus/pull/57300", posted.url());

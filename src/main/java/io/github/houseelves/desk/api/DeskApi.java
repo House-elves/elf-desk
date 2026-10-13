@@ -145,9 +145,9 @@ public class DeskApi {
         return poster.preview(draftId, user.githubToken(), user.login());
     }
 
-    /** Step two: post to GitHub as you, through the runner's gh login. */
-    public Poster.Posted post(long draftId, String confirm) {
-        Poster.Posted posted = poster.post(draftId, confirm, user.login());
+    /** Step two: post to GitHub as you, through the runner's gh login. asDraft: a PR opens as a draft (else ready). */
+    public Poster.Posted post(long draftId, String confirm, Boolean asDraft) {
+        Poster.Posted posted = poster.post(draftId, confirm, user.login(), asDraft == null || asDraft);
         // A push starts CI again: show it running now, not the old result until the next fetch.
         if (posted.pushedTo() != null) boards.markCi(user.login(), posted.pushedTo(), "PENDING");
         return posted;

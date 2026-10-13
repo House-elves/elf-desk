@@ -58,12 +58,13 @@ public class GitHubWriter {
     }
 
     /**
-     * Opens a draft PR from {@code head} ("you:branch", the runner refuses anyone else's fork) onto {@code base}. Always
-     * a draft: you read the change on GitHub, then {@link #readyForReview}.
+     * Opens a PR from {@code head} ("you:branch", the runner refuses anyone else's fork) onto {@code base}, as a draft
+     * ({@link #readyForReview} later) or ready for review.
      */
-    public JsonNode createPull(String repo, String title, String head, String base, String body) {
+    public JsonNode createPull(String repo, String title, String head, String base, String body, boolean draft) {
         return write("POST", "/repos/" + repo + "/pulls",
-                Map.of("title", title, "head", head, "base", base, "body", body, "draft", true), RunnerHub.PR_SINCE);
+                Map.of("title", title, "head", head, "base", base, "body", body, "draft", draft),
+                draft ? RunnerHub.PR_SINCE : RunnerHub.READY_PR_SINCE);
     }
 
     /** Marks your own draft PR ready for review (the runner refuses anyone else's). */

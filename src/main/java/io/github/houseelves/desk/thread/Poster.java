@@ -116,6 +116,11 @@ public class Poster {
     }
 
     public Posted post(long draftId, String confirm, String login) {
+        return post(draftId, confirm, login, true);
+    }
+
+    /** @param asDraft for a PR draft: open it as a draft PR (true) or ready for review straight away (false) */
+    public Posted post(long draftId, String confirm, String login, boolean asDraft) {
         Pending p = confirmations.remove(draftId);
         Draft draft = QuarkusTransaction.requiringNew().call(() -> pendingDraft(draftId));
         if (p == null || !p.token().equals(confirm) || Instant.now().isAfter(p.expires())
@@ -124,7 +129,7 @@ public class Poster {
         }
         DeskThread t = QuarkusTransaction.requiringNew().call(() -> DeskThread.findById(draft.threadId));
         if (draft.kind.equals(Draft.PUSH)) return push(draft, t, login);
-        if (draft.kind.equals(Draft.PR)) return openPr(draft, t, login);
+        if (draft.kind.equals(Draft.PR)) return openPr(draft, t, login, asDraft);
         AgentOutput.DraftOut out = read(draft.payload);
         if (draft.kind.equals(Draft.ISSUE)) return openIssue(draft, out, t, login);
 
@@ -364,12 +369,12 @@ public class Poster {
     }
 
     /**
-     * Opens the PR, as a draft: brings your fork's base branch up to date (so the push sends only the fix), pushes the
-     * commit to a new branch there (never a force push), and opens the draft PR from it. You read the change on
-     * GitHub, then mark it ready for review ({@link #ready}). If the PR is refused after the push, the
-     * branch stays; opening again pushes nothing new.
+     * Opens the PR: brings your fork's base branch up to date (so the push sends only the fix), pushes the commit to a
+     * new branch there (never a force push), and opens the PR from it, as a draft (mark it ready for review later,
+     * {@link #ready}) or ready for review straight away. If the PR is refused after the push, the branch stays;
+     * opening again pushes nothing new.
      */
-    private Posted openPr(Draft draft, DeskThread t, String login) {
+    private Posted openPr(Draft draft, DeskThread t, String login, boolean asDraft) {
         PrOut pr = readPr(draft.payload);
         if (pr.headRepo() == null || pr.headRef() == null) throw new IllegalStateException("Preview it again before opening the PR");
         try {
@@ -385,7 +390,7 @@ public class Poster {
         String head = pr.headRepo().substring(0, pr.headRepo().indexOf('/')) + ":" + pr.headRef();
         JsonNode response;
         try {
-            response = writes.createPull(pr.repo(), pr.title(), head, pr.base(), pr.body());
+            response = writes.createPull(pr.repo(), pr.title(), head, pr.base(), pr.body(), asDraft);
         } catch (GitHubWriter.WriteFailed e) {
             throw new IllegalStateException("The commit is on " + pr.headRepo() + ":" + pr.headRef()
                     + ", but GitHub refused the PR: " + githubMessage(e));
@@ -405,8 +410,9 @@ public class Poster {
             a.resultUrl = url;
             a.login = login;
             a.persist();
-            Turn.add(t.id, Turn.SYSTEM, null, "You opened a draft PR: " + url + ". Read the change on GitHub, then mark it"
-                    + " ready for review from its page here (or on GitHub).");
+            Turn.add(t.id, Turn.SYSTEM, null, asDraft
+                    ? "You opened a draft PR: " + url + ". Mark it ready for review from its page here (or on GitHub)."
+                    : "You opened a PR: " + url);
         });
         live.changed(t.itemKey);
         return new Posted(url, null);

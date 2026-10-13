@@ -75,6 +75,7 @@ public class RunnerHub {
     public static final String TRIAGE_SINCE = "0.12.0";
     public static final String EMAIL_TRIAGE_SINCE = "0.13.0";
     static final String PR_SINCE = "0.15.0";
+    static final String READY_PR_SINCE = "0.21.0";
 
     /** Requests waiting for the runner's answer, by request id. */
     private final Map<String, CompletableFuture<JsonNode>> pending = new ConcurrentHashMap<>();

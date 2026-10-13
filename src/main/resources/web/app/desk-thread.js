@@ -410,13 +410,15 @@ class DeskThread extends LitElement {
         }
     }
 
-    async _post() {
+    /** asDraft: a PR opens as a draft unless false (for other drafts it means nothing; buttons pass their click event). */
+    async _post(asDraft) {
+        asDraft = asDraft !== false;
         this._busy = true;
-        this._doing = 'post';
+        this._doing = asDraft ? 'post' : 'post-ready';
         this._error = null;
         try {
             const desk = await api();
-            const r = await desk.post({ draftId: this._preview.draftId, confirm: this._preview.confirm });
+            const r = await desk.post({ draftId: this._preview.draftId, confirm: this._preview.confirm, asDraft });
             this._posted = r.url;
             this._preview = null;
             // A push starts CI again: drop the old result (and its CI failing menu) until the board catches up.
@@ -723,9 +725,9 @@ class DeskThread extends LitElement {
     _renderPr(dv) {
         const p = dv.pr;
         return html`
-            <section class="draft" aria-label="Draft PR">
+            <section class="draft" aria-label="New PR">
                 <div class="draft-head">
-                    <b>Draft PR on ${p.repo}</b>
+                    <b>New PR on ${p.repo}</b>
                     <span class="chip">1 commit on ${p.base}</span>
                     <span class="muted">Not pushed or opened yet</span>
                 </div>
@@ -736,7 +738,7 @@ class DeskThread extends LitElement {
                     ${this._renderChange(p.patch, p.patchCut, p.diffstat)}
                 </div>
                 <div class="draft-acts">
-                    <button class="primary" ?disabled=${this._busy || this._preview} @click=${this._previewPost}>${this._spin('preview')}Open draft PR…</button>
+                    <button class="primary" ?disabled=${this._busy || this._preview} @click=${this._previewPost}>${this._spin('preview')}Open PR…</button>
                     <button ?disabled=${this._busy} @click=${this._beginEdit}>Edit</button>
                     <button class="quiet danger" ?disabled=${this._busy} @click=${() => this._do(d2 => d2.discardDraft({ draftId: dv.id }), 'discard')}>
                         ${this._spin('discard')}Discard</button>
@@ -748,8 +750,8 @@ class DeskThread extends LitElement {
 
     _renderEditPr() {
         return html`
-            <section class="draft" aria-label="Edit draft PR">
-                <div class="draft-head"><b>Edit draft PR</b></div>
+            <section class="draft" aria-label="Edit PR">
+                <div class="draft-head"><b>Edit PR</b></div>
                 <div class="draft-body">
                     <label class="field">Title <input type="text" id="issue-title" .value=${this._edit.title ?? ''}></label>
                     <label class="field">Description <textarea id="draft-body" .value=${this._edit.body}></textarea></label>
@@ -900,13 +902,14 @@ class DeskThread extends LitElement {
                     <div class="draft-body">
                         ${p.warning ? html`<p class="error" role="alert">${p.warning}</p>` : ''}
                         <p>This syncs ${p.pr.headRepo}'s ${p.pr.base} with ${p.pr.repo}, pushes the commit to a new branch
-                            ${p.pr.headRef} there (never a force push), and opens this as a <b>draft</b> PR on ${p.pr.base} under
-                            your name. Read the change on GitHub, then mark it ready for review.</p>
+                            ${p.pr.headRef} there (never a force push), and opens this PR on ${p.pr.base} under your name.
+                            Open it ready for review, or as a draft to mark ready later.</p>
                         <h3 class="issue-title">${p.pr.title}</h3>
                         <div class="md">${markdown(p.pr.body)}</div>
                     </div>
                     <div class="draft-acts">
-                        <button class="primary" ?disabled=${this._busy} @click=${this._post}>${this._spin('post')}${this._doing === 'post' ? 'Opening' : 'Push and open draft PR'}</button>
+                        <button class="primary" ?disabled=${this._busy} @click=${() => this._post(false)}>${this._spin('post-ready')}${this._doing === 'post-ready' ? 'Opening' : 'Push and open PR'}</button>
+                        <button ?disabled=${this._busy} @click=${() => this._post(true)}>${this._spin('post')}${this._doing === 'post' ? 'Opening' : 'Push and open as draft'}</button>
                         <button class="quiet" ?disabled=${this._busy} @click=${() => { this._preview = null; }}>Cancel</button>
                     </div>
                 </section>
