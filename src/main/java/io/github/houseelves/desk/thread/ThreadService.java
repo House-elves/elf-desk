@@ -401,7 +401,8 @@ public class ThreadService {
         String body = texts && drafted.body() != null && !drafted.body().isBlank() ? drafted.body().strip() : "";
         if (!body.contains(fixes)) body = body.isEmpty() ? fixes : body + "\n\n" + fixes;
         PrOut pr = new PrOut(t.repo(), git.path("base").asText(), null, null, title, body, git.path("from").asText(),
-                git.path("to").asText(), List.of(commit), git.path("diffstat").asText(""));
+                git.path("to").asText(), List.of(commit), git.path("diffstat").asText(""), git.path("patch").asText(null),
+                git.path("patchCut").asBoolean());
         Draft.update("state = ?1 where threadId = ?2 and state = ?3", Draft.DISCARDED, t.id, Draft.PENDING);
         Draft d = new Draft();
         d.threadId = t.id;
@@ -416,7 +417,7 @@ public class ThreadService {
         git.path("commits").forEach(c -> commits.add(new PushOut.Commit(c.path("sha").asText(), c.path("subject").asText())));
         return new PushOut(headRepo, headRef, git.path("from").asText(), git.path("to").asText(), List.copyOf(commits),
                 git.path("diffstat").asText(""), git.path("base").asText(null), git.path("squashed").asBoolean(),
-                git.path("replaces").asInt());
+                git.path("replaces").asInt(), git.path("patch").asText(null), git.path("patchCut").asBoolean());
     }
 
     private void persistPush(DeskThread t, Long jobId, PushOut out) throws Exception {

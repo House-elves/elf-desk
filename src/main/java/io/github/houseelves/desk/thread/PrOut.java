@@ -12,15 +12,16 @@ import java.util.List;
  * @param headRef  the new branch on it, worked out when you preview
  * @param from     the default branch commit the fix is on
  * @param to       the fix, one commit on top of {@code from}
+ * @param patch    the fix as a unified diff, to read before opening the PR; cut short when {@code patchCut}
  */
 public record PrOut(String repo, String base, String headRepo, String headRef, String title, String body, String from,
-        String to, List<PushOut.Commit> commits, String diffstat) {
+        String to, List<PushOut.Commit> commits, String diffstat, String patch, boolean patchCut) {
 
     public PrOut withTarget(String newHeadRepo, String newHeadRef) {
-        return new PrOut(repo, base, newHeadRepo, newHeadRef, title, body, from, to, commits, diffstat);
+        return new PrOut(repo, base, newHeadRepo, newHeadRef, title, body, from, to, commits, diffstat, patch, patchCut);
     }
 
     public PrOut withText(String newTitle, String newBody) {
-        return new PrOut(repo, base, headRepo, headRef, newTitle, newBody, from, to, commits, diffstat);
+        return new PrOut(repo, base, headRepo, headRef, newTitle, newBody, from, to, commits, diffstat, patch, patchCut);
     }
 }

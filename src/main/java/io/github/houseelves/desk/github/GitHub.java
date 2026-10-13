@@ -400,6 +400,29 @@ public class GitHub {
                 pr.path("author").path("login").asText("").equalsIgnoreCase(data.path("viewer").path("login").asText("-")));
     }
 
+    /** A PR's change as a unified diff, as GitHub's "Files changed" shows it. {@code cut}: longer than asked for. */
+    public record Diff(String text, boolean cut) {
+    }
+
+    /** A PR's diff, at most {@code maxChars}; null when GitHub won't give one (too large, or no such PR). */
+    public Diff prDiff(String token, String repo, int number, int maxChars) {
+        try {
+            var r = HTTP.send(HttpRequest.newBuilder(URI.create("https://api.github.com/repos/" + repo + "/pulls/" + number))
+                    .header("Authorization", "Bearer " + token).header("Accept", "application/vnd.github.diff")
+                    .timeout(Duration.ofSeconds(60)).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (r.statusCode() != 200) {
+                LOG.debugf("No diff for %s#%d: HTTP %d", repo, number, r.statusCode());
+                return null;
+            }
+            String text = r.body();
+            return text.length() <= maxChars ? new Diff(text, false) : new Diff(text.substring(0, maxChars), true);
+        } catch (Exception e) {
+            LOG.warnf("Couldn't read the diff of %s#%d: %s", repo, number, e.getMessage());
+            return null;
+        }
+    }
+
     /**
      * The last {@code maxChars} of a GitHub Actions job's log. GitHub answers with a redirect to blob storage,
      * which must be fetched without the token, so this follows it by hand.

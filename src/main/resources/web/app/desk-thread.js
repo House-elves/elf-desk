@@ -5,6 +5,7 @@ import './merge-control.js';
 import './ci-menu.js';
 import './conflict-menu.js';
 import './pr-activity.js';
+import './diff-view.js';
 import { lastBoard } from './desk-board.js';
 
 const EVENTS = {
@@ -40,6 +41,9 @@ class DeskThread extends LitElement {
         _toggled: { state: true },
         _recap: { state: true },
         _commits: { state: true },
+        _diff: { state: true },
+        _diffOpen: { state: true },
+        _changeOpen: { state: true },
         _rebaseAsked: { state: true },
     };
 
@@ -49,6 +53,8 @@ class DeskThread extends LitElement {
         .layout { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 40px; align-items: start; margin-top: 18px; }
         .convo { display: grid; gap: 22px; min-width: 0; max-width: 780px; }
         .title-block { display: grid; gap: 8px; }
+        .files, .change { display: grid; gap: 10px; min-width: 0; }
+        .files-toggle { justify-self: start; }
         .title-block h1 { font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.02em; }
         .title-block h1 a { color: var(--ink); text-decoration: none; }
         .title-block h1 a:hover { text-decoration: underline; }
@@ -181,6 +187,9 @@ class DeskThread extends LitElement {
             this._toggled = new Map();
             this._recap = false;
             this._commits = 0;
+            this._diff = null;
+            this._diffOpen = false;
+            this._changeOpen = false;
             this._rebaseAsked = false;
             this._scrollPending = true;
             this._load();
@@ -247,6 +256,46 @@ class DeskThread extends LitElement {
             if (item) rememberItem(item);
             return null;
         }, 'ready');
+    }
+
+    /** The PR's "Files changed", fetched from GitHub the first time you open it. */
+    async _toggleDiff() {
+        this._diffOpen = !this._diffOpen;
+        if (!this._diffOpen || (this._diff && this._diff !== 'failed')) return;
+        this._diff = 'loading';
+        try {
+            const desk = await api();
+            this._diff = (await desk.prDiff({ itemKey: this.itemKey })) ?? 'failed';
+        } catch (e) {
+            this._diff = 'failed';
+        }
+    }
+
+    _renderFiles(url) {
+        const d = this._diff;
+        return html`
+            <section class="files" aria-label="Files changed">
+                <button class="files-toggle" aria-expanded=${this._diffOpen ? 'true' : 'false'} @click=${this._toggleDiff}>
+                    ${this._diffOpen ? 'Hide files changed' : 'Show files changed'}</button>
+                ${!this._diffOpen ? ''
+                    : d === 'loading' ? html`<div class="skeleton" style="height:120px"></div>`
+                    : d === 'failed' ? html`<p class="muted small">GitHub didn't give the diff (it may be too big).
+                        <a href="${url}/files" target="_blank" rel="noopener">See it on GitHub</a>.</p>`
+                    : d ? html`<diff-view .diff=${d.text} .cut=${d.cut} .url=${url + '/files'}></diff-view>` : ''}
+            </section>`;
+    }
+
+    /** A draft's change (commits to push, or a fix to open as a PR), to read before confirming. */
+    _renderChange(patch, cut, diffstat) {
+        if (!patch) return diffstat ? html`<pre class="lines" style="max-height:12rem">${diffstat}</pre>` : '';
+        return html`
+            <div class="change">
+                <button class="files-toggle" aria-expanded=${this._changeOpen ? 'true' : 'false'}
+                        @click=${() => { this._changeOpen = !this._changeOpen; }}>
+                    ${this._changeOpen ? 'Hide the change' : 'Show the change'}</button>
+                ${this._changeOpen ? html`<diff-view .diff=${patch} .cut=${cut}></diff-view>`
+                    : diffstat ? html`<pre class="lines" style="max-height:12rem">${diffstat}</pre>` : ''}
+            </div>`;
     }
 
     _squash() {
@@ -400,6 +449,7 @@ class DeskThread extends LitElement {
                         <h1>${url ? html`<a href=${url} target="_blank" rel="noopener">${title}</a>` : title}</h1>
                     </div>
                     ${this._recap && t ? this._renderRecap(t, kind, item) : ''}
+                    ${kind === 'PR' && url ? this._renderFiles(url) : ''}
                     ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : ''}
                     ${this._posted ? html`<p class="posted"><span class="chip ok">Posted</span>
                         <a href=${this._posted} target="_blank" rel="noopener">${this._posted}</a></p>` : ''}
@@ -658,7 +708,7 @@ class DeskThread extends LitElement {
                 </div>
                 <div class="draft-body">
                     <ul style="margin:0;padding-left:18px">${p.commits.map(c => html`<li><code style="font:13px var(--font-code)">${c.sha.slice(0, 7)}</code> ${c.subject}</li>`)}</ul>
-                    ${p.diffstat ? html`<pre class="lines" style="max-height:12rem">${p.diffstat}</pre>` : ''}
+                    ${this._renderChange(p.patch, p.patchCut, p.diffstat)}
                 </div>
                 <div class="draft-acts">
                     <button class="primary" ?disabled=${this._busy || this._preview} @click=${this._previewPost}>${this._spin('preview')}Push…</button>
@@ -683,7 +733,7 @@ class DeskThread extends LitElement {
                     <h3 class="issue-title">${p.title}</h3>
                     <div class="md">${markdown(p.body)}</div>
                     <ul style="margin:0;padding-left:18px">${p.commits.map(c => html`<li><code style="font:13px var(--font-code)">${c.sha.slice(0, 7)}</code> ${c.subject}</li>`)}</ul>
-                    ${p.diffstat ? html`<pre class="lines" style="max-height:12rem">${p.diffstat}</pre>` : ''}
+                    ${this._renderChange(p.patch, p.patchCut, p.diffstat)}
                 </div>
                 <div class="draft-acts">
                     <button class="primary" ?disabled=${this._busy || this._preview} @click=${this._previewPost}>${this._spin('preview')}Open draft PR…</button>

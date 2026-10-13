@@ -12,15 +12,17 @@ import java.util.List;
  * @param squashed {@code to} is the whole PR as one commit on top of {@code base}: the push replaces the branch
  *                 (force, with a lease on {@code from}) instead of adding to it
  * @param replaces squashed: how many commits the branch had on top of its base
+ * @param patch    the change as a unified diff ({@code from} to {@code to}, or base to {@code to} when squashed), to
+ *                 read before pushing; cut short when {@code patchCut}
  */
 public record PushOut(String headRepo, String headRef, String from, String to, List<Commit> commits, String diffstat,
-        String base, boolean squashed, int replaces) {
+        String base, boolean squashed, int replaces, String patch, boolean patchCut) {
 
     public record Commit(String sha, String subject) {
     }
 
     /** The same push, to the branch worked out when you click Push. */
     public PushOut withTarget(String newHeadRepo, String newHeadRef) {
-        return new PushOut(newHeadRepo, newHeadRef, from, to, commits, diffstat, base, squashed, replaces);
+        return new PushOut(newHeadRepo, newHeadRef, from, to, commits, diffstat, base, squashed, replaces, patch, patchCut);
     }
 }

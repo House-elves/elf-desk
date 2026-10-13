@@ -160,6 +160,13 @@ public class DeskApi {
         return url;
     }
 
+    /** A PR's change as a unified diff (the first 2 MB), or null when GitHub won't give one. */
+    public GitHub.Diff prDiff(String itemKey) {
+        if (!itemKey.matches("[A-Za-z0-9-]+/[A-Za-z0-9._-]+#\\d+")) throw new IllegalArgumentException("Not a PR: " + itemKey);
+        return github.prDiff(user.githubToken(), itemKey.substring(0, itemKey.indexOf('#')),
+                Integer.parseInt(itemKey.substring(itemKey.indexOf('#') + 1)), 2_000_000);
+    }
+
     /** Mark your own draft PR ready for review (through the runner). Returns the PR as it is now. */
     public Item readyForReview(String itemKey) {
         poster.ready(itemKey, user.login());
