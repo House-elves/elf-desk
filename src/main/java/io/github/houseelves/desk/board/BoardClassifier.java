@@ -110,7 +110,7 @@ public final class BoardClassifier {
 
         return new Board(f.login(), f.at(), refreshMinutes, scope.isEmpty(), f.truncated(), laneList,
                 new Board.MvnpmLane(mvnpmInstalled, mvnpmRepos, mvnpmRows), hidden, ignored, Map.of(), false, false,
-                Map.of(), Map.of(), null, Map.of(), Map.of());
+                Map.of(), Map.of(), null, Map.of(), Map.of(), Map.of(), Map.of());
     }
 
     private static boolean isElfHandled(Item item, Set<String> elfRepos) {

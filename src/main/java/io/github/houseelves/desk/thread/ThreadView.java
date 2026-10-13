@@ -32,7 +32,22 @@ public record ThreadView(
     public record PostedView(String kind, String url, Instant at) {
     }
 
-    /** One line per thread for the board. state: working, draft or idle. */
-    public record Summary(String itemKey, String state) {
+    /**
+     * One line per thread for the board.
+     *
+     * @param state      working, draft, answered or idle
+     * @param action     what the agent is doing (working) or last did: review, investigate, fix, ci-why, ...
+     * @param draftKind  the pending draft's kind (review, comment, push, pr, issue), or null
+     * @param since      when the current state began: the job started, the draft or answer arrived, or the last job ended
+     * @param failed     the last job failed or was cancelled (state idle)
+     * @param postedKind what you last posted from here (review, comment, push, pr, issue), or null
+     * @param postedAt   when
+     */
+    public record Summary(String itemKey, String state, String action, String draftKind, java.time.Instant since,
+            boolean failed, String postedKind, java.time.Instant postedAt) {
+
+        public Summary(String itemKey, String state) {
+            this(itemKey, state, null, null, null, false, null, null);
+        }
     }
 }

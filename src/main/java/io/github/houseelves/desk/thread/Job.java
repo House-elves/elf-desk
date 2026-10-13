@@ -64,6 +64,11 @@ public class Job extends PanacheEntityBase {
         return find("threadId = ?1 and state in (?2, ?3)", threadId, QUEUED, RUNNING).firstResult();
     }
 
+    /** The thread's most recent job, open or not, or null. */
+    public static Job latestFor(long threadId) {
+        return find("threadId = ?1 order by id desc", threadId).firstResult();
+    }
+
     public static List<Job> inState(String state) {
         return list("state = ?1 order by id", state);
     }

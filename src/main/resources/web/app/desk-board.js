@@ -1,18 +1,40 @@
 import { LitElement, html, css } from 'lit';
-import { isDependabot, linkedPrChips, linksFor, prRef, rememberLinks, shared, ago, itemChips, ciFailing, ciNeedsApproval, hasConflicts, behind, mergeable, mergeableAnyway, kindIcon, spinner, threadHref, rememberItem } from './shared.js';
+import { linkedPrChips, rememberLinks, shared, ago, itemChips, ciFailing, hasConflicts, mergeableAnyway, kindIcon, spinner, threadHref, rememberItem } from './shared.js';
 import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
 import './merge-control.js';
 import './ci-menu.js';
 import './conflict-menu.js';
 import './pr-activity.js';
-
-const VERDICTS = {
-    SAFE: { cls: 'ok', label: 'Safe' },
-    NOT_SAFE: { cls: 'bad', label: 'Not safe' },
-    NEEDS_HUMAN: { cls: 'warn', label: 'Needs a human look' },
-};
+import './desk-thread.js';
 
 const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
+
+/** The board's sections, by whose move it is (Flow.waiting). Folded ones start closed. */
+const SECTIONS = [
+    { id: 'you', title: 'Your move', empty: 'Nothing needs you right now.' },
+    { id: 'agent', title: 'Agent working' },
+    { id: 'ci', title: 'Waiting on CI' },
+    { id: 'others', title: 'Waiting on others', fold: true },
+    { id: 'done', title: 'Done', fold: true },
+    { id: 'watching', title: 'Just involved', fold: true },
+];
+
+const ROLES = { mine: 'My PR', review: 'Review', issue: 'Issue', mvnpm: 'mvnpm', involved: 'Involved' };
+
+/** Agent actions started straight from a row: the row then shows the agent working. */
+const CALLS = {
+    review: (d, key) => d.start({ itemKey: key, action: 'review', question: null }),
+    investigate: (d, key) => d.start({ itemKey: key, action: 'investigate', question: null }),
+    fix: (d, key) => d.start({ itemKey: key, action: 'fix', question: null }),
+    'ci-why': (d, key) => d.ciWhy({ itemKey: key }),
+    'ci-fix': (d, key) => d.ciFix({ itemKey: key }),
+    'ci-rerun': (d, key) => d.ciRerun({ itemKey: key }),
+    'ci-approve': (d, key) => d.ciApprove({ itemKey: key }),
+    conflicts: (d, key) => d.resolveConflicts({ itemKey: key }),
+    'dependabot-rebase': (d, key) => d.askDependabotToRebase({ itemKey: key }),
+    ready: (d, key) => d.readyForReview({ itemKey: key }),
+    assign: (d, key) => d.assignMe({ itemKey: key }),
+};
 
 /** The last board this page saw: going back to the board shows it at once while it updates. */
 export let lastBoard = null;
@@ -32,31 +54,33 @@ export function joinParts(parts) {
     return joined;
 }
 
+/** How many items wait on each: { you: 3, agent: 1, ... }. */
+export function waitingCounts(b) {
+    const n = {};
+    Object.values(b?.flows ?? {}).forEach(f => { n[f.waiting] = (n[f.waiting] ?? 0) + 1; });
+    return n;
+}
+
 /**
- * What needs you on the board, in one sentence: "2 reviews are waiting for you and 1 of your PRs needs attention."
- * `link(laneId, text)` renders the counts that lead to a lane.
+ * Where things stand, in one sentence: "3 things need your move, an agent is working on 1 and 2 wait on CI."
+ * `link(sectionId, text)` renders the counts that lead to a section.
  */
 export function boardHeadline(b, link) {
-    const lane = id => b.lanes.find(l => l.id === id);
-    const review = lane('review').items.length;
-    const mine = lane('mine').items.filter(i => i.reviewDecision === 'CHANGES_REQUESTED'
-        || i.ci === 'FAILURE' || i.ci === 'ERROR' || i.mergeable === 'CONFLICTING').length;
-    const states = Object.values(b.threads ?? {});
-    const drafts = states.filter(t => t.state === 'draft').length;
-    const working = states.filter(t => t.state === 'working').length;
-    const answered = states.filter(t => t.state === 'answered').length;
-
+    const n = waitingCounts(b);
     const parts = [];
-    if (review) parts.push(html`${link('review', count(review, 'review'))} ${review === 1 ? 'is' : 'are'} waiting for you`);
-    if (mine) parts.push(html`${link('mine', count(mine, 'of your PRs', 'of your PRs'))} ${mine === 1 ? 'needs' : 'need'} attention`);
-    if (drafts) parts.push(html`${count(drafts, 'draft')} ${drafts === 1 ? 'is' : 'are'} ready to post`);
-    if (answered) parts.push(html`${count(answered, 'answer')} ${answered === 1 ? 'is' : 'are'} ready to read`);
-    if (working) parts.push(html`${parts.length ? 'an' : 'An'} agent is working on ${count(working, 'item')}`);
+    if (n.you) parts.push(html`${link('you', count(n.you, 'thing'))} ${n.you === 1 ? 'needs' : 'need'} your move`);
+    if (n.agent) parts.push(html`${parts.length ? 'an' : 'An'} agent is working on ${link('agent', count(n.agent, 'item'))}`);
+    if (n.ci) parts.push(html`${link('ci', count(n.ci, 'item'))} ${n.ci === 1 ? 'waits' : 'wait'} on CI`);
     if (parts.length === 0) return 'Nothing needs you right now.';
     return html`${joinParts(parts)}.`;
 }
 
-/** The morning board: what needs you in one sentence, then the lanes. */
+/**
+ * The GitHub board, by whose move it is. Every item is in a flow (your PR, a PR to review, an assigned issue, an
+ * mvnpm bump); the desk works out its stage and next step (FlowClassifier), and the row shows that with one main
+ * button. A row opens in place to read what the agent made and send it, so you rarely leave the board.
+ * Keys: j/k move between rows, Enter runs the main step, o opens or closes the row.
+ */
 class DeskBoard extends LitElement {
 
     static properties = {
@@ -64,25 +88,23 @@ class DeskBoard extends LitElement {
         _loading: { state: true },
         _refreshing: { state: true },
         _error: { state: true },
+        _open: { state: true },
+        _doing: { state: true },
         _watching: { state: true },
-        _starting: { state: true },
         _closing: { state: true },
         _confirmClose: { state: true },
         _moreFor: { state: true },
         _mergeAnyway: { state: true },
-        _mvnpmStarting: { state: true },
         _activityFor: { state: true },
-        _assigning: { state: true },
-        _readying: { state: true },
-        _rebasing: { state: true },
-        _rebaseAsked: { state: true },
+        _mvnpmStarting: { state: true },
         _ignoring: { state: true },
+        _unfolded: { state: true },
     };
 
     static styles = [shared, css`
         .hero { display: grid; gap: 10px; margin-bottom: 34px; max-width: 46rem; }
         .date { color: var(--muted); font-size: 15px; }
-        .hero h1 { font-size: 34px; line-height: 1.18; font-weight: 600; letter-spacing: -0.022em; }
+        .hero h1 { font-size: 34px; line-height: 1.18; font-weight: 600; letter-spacing: -0.022em; text-wrap: balance; }
         .hero h1 button {
             all: unset; cursor: pointer; text-decoration: underline; text-decoration-thickness: 2px;
             text-underline-offset: 5px; text-decoration-color: var(--line);
@@ -99,7 +121,7 @@ class DeskBoard extends LitElement {
             font-size: 13px; color: var(--ink);
         }
 
-        .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 36px; align-items: start; }
+        .layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 36px; align-items: start; }
         aside { position: sticky; top: 84px; display: grid; gap: 2px; }
         aside button {
             justify-content: space-between; border: 0; background: transparent; padding: 8px 12px;
@@ -108,38 +130,56 @@ class DeskBoard extends LitElement {
         aside button:hover:not(:disabled) { color: var(--ink); }
         aside button .n { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
         aside button.zero .n { color: var(--muted); font-weight: 500; }
+        aside button.you:not(.zero) { color: var(--ink); }
         aside hr { border: 0; border-top: 1px solid var(--line); margin: 10px 12px; }
+        .keys { font-size: 12px; color: var(--muted); padding: 10px 12px 0; line-height: 1.6; }
+        kbd { font: 11px var(--font-code); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 
-        .lanes { display: grid; gap: 34px; min-width: 0; }
-        .lane-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-        .lane-head h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
-        .lane-head .n { color: var(--muted); font-size: 15px; }
-        .lane-head .note { color: var(--muted); font-size: 13px; }
+        .sections { display: grid; gap: 34px; min-width: 0; }
+        .sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+        .sec-head h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+        .sec-head .n { color: var(--muted); font-size: 15px; }
         section { scroll-margin-top: 90px; }
+        section.you > .panel { box-shadow: inset 3px 0 0 var(--accent); }
 
         ul { list-style: none; margin: 0; padding: 4px 0; }
         li {
             display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 4px 14px; align-items: start;
-            padding: 13px 18px;
+            padding: 12px 18px;
         }
         li + li { border-top: 1px solid var(--line); }
         li:hover { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+        li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+        li.open { background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
         li .icon { margin-top: 3px; }
-        .main { min-width: 0; display: grid; gap: 6px; }
+        .main { min-width: 0; display: grid; gap: 5px; cursor: pointer; }
+        .line1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+        .role {
+            flex: none; font-size: 11.5px; font-weight: 600; color: var(--muted); border: 1px solid var(--line);
+            border-radius: 999px; padding: 0 7px; line-height: 18px;
+        }
         .title { color: var(--ink); font-weight: 500; text-decoration: none; overflow-wrap: anywhere; }
         .title:hover { text-decoration: underline; }
-        .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13px; color: var(--muted); }
-        .acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+        .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+        .say { color: var(--ink); }
+        .steps { display: inline-flex; align-items: center; gap: 6px; }
+        .seg { display: inline-flex; gap: 3px; }
+        .seg i { width: 14px; height: 4px; border-radius: 2px; background: var(--line); }
+        .seg i.done { background: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+        .seg i.now { background: var(--accent); }
+        .stage { font-weight: 500; }
+        .acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
+        .inline { grid-column: 2 / -1; padding: 8px 0 4px; min-width: 0; }
         .empty { color: var(--muted); padding: 16px 18px; margin: 0; font-size: 14px; }
 
         .notice { padding: 18px 20px; margin-bottom: 26px; display: grid; gap: 8px; max-width: 46rem; }
         .notice p { margin: 0; }
 
-        .quiet-lane .panel { background: transparent; }
         details summary {
             cursor: pointer; color: var(--muted); font-weight: 500; padding: 4px 0; list-style-position: outside;
         }
         details summary:hover { color: var(--ink); }
+        details summary .n { font-variant-numeric: tabular-nums; }
         details[open] summary { margin-bottom: 12px; }
 
         .sk-row { display: grid; grid-template-columns: 16px 1fr 90px; gap: 14px; padding: 15px 18px; }
@@ -150,12 +190,13 @@ class DeskBoard extends LitElement {
             .layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
             aside { position: static; display: flex; flex-wrap: wrap; gap: 6px; }
             aside button { width: auto; gap: 8px; background: var(--surface); border: 1px solid var(--line); padding: 6px 12px; }
-            aside hr { display: none; }
+            aside hr, .keys { display: none; }
         }
         @media (max-width: 600px) {
             .hero h1 { font-size: 26px; }
-            li { grid-template-columns: 16px minmax(0, 1fr); padding: 13px 14px; }
+            li { grid-template-columns: 16px minmax(0, 1fr); padding: 12px 14px; }
             .acts { grid-column: 2; justify-content: flex-start; }
+            .inline { grid-column: 1 / -1; }
         }
     `];
 
@@ -163,29 +204,31 @@ class DeskBoard extends LitElement {
         super();
         this._board = lastBoard;
         this._loading = !lastBoard;
+        this._open = null;
+        this._doing = null;
         this._watching = null;
-        this._starting = null;
         this._closing = null;
         this._confirmClose = null;
         this._moreFor = null;
-        this._ignoring = null;
-        this._rebasing = null;
-        this._assigning = null;
-        this._readying = null;
+        this._mergeAnyway = null;
+        this._activityFor = null;
         this._mvnpmStarting = null;
+        this._ignoring = null;
+        this._unfolded = new Set();
+        this._onKey = e => this._key(e);
     }
 
     connectedCallback() {
         super.connectedCallback();
         this._load(false);
-        // Thread states change while the board is open (agent finished, draft posted): refresh the chips.
+        this.addEventListener('keydown', this._onKey);
+        // Thread states change while the board is open (agent finished, draft posted): the flows move on.
         this._offPush = [
             onPush('desk.thread', e => { if (e.type === 'changed') this._softReload(); }),
             onPush('desk.runner', () => this._softReload()),
             // The desk fetched fresh GitHub data in the background.
             onPush('desk.board', () => { if (this._error && !this._board) this._load(false); else this._softReload(); }),
-            // Back after a dropped connection (the desk restarted, dev mode reloaded the page's code): if the board
-            // didn't load, load it now rather than leaving the error up.
+            // Back after a dropped connection: if the board didn't load, load it now rather than leaving the error up.
             onConnectionChange(state => {
                 if (state === 'open' && (this._error || !this._board)) this._load(false);
             }),
@@ -195,6 +238,7 @@ class DeskBoard extends LitElement {
     disconnectedCallback() {
         clearTimeout(this._timer);
         clearTimeout(this._soft);
+        this.removeEventListener('keydown', this._onKey);
         this._offPush?.forEach(off => off());
         super.disconnectedCallback();
     }
@@ -220,20 +264,45 @@ class DeskBoard extends LitElement {
     /** Reload from the desk's cache (no GitHub calls), at most once a second. */
     _softReload() {
         clearTimeout(this._soft);
-        this._soft = setTimeout(async () => {
-            try {
-                const desk = await api();
-                this._setBoard(await desk.board({ refresh: false }));
-            } catch (e) {
-                // keep what we have
-            }
-        }, 1000);
+        this._soft = setTimeout(() => this._reloadNow(), 1000);
+    }
+
+    /** Right after one of your clicks: the row shows its new state at once. */
+    async _reloadNow() {
+        try {
+            const desk = await api();
+            this._setBoard(await desk.board({ refresh: false }));
+        } catch (e) {
+            // keep what we have
+        }
     }
 
     _setBoard(b) {
         rememberLinks(b?.linkedPrs);
         this._board = b;
         lastBoard = b;
+    }
+
+    // ---- actions ----
+
+    /** Runs a row's step. Agent steps leave the row showing the agent at work; nothing navigates. */
+    async _run(item, next) {
+        if (next.id === 'mvnpm-check') return this._mvnpmRun(item);
+        const call = CALLS[next.id];
+        if (!call) return;
+        this._doing = `${item.key} ${next.id}`;
+        this._error = null;
+        try {
+            const desk = await api();
+            const r = await call(desk, item.key);
+            if (next.id === 'ready' && r) rememberItem(r);
+            this._moreFor = null;
+            await this._reloadNow();
+        } catch (e) {
+            this._error = `${item.key}: ${errorMessage(e)}`;
+        } finally {
+            this._doing = null;
+        }
     }
 
     /** Run mvnpm-dependabot now: every repo, or one PR (item). */
@@ -244,18 +313,12 @@ class DeskBoard extends LitElement {
             const desk = await api();
             const checks = await desk.mvnpmRun(item ? { repo: item.repo, pr: item.number } : { repo: null, pr: null });
             this._setBoard({ ...this._board, mvnpmChecks: checks });
+            this._softReload();
         } catch (e) {
             this._error = `Couldn't start the mvnpm check: ${errorMessage(e)}`;
         } finally {
             this._mvnpmStarting = null;
         }
-    }
-
-    /** Is a check running that covers this mvnpm PR (its own unit, or a full round)? */
-    _mvnpmChecking(item) {
-        const running = this._board.mvnpmChecks?.running ?? [];
-        return running.includes('mvnpm-dependabot.service')
-            || running.includes(`mvnpm-dependabot-pr-${item.repo.replace('/', '-')}-${item.number}.service`);
     }
 
     async _ignore(item, ignore) {
@@ -266,81 +329,13 @@ class DeskBoard extends LitElement {
             if (ignore) await desk.ignore({ itemKey: item.key });
             else await desk.unignore({ itemKey: item.key });
             this._moreFor = null;
+            if (this._open === item.key) this._open = null;
             this._setBoard(await desk.board({ refresh: false }));
         } catch (e) {
             this._error = `Couldn't ${ignore ? 'ignore' : 'stop ignoring'} ${item.key}: ${errorMessage(e)}`;
         } finally {
             this._ignoring = null;
         }
-    }
-
-    async _askRebase(item) {
-        this._rebasing = item.key;
-        this._error = null;
-        try {
-            const desk = await api();
-            await desk.askDependabotToRebase({ itemKey: item.key });
-            this._rebaseAsked = new Set([...(this._rebaseAsked ?? []), item.key]);
-        } catch (e) {
-            this._error = `Couldn't ask Dependabot to rebase ${item.key}: ${errorMessage(e)}`;
-        } finally {
-            this._rebasing = null;
-        }
-    }
-
-    /**
-     * Dependabot PRs: Rebase posts "@dependabot rebase". Not shown when the Conflicts or Behind base menu is there,
-     * which already offers it.
-     */
-    _rebaseButton(item) {
-        if (!isDependabot(item) || hasConflicts(item) || behind(item) || this._board.merges?.[item.key]) return '';
-        if (this._rebaseAsked?.has(item.key)) return html`<span class="chip run">${spinner}Dependabot is rebasing</span>`;
-        return html`<button class="sm quiet" ?disabled=${this._rebasing !== null} @click=${() => this._askRebase(item)}
-                title='Comment "@dependabot rebase" on the PR, as you'>${this._rebasing === item.key ? spinner : ''}Rebase</button>`;
-    }
-
-    async _ready(item) {
-        this._readying = item.key;
-        this._error = null;
-        try {
-            const desk = await api();
-            await desk.readyForReview({ itemKey: item.key });
-            this._setBoard(await desk.board({ refresh: false }));
-        } catch (e) {
-            this._error = `Couldn't mark ${item.key} ready for review: ${errorMessage(e)}`;
-        } finally {
-            this._readying = null;
-        }
-    }
-
-    /** Your own draft PR (for example one opened from a fix): once you've read it on GitHub, ask for reviews. */
-    _readyButton(item, laneId) {
-        if (laneId !== 'mine' || !item.draft) return '';
-        return html`<button class="sm" ?disabled=${this._readying !== null} @click=${() => this._ready(item)}
-                title="Mark the draft PR ready for review on GitHub">${this._readying === item.key ? spinner : ''}Ready for review</button>`;
-    }
-
-    async _assignMe(item) {
-        this._assigning = item.key;
-        this._error = null;
-        try {
-            const desk = await api();
-            await desk.assignMe({ itemKey: item.key });
-            this._setBoard(await desk.board({ refresh: false }));
-        } catch (e) {
-            this._error = `Couldn't assign you to ${item.key}: ${errorMessage(e)}`;
-        } finally {
-            this._assigning = null;
-        }
-    }
-
-    /** Mentioned / involved: take it on. Issues then move to Assigned issues. */
-    _assignButton(item, laneId) {
-        if (laneId !== 'involved') return '';
-        const me = this._board.login?.toLowerCase();
-        if ((item.assignees ?? []).some(a => a.toLowerCase() === me)) return html`<span class="chip">Assigned to you</span>`;
-        return html`<button class="sm" ?disabled=${this._assigning !== null} @click=${() => this._assignMe(item)}
-                title="Assign yourself on GitHub">${this._assigning === item.key ? spinner : ''}Assign me</button>`;
     }
 
     async _close(item) {
@@ -350,26 +345,12 @@ class DeskBoard extends LitElement {
             const desk = await api();
             await desk.close({ itemKey: item.key });
             this._confirmClose = null;
+            if (this._open === item.key) this._open = null;
             this._setBoard(await desk.board({ refresh: false }));
         } catch (e) {
             this._error = `Couldn't close ${item.key}: ${errorMessage(e)}`;
         } finally {
             this._closing = null;
-        }
-    }
-
-    async _start(item, action) {
-        this._starting = item.key;
-        this._error = null;
-        try {
-            const desk = await api();
-            // Stays on the board: the row shows "Agent working", then "Answer ready" or "Draft ready".
-            await desk.start({ itemKey: item.key, action, question: null });
-            this._softReload();
-        } catch (e) {
-            this._error = `Couldn't start the agent on ${item.key}: ${errorMessage(e)}`;
-        } finally {
-            this._starting = null;
         }
     }
 
@@ -386,10 +367,37 @@ class DeskBoard extends LitElement {
         }
     }
 
+    _toggle(key) {
+        this._open = this._open === key ? null : key;
+    }
+
     _jump(id) {
-        this.renderRoot.querySelector(`#lane-${id}`)?.scrollIntoView({
+        if (SECTIONS.find(s => s.id === id)?.fold) this._unfolded = new Set([...this._unfolded, id]);
+        this.updateComplete.then(() => this.renderRoot.querySelector(`#sec-${id}`)?.scrollIntoView({
             behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start',
-        });
+        }));
+    }
+
+    /** j/k: next or previous row; Enter: the row's main step; o: open or close the row. Not while typing. */
+    _key(e) {
+        const origin = e.composedPath()[0];
+        if (e.ctrlKey || e.metaKey || e.altKey || origin?.closest?.('input, textarea, select, [contenteditable]')
+                || ['INPUT', 'TEXTAREA', 'SELECT'].includes(origin?.tagName)) return;
+        const rows = [...this.renderRoot.querySelectorAll('li.row')].filter(r => r.offsetParent !== null);
+        if (!rows.length) return;
+        const at = rows.indexOf(this.renderRoot.activeElement?.closest?.('li.row') ?? null);
+        if (e.key === 'j' || e.key === 'k') {
+            e.preventDefault();
+            const to = e.key === 'j' ? Math.min(rows.length - 1, at + 1) : Math.max(0, at < 0 ? 0 : at - 1);
+            rows[to].focus();
+            rows[to].scrollIntoView({ block: 'nearest' });
+        } else if (at >= 0 && origin === rows[at] && e.key === 'Enter') {
+            e.preventDefault();
+            rows[at].querySelector(':scope > .acts .primary')?.click();
+        } else if (at >= 0 && e.key === 'o') {
+            e.preventDefault();
+            this._toggle(rows[at].dataset.key);
+        }
     }
 
     // ---- rendering ----
@@ -414,32 +422,43 @@ class DeskBoard extends LitElement {
                 <div class="skeleton" style="height:14px;width:160px"></div>
                 <div class="skeleton" style="height:38px;width:min(36rem,100%)"></div>
             </div>
-            <div class="lanes">
+            <div class="sections">
                 <div class="panel">${rows(3)}</div>
                 <div class="panel">${rows(2)}</div>
             </div>
         `;
     }
 
-    _headline(b) {
-        return boardHeadline(b, (id, text) => html`<button @click=${() => this._jump(id)}>${text}</button>`);
+    /** Every item with its flow: the lanes, then the mvnpm bumps. */
+    _rows(b) {
+        const items = [...b.lanes.flatMap(l => l.items), ...(b.mvnpm?.rows ?? []).map(r => r.item)];
+        return items.map(item => ({ item, flow: b.flows?.[item.key] })).filter(r => r.flow);
     }
 
     _renderBoard(b) {
-        const lanes = b.lanes;
-        const mvnpmCount = b.mvnpm.installed ? b.mvnpm.rows.length : 0;
+        const rows = this._rows(b);
+        const by = Object.fromEntries(SECTIONS.map(s => [s.id, []]));
+        rows.forEach(r => (by[r.flow.waiting] ?? by.watching).push(r));
+        // Most recent first: what just changed is what you're likely to act on.
+        Object.values(by).forEach(list => list.sort((x, y) => (y.flow.since ?? '').localeCompare(x.flow.since ?? '')));
+        const checks = b.mvnpmChecks;
         return html`
             <div class="hero">
                 <span class="date">${DATE.format(new Date())}</span>
-                <h1>${b.scopeEmpty ? 'Pick what to watch, and your work shows up here.' : this._headline(b)}</h1>
+                <h1>${b.scopeEmpty ? 'Pick what to watch, and your work shows up here.'
+                    : boardHeadline(b, (id, text) => html`<button @click=${() => this._jump(id)}>${text}</button>`)}</h1>
                 <div class="status">
                     <span class="runner ${b.runnerConnected ? 'on' : ''}">Runner ${b.runnerConnected ? 'online' : 'offline'}</span>
                     <span class="muted updated">${b.refreshing
                         ? html`${spinner}Updating, showing data from ${ago(b.fetchedAt)}`
                         : html`Updated ${ago(b.fetchedAt)}`}</span>
                     <button class="sm" @click=${() => this._load(true)} ?disabled=${this._refreshing}>
-                        ${this._refreshing ? spinner : ''}${this._refreshing ? 'Refreshing' : 'Refresh'}
-                    </button>
+                        ${this._refreshing ? spinner : ''}${this._refreshing ? 'Refreshing' : 'Refresh'}</button>
+                    ${b.mvnpm?.installed ? (checks?.running?.length
+                        ? html`<span class="chip run">${spinner}mvnpm checks running${checks.since ? html`, started ${ago(checks.since)}` : ''}</span>`
+                        : html`<button class="sm quiet" ?disabled=${this._mvnpmStarting != null || !b.runnerConnected}
+                            title="Run mvnpm-dependabot over ${b.mvnpm.repos.join(', ')} now" @click=${() => this._mvnpmRun(null)}>
+                            ${this._mvnpmStarting === 'all' ? spinner : ''}Run mvnpm checks</button>`) : ''}
                 </div>
             </div>
 
@@ -452,27 +471,21 @@ class DeskBoard extends LitElement {
                 <div class="panel notice"><p>GitHub returned its limit of 1000 results, so some older items are missing.</p></div>` : ''}
 
             <div class="layout">
-                <aside aria-label="Lanes">
-                    ${lanes.filter(l => l.id !== 'involved').map(l => html`
-                        <button class=${l.items.length ? '' : 'zero'} @click=${() => this._jump(l.id)}>
-                            <span>${l.title}</span><span class="n">${l.items.length}</span></button>`)}
-                    <button class=${mvnpmCount ? '' : 'zero'} @click=${() => this._jump('mvnpm')}>
-                        <span>mvnpm updates</span><span class="n">${mvnpmCount}</span></button>
-                    ${lanes.filter(l => l.id === 'involved').map(l => html`
-                        <button class=${l.items.length ? '' : 'zero'} @click=${() => this._jump(l.id)}>
-                            <span>${l.title}</span><span class="n">${l.items.length}</span></button>`)}
-                    <hr>
+                <aside aria-label="Sections">
+                    ${SECTIONS.map(s => html`
+                        <button class="${s.id} ${by[s.id].length ? '' : 'zero'}" @click=${() => this._jump(s.id)}>
+                            <span>${s.title}</span><span class="n">${by[s.id].length}</span></button>`)}
+                    ${b.hidden.length || b.ignored.length ? html`<hr>` : ''}
                     ${b.hidden.length ? html`
                         <button class="zero" @click=${() => this._jump('hidden')}>
                             <span>Not watched</span><span class="n">${b.hidden.length}</span></button>` : ''}
                     ${b.ignored.length ? html`
                         <button class="zero" @click=${() => this._jump('ignored')}>
                             <span>Ignored</span><span class="n">${b.ignored.length}</span></button>` : ''}
+                    <p class="keys"><kbd>j</kbd> <kbd>k</kbd> move, <kbd>Enter</kbd> next step, <kbd>o</kbd> open</p>
                 </aside>
-                <div class="lanes">
-                    ${lanes.filter(l => l.id !== 'involved').map(lane => this._renderLane(lane))}
-                    ${this._renderMvnpm(b.mvnpm)}
-                    ${lanes.filter(l => l.id === 'involved').map(lane => this._renderLane(lane))}
+                <div class="sections">
+                    ${SECTIONS.map(s => this._renderSection(s, by[s.id]))}
                     ${this._renderHidden(b.hidden)}
                     ${this._renderIgnored(b.ignored)}
                 </div>
@@ -480,94 +493,134 @@ class DeskBoard extends LitElement {
         `;
     }
 
-    _renderLane(lane) {
-        const empty = {
-            review: 'No reviews waiting.',
-            mine: 'You have no open PRs.',
-            assigned: 'No issues assigned to you.',
-            involved: 'Nothing else involves you.',
-        }[lane.id];
+    _renderSection(s, rows) {
+        if (!rows.length && s.id !== 'you') return '';
+        const list = html`<div class="panel">${rows.length
+            ? html`<ul>${rows.map(r => this._renderRow(r.item, r.flow))}</ul>`
+            : html`<p class="empty">${s.empty}</p>`}</div>`;
+        if (s.fold) {
+            return html`
+                <section id="sec-${s.id}" class=${s.id} aria-label=${s.title}>
+                    <details ?open=${this._unfolded.has(s.id)} @toggle=${e => this._fold(s.id, e.target.open)}>
+                        <summary>${s.title} <span class="n">${rows.length}</span></summary>
+                        ${this._unfolded.has(s.id) ? list : ''}
+                    </details>
+                </section>`;
+        }
         return html`
-            <section id="lane-${lane.id}" aria-labelledby="h-${lane.id}">
-                <div class="lane-head"><h2 id="h-${lane.id}">${lane.title}</h2><span class="n">${lane.items.length}</span></div>
-                <div class="panel">
-                    ${lane.items.length === 0
-                        ? html`<p class="empty">${empty}</p>`
-                        : html`<ul>${lane.items.map(item =>
-                            this._renderItem(item, [...this._threadChip(item), ...this._ciChips(item)],
-                                this._actions(item, lane.id)))}</ul>`}
-                </div>
-            </section>
-        `;
+            <section id="sec-${s.id}" class=${s.id} aria-labelledby="h-${s.id}">
+                <div class="sec-head"><h2 id="h-${s.id}">${s.title}</h2><span class="n">${rows.length}</span></div>
+                ${list}
+            </section>`;
     }
 
-    _renderItem(item, chips, actions = '') {
+    _fold(id, open) {
+        const s = new Set(this._unfolded);
+        if (open) s.add(id); else s.delete(id);
+        this._unfolded = s;
+    }
+
+    _renderRow(item, f) {
         rememberItem(item);
+        const open = this._open === item.key;
+        const back = this._board?.returned?.[item.key];
         return html`
-            <li>
+            <li class="row ${open ? 'open' : ''}" tabindex="0" data-key=${item.key}>
                 ${kindIcon(item)}
-                <div class="main">
-                    <a class="title" href=${item.url} target="_blank" rel="noopener">${item.title}</a>
+                <div class="main" @click=${e => { if (!e.target.closest('a, button')) this._toggle(item.key); }}>
+                    <div class="line1">
+                        <span class="role">${ROLES[f.role] ?? f.role}</span>
+                        <a class="title" href=${item.url} target="_blank" rel="noopener">${item.title}</a>
+                    </div>
                     <div class="meta">
                         <span>${item.repo} #${item.number}</span>
-                        ${item.author ? html`<span>by ${item.author}</span>` : ''}
-                        <span>updated ${ago(item.updatedAt)}</span>
-                        ${chips.length ? html`<span class="chips">${chips}</span>` : ''}
+                        ${this._stepper(f)}
+                        <span class="say">${f.say}</span>
+                        ${f.since ? html`<span>${ago(f.since)}</span>` : ''}
+                        ${back ? html`<span class="chip run" title="It was ignored; this brought it back">Back: ${back.toLowerCase()}</span>` : ''}
+                        ${item.kind === 'ISSUE' && f.role !== 'issue' ? linkedPrChips(item.key) : ''}
                     </div>
                 </div>
-                <div class="acts">${actions}</div>
+                <div class="acts">${this._actions(item, f)}</div>
+                ${open ? html`<div class="inline">
+                    <desk-thread compact .itemKey=${item.key}
+                        @thread-posted=${() => { this._open = null; this._reloadNow(); }}></desk-thread></div>` : ''}
             </li>
         `;
     }
 
-    _threadChip(item) {
-        const chips = [];
-        const m = this._board?.merges?.[item.key];
-        const since = this._board?.sinceReview?.[item.key];
-        if (since && this._activityFor !== item.key) {
-            chips.push(html`<pr-activity .itemKey=${item.key} .label=${since}></pr-activity>`);
+    /** "▬▬▭▭ CI": how far along the flow is, and the stage it's at. */
+    _stepper(f) {
+        if (!f.steps?.length) return '';
+        return html`<span class="steps" title=${f.steps.join(' → ')}>
+            <span class="seg" aria-hidden="true">${f.steps.map((_, i) => html`<i class=${i < f.step ? 'done' : i === f.step ? 'now' : ''}></i>`)}</span>
+            <span class="stage">${f.steps[f.step]}</span></span>`;
+    }
+
+    /** The main step, then More: the other steps that fit, plus Open page, Ignore and Close. */
+    _actions(item, f) {
+        if (this._confirmClose === item.key) return this._closeButton(item);
+        if (this._mergeAnyway === item.key) return this._mergeAnywayControl(item);
+        if (this._activityFor === item.key) {
+            return html`<pr-activity autoOpen .itemKey=${item.key} @activity-closed=${() => { this._activityFor = null; }}></pr-activity>`;
         }
-        const back = this._board?.returned?.[item.key];
-        if (back) chips.push(html`<span class="chip run" title="It was ignored; this brought it back">Back: ${back.toLowerCase()}</span>`);
-        if (m?.state === 'merged') chips.push(html`<span class="chip merged" title=${m.outcome ?? ''}>Merged</span>`);
-        if (m?.state === 'failed') chips.push(html`<span class="chip bad" title=${m.outcome ?? ''}>Merge stopped: ${m.outcome}</span>`);
-        return [...chips, ...this._agentChip(item)];
-    }
-
-    _agentChip(item) {
-        const t = this._board?.threads?.[item.key];
-        if (!t) return [];
-        if (t.state === 'working') return [html`<span class="chip run">${spinner}Agent working</span>`];
-        if (t.state === 'draft') return [html`<a class="chip ok" href=${threadHref(item.key)}>Draft ready</a>`];
-        if (t.state === 'answered') return [html`<a class="chip ok" href=${threadHref(item.key)}>Answer ready</a>`];
-        return [];
-    }
-
-    /** Status chips, with failing CI, CI awaiting approval, conflicts and "behind" as menus of what to do. */
-    _ciChips(item, { approval = true } = {}) {
-        const live = this._board.merges?.[item.key]?.state !== 'merged';
-        return [...itemChips(item, { ciMenu: true, conflictMenu: true, approval }), ...(item.kind === 'ISSUE' ? linkedPrChips(item.key) : []),
-            ...(ciFailing(item) && live ? [html`<ci-menu .itemKey=${item.key} @ci-changed=${() => this._softReload()}></ci-menu>`] : []),
-            ...(ciNeedsApproval(item) ? [html`<ci-menu approval .itemKey=${item.key} @ci-changed=${() => this._softReload()}></ci-menu>`] : []),
-            ...(hasConflicts(item) && live ? [html`<conflict-menu .itemKey=${item.key}></conflict-menu>`] : []),
-            ...(behind(item) && live ? [html`<conflict-menu behind .itemKey=${item.key} @ci-changed=${() => this._softReload()}></conflict-menu>`] : [])];
-    }
-
-    /** Ignore and Close, behind "More" so rows stay calm. Close still asks to confirm. */
-    _more(item, { withClose = true, withMergeAnyway = true, withIgnore = true } = {}) {
+        const main = f.next ? this._action(item, f.next, true) : '';
         if (this._moreFor !== item.key) {
-            return html`<button class="sm quiet" aria-expanded="false" @click=${() => { this._moreFor = item.key; }}>More ▾</button>`;
+            return html`${main}<button class="sm quiet" aria-expanded="false" aria-label="More actions"
+                @click=${() => { this._moreFor = item.key; }}>⋯</button>`;
         }
+        const ids = new Set([f.next?.id, ...f.more.map(n => n.id)]);
+        const merged = f.waiting === 'done';
+        const me = this._board.login?.toLowerCase();
+        const assigned = (item.assignees ?? []).some(a => a.toLowerCase() === me);
         return html`
-            ${item.kind === 'PR' ? html`<button class="sm quiet" @click=${() => { this._activityFor = item.key; this._moreFor = null; }}>What's new</button>` : ''}
-            ${withMergeAnyway && mergeableAnyway(item) && !this._board.merges?.[item.key] ? html`
-                <button class="sm quiet" title="CI is green but nobody approved it: merge on your own judgement"
-                        @click=${() => { this._mergeAnyway = item.key; this._moreFor = null; }}>Merge without approval</button>` : ''}
-            ${withIgnore ? html`<button class="sm quiet" ?disabled=${this._ignoring !== null} @click=${() => this._ignore(item, true)}
-                    title="Someone else is handling it: move it to Ignored">
-                ${this._ignoring === item.key ? spinner : ''}Ignore</button>` : ''}
-            ${withClose ? this._closeButton(item) : ''}
+            ${main}
+            ${f.more.map(n => this._action(item, n, false))}
+            ${!merged && item.kind === 'PR' && ciFailing(item) ? html`<ci-menu .itemKey=${item.key} @ci-changed=${() => this._reloadNow()}></ci-menu>` : ''}
+            ${!merged && item.kind === 'PR' && hasConflicts(item) && !ids.has('conflicts')
+                ? html`<conflict-menu .itemKey=${item.key}></conflict-menu>` : ''}
+            ${!merged && mergeableAnyway(item) && !ids.has('merge-anyway') && !this._board.merges?.[item.key]
+                ? this._action(item, { id: 'merge-anyway', label: 'Merge without approval' }, false) : ''}
+            ${!merged && item.kind === 'PR' && !ids.has('whats-new') ? this._action(item, { id: 'whats-new', label: "What's new" }, false) : ''}
+            ${f.role === 'involved' && !assigned ? this._action(item, { id: 'assign', label: 'Assign me' }, false) : ''}
+            <a class="btn sm quiet" href=${threadHref(item.key)}>Open page</a>
+            ${!merged && !ids.has('ignore') ? html`<button class="sm quiet" ?disabled=${this._ignoring !== null} @click=${() => this._ignore(item, true)}
+                title="Someone else is handling it: move it to Ignored">${this._ignoring === item.key ? spinner : ''}Ignore</button>` : ''}
+            ${!merged && !ids.has('close') ? this._closeButton(item) : ''}
             <button class="sm quiet" aria-expanded="true" aria-label="Fewer actions" @click=${() => { this._moreFor = null; }}>×</button>`;
+    }
+
+    /** One step as a button (or the control that runs it: merge, update branch). */
+    _action(item, n, primary) {
+        const cls = primary ? 'sm primary' : 'sm quiet';
+        const busy = this._doing === `${item.key} ${n.id}` || (n.id === 'mvnpm-check' && this._mvnpmStarting === item.key);
+        switch (n.id) {
+            case 'open': {
+                const open = this._open === item.key;
+                return html`<button class=${cls} aria-expanded=${open ? 'true' : 'false'} @click=${() => this._toggle(item.key)}>
+                    ${open ? 'Close' : n.label}</button>`;
+            }
+            case 'go':
+                return html`<a class="btn ${cls}" href=${threadHref(n.target)}>${n.label}</a>`;
+            case 'merge':
+                return this._mergeControl(item);
+            case 'merge-anyway':
+                return primary ? html`<merge-control anyway .itemKey=${item.key} .status=${null}
+                        @merge-changed=${() => this._reloadNow()}></merge-control>`
+                    : html`<button class=${cls} @click=${() => { this._mergeAnyway = item.key; this._moreFor = null; }}>${n.label}</button>`;
+            case 'update-branch':
+                return html`<conflict-menu behind .itemKey=${item.key} @ci-changed=${() => this._reloadNow()}></conflict-menu>`;
+            case 'whats-new':
+                return html`<button class=${cls} @click=${() => { this._activityFor = item.key; this._moreFor = null; }}>${n.label}</button>`;
+            case 'close':
+                return html`<button class=${cls} @click=${() => { this._confirmClose = item.key; }}>${n.label}</button>`;
+            case 'ignore':
+                return html`<button class=${cls} ?disabled=${this._ignoring !== null} @click=${() => this._ignore(item, true)}>
+                    ${this._ignoring === item.key ? spinner : ''}${n.label}</button>`;
+            default:
+                return html`<button class=${cls} ?disabled=${this._doing !== null || this._mvnpmStarting != null}
+                    @click=${() => this._run(item, n)}>${busy ? spinner : ''}${n.label}</button>`;
+        }
     }
 
     /** Two clicks to close: the button, then the inline confirmation. */
@@ -584,151 +637,41 @@ class DeskBoard extends LitElement {
         return html`<button class="sm quiet" @click=${() => { this._confirmClose = item.key; }}>Close</button>`;
     }
 
-    /** Open the thread if there is one; otherwise the action that fits: Review for PRs, Investigate for issues. Close on both. */
-    _actions(item, laneId) {
-        // Merged here: nothing left to do. The row leaves the board on the next refresh.
-        if (this._board.merges?.[item.key]?.state === 'merged') return '';
-        if (this._mergeAnyway === item.key) return this._mergeAnywayControl(item);
-        if (this._activityFor === item.key) {
-            return html`<pr-activity autoOpen .itemKey=${item.key} @activity-closed=${() => { this._activityFor = null; }}></pr-activity>`;
-        }
-        if (this._confirmClose === item.key) return this._closeButton(item);
-        // Merge only for approved PRs with green CI (or one already merging, so it can be cancelled).
-        const waiting = this._board.merges?.[item.key]?.state === 'waiting';
-        // Your own green PR without an approval: merging it yourself is common, so it's on the row, not under More.
-        const ownReady = laneId === 'mine' && !waiting && mergeableAnyway(item) && item.reviewDecision !== 'CHANGES_REQUESTED';
-        const merge = mergeable(item) || waiting ? this._mergeControl(item)
-            : ownReady ? html`<button class="sm" @click=${() => { this._mergeAnyway = item.key; }}
-                title="CI is green but nobody has approved it. Merge it yourself.">Merge without approval</button>` : '';
-        const t = this._board.threads?.[item.key];
-        // An issue that already has a PR fixing it: review that PR, or leave the issue to it.
-        const fix = item.kind === 'ISSUE' ? linksFor(item.key).find(pr => pr.fixes) : null;
-        const fixActs = fix ? html`<a class="btn sm ${t ? '' : 'primary'}" href=${threadHref(fix.key)}
-                title="Open the PR here: ${fix.title}">Review PR ${prRef(item.key, fix.key)}</a>
-            <button class="sm quiet" ?disabled=${this._ignoring !== null} @click=${() => this._ignore(item, true)}
-                title="The PR covers it: move the issue to Ignored">${this._ignoring === item.key ? spinner : ''}Ignore</button>` : '';
-        if (t) {
-            return html`<a class="btn sm ${['draft', 'answered'].includes(t.state) ? 'primary' : ''}" href=${threadHref(item.key)}>
-                ${{ draft: 'Review draft', answered: 'Read answer' }[t.state] ?? 'Open thread'}</a>${fixActs}${merge}${this._readyButton(item, laneId)}${this._rebaseButton(item)}${this._assignButton(item, laneId)}${this._more(item, { withIgnore: !fix, withMergeAnyway: !ownReady })}`;
-        }
-        if (fix) return html`${fixActs}${this._assignButton(item, laneId)}${this._more(item, { withIgnore: false })}`;
-        const starting = this._starting === item.key;
-        const busy = this._starting !== null;
-        let main = '';
-        // Approved PRs offer Merge on green instead of another review.
-        // Others' PRs: Review until approved. Your own PRs: always (a self-review before others look).
-        if (item.kind === 'PR' && (laneId === 'mine' || !item.approved)) {
-            main = html`<button class="sm primary" ?disabled=${busy} @click=${() => this._start(item, 'review')}>
-                ${starting ? spinner : ''}Review</button>`;
-        } else if (item.kind === 'ISSUE') {
-            main = html`<button class="sm primary" ?disabled=${busy} @click=${() => this._start(item, 'investigate')}>
-                ${starting ? spinner : ''}Investigate</button>`;
-        }
-        return html`${main}<a class="btn sm quiet" href=${threadHref(item.key)}>Ask</a>${merge}${this._readyButton(item, laneId)}${this._rebaseButton(item)}${this._assignButton(item, laneId)}${this._more(item, { withMergeAnyway: !ownReady })}`;
-    }
-
     _mergeAnywayControl(item) {
         return html`<merge-control anyway autoOpen .itemKey=${item.key} .status=${null}
-            @merge-changed=${() => { this._mergeAnyway = null; this._softReload(); }}
+            @merge-changed=${() => { this._mergeAnyway = null; this._reloadNow(); }}
             @merge-dismissed=${() => { this._mergeAnyway = null; }}></merge-control>`;
     }
 
     _mergeControl(item) {
         return html`<merge-control .itemKey=${item.key} .status=${this._board.merges?.[item.key] ?? null}
-            @merge-changed=${() => this._softReload()}></merge-control>`;
+            @merge-changed=${() => this._reloadNow()}></merge-control>`;
     }
 
-    _renderMvnpm(m) {
-        if (!m.installed) {
-            return html`
-                <section id="lane-mvnpm" class="quiet-lane" aria-labelledby="h-mvnpm">
-                    <div class="lane-head"><h2 id="h-mvnpm">mvnpm updates</h2></div>
-                    <p class="muted small">mvnpm-dependabot isn't set up on this machine.</p>
-                </section>`;
-        }
-        const tally = { SAFE: 0, NOT_SAFE: 0, NEEDS_HUMAN: 0, pending: 0 };
-        m.rows.forEach(r => {
-            if (r.check && r.current && tally[r.check.verdict] !== undefined) tally[r.check.verdict]++;
-            else tally.pending++;
-        });
+    /** Ignored and not-watched items: plain rows, folded at the bottom. */
+    _renderItem(item, chips, actions = '') {
+        rememberItem(item);
         return html`
-            <section id="lane-mvnpm" class="quiet-lane" aria-labelledby="h-mvnpm">
-                <div class="lane-head">
-                    <h2 id="h-mvnpm">mvnpm updates</h2><span class="n">${m.rows.length}</span>
-                    <span class="note">Handled by mvnpm-dependabot in ${m.repos.join(', ')}</span>
-                    ${this._renderMvnpmRun()}
+            <li>
+                ${kindIcon(item)}
+                <div class="main" style="cursor:auto">
+                    <a class="title" href=${item.url} target="_blank" rel="noopener">${item.title}</a>
+                    <div class="meta">
+                        <span>${item.repo} #${item.number}</span>
+                        ${item.author ? html`<span>by ${item.author}</span>` : ''}
+                        <span>updated ${ago(item.updatedAt)}</span>
+                        ${chips.length ? html`<span class="chips">${chips}</span>` : ''}
+                    </div>
                 </div>
-                ${m.rows.length ? html`
-                    <div class="chips" style="margin-bottom:12px">
-                        ${tally.SAFE ? html`<span class="chip ok">${tally.SAFE} safe</span>` : ''}
-                        ${tally.NOT_SAFE ? html`<span class="chip bad">${tally.NOT_SAFE} not safe</span>` : ''}
-                        ${tally.NEEDS_HUMAN ? html`<span class="chip warn">${tally.NEEDS_HUMAN} need a look</span>` : ''}
-                        ${tally.pending ? html`<span class="chip">${tally.pending} not checked yet</span>` : ''}
-                    </div>` : ''}
-                <div class="panel">
-                    ${m.rows.length === 0
-                        ? html`<p class="empty">No open mvnpm PRs.</p>`
-                        : html`<ul>${m.rows.map(r => this._renderItem(r.item, [...this._threadChip(r.item), ...this._mvnpmChips(r),
-                            ...this._ciChips(r.item, { approval: false })], this._mvnpmActions(r)))}</ul>`}
-                </div>
-            </section>
+                <div class="acts">${actions}</div>
+            </li>
         `;
-    }
-
-    _renderMvnpmRun() {
-        const c = this._board.mvnpmChecks;
-        if (c?.running?.length) {
-            const all = c.running.includes('mvnpm-dependabot.service');
-            return html`<span class="chip run" style="margin-left:auto">${spinner}${all ? 'Checks running' : `Checking ${c.running.length} PR${c.running.length === 1 ? '' : 's'}`}${c.since ? html`, started ${ago(c.since)}` : ''}</span>`;
-        }
-        return html`<button class="sm" style="margin-left:auto" ?disabled=${this._mvnpmStarting != null || !this._board.runnerConnected}
-                title=${this._board.runnerConnected ? 'Run mvnpm-dependabot over every repo now' : 'The runner is offline'}
-                @click=${() => this._mvnpmRun(null)}>${this._mvnpmStarting === 'all' ? spinner : ''}Run checks now</button>`;
-    }
-
-    _mvnpmActions(r) {
-        if (this._board.merges?.[r.item.key]?.state === 'merged') return '';
-        if (this._mergeAnyway === r.item.key) return this._mergeAnywayControl(r.item);
-        if (this._activityFor === r.item.key) {
-            return html`<pr-activity autoOpen .itemKey=${r.item.key} @activity-closed=${() => { this._activityFor = null; }}></pr-activity>`;
-        }
-        const waiting = this._board.merges?.[r.item.key]?.state === 'waiting';
-        const checking = this._mvnpmChecking(r.item);
-        return html`
-            ${checking ? html`<span class="chip run">${spinner}Checking</span>`
-                : html`<button class="sm quiet" ?disabled=${this._mvnpmStarting != null || !this._board.runnerConnected}
-                    title="Run mvnpm-dependabot on this PR now (even if it was checked before)"
-                    @click=${() => this._mvnpmRun(r.item)}>${this._mvnpmStarting === r.item.key ? spinner : ''}Check now</button>`}
-            ${r.check?.commentUrl
-                ? html`<a class="btn sm quiet" href=${r.check.commentUrl} target="_blank" rel="noopener">Elf's comment</a>` : ''}
-            ${this._rebaseButton(r.item)}
-            ${mergeable(r.item) || waiting ? this._mergeControl(r.item)
-                // All green but not approved: mvnpm bumps are routine, so Merge without approval is right on the row, not under More.
-                : mergeableAnyway(r.item) && !this._board.merges?.[r.item.key] ? html`<merge-control anyway .itemKey=${r.item.key}
-                    .status=${null} @merge-changed=${() => this._softReload()}></merge-control>` : ''}
-            ${this._confirmClose === r.item.key ? this._closeButton(r.item)
-                // The elf says this bump isn't safe: closing it is the usual next step, so offer it directly.
-                : r.check?.verdict === 'NOT_SAFE' && r.current
-                    ? html`${this._closeButton(r.item)}${this._more(r.item, { withClose: false, withMergeAnyway: false })}`
-                : this._more(r.item, { withMergeAnyway: false })}`;
-    }
-
-    _mvnpmChips(r) {
-        if (!r.check) return [html`<span class="chip">Not checked yet</span>`];
-        if (!r.current) return [html`<span class="chip">Not checked at this commit</span>`];
-        const v = VERDICTS[r.check.verdict] ?? { cls: '', label: r.check.verdict };
-        const chips = [html`<span class="chip ${v.cls}">${v.label}</span>`];
-        // GitHub's "Approved" chip comes with the CI chips.
-        if (r.check.verdict === 'SAFE' && r.item.reviewDecision !== 'APPROVED') {
-            chips.push(r.check.approved ? html`<span class="chip ok">Approved</span>` : html`<span class="chip">Not approved</span>`);
-        }
-        return chips;
     }
 
     _renderIgnored(ignored) {
         if (!ignored.length) return '';
         return html`
-            <section id="lane-ignored" aria-label="Ignored">
+            <section id="sec-ignored" aria-label="Ignored">
                 <details ?open=${this._ignoredOpen} @toggle=${e => { this._ignoredOpen = e.target.open; }}>
                     <summary>${count(ignored.length, 'ignored item')}, handled by someone else</summary>
                     <div class="panel">
@@ -745,7 +688,7 @@ class DeskBoard extends LitElement {
     _renderHidden(hidden) {
         if (hidden.length === 0) return '';
         return html`
-            <section id="lane-hidden" aria-label="Not watched">
+            <section id="sec-hidden" aria-label="Not watched">
                 <details>
                     <summary>${count(hidden.length, 'more item')} from repos you don't watch</summary>
                     <div class="panel">

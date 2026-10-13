@@ -93,10 +93,22 @@ public class ThreadService {
         return QuarkusTransaction.requiringNew().call(() -> {
             Map<String, ThreadView.Summary> out = new HashMap<>();
             for (DeskThread t : DeskThread.<DeskThread>listAll()) {
-                String state = Job.openFor(t.id) != null ? "working"
-                        : Draft.pendingFor(t.id) != null ? "draft"
-                        : unseenAnswer(t) ? "answered" : "idle";
-                out.put(t.itemKey, new ThreadView.Summary(t.itemKey, state));
+                Job job = Job.latestFor(t.id);
+                Draft draft = Draft.pendingFor(t.id);
+                Draft posted = Draft.find("threadId = ?1 and state = ?2 order by postedAt desc", t.id, Draft.POSTED).firstResult();
+                Turn answer = Turn.find("threadId = ?1 and role = ?2 order by id desc", t.id, Turn.AGENT).firstResult();
+                boolean working = job != null && job.open();
+                String state = working ? "working" : draft != null ? "draft" : unseenAnswer(t) ? "answered" : "idle";
+                Instant since = switch (state) {
+                    case "working" -> job.started != null ? job.started : job.created;
+                    case "draft" -> draft.created;
+                    case "answered" -> answer.created;
+                    default -> job == null ? t.updated : job.finished != null ? job.finished : job.created;
+                };
+                boolean failed = !working && job != null && (job.state.equals(Job.FAILED) || job.state.equals(Job.CANCELLED));
+                out.put(t.itemKey, new ThreadView.Summary(t.itemKey, state, job == null ? null : job.action,
+                        draft == null ? null : draft.kind, since, failed && draft == null,
+                        posted == null ? null : posted.kind, posted == null ? null : posted.postedAt));
             }
             return out;
         });

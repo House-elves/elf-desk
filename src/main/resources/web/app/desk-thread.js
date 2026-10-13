@@ -24,6 +24,7 @@ class DeskThread extends LitElement {
 
     static properties = {
         itemKey: { type: String },
+        compact: { type: Boolean },  // inside a board row: the latest answer, the draft and the composer only
         _thread: { state: true },
         _loaded: { state: true },
         _lines: { state: true },
@@ -45,9 +46,12 @@ class DeskThread extends LitElement {
         _diffOpen: { state: true },
         _changeOpen: { state: true },
         _rebaseAsked: { state: true },
+        _previewing: { state: true },
     };
 
     static styles = [shared, markdownStyles, css`
+        :host([compact]) { display: block; }
+        .compact { display: grid; gap: 14px; min-width: 0; }
         .back { font-size: 14px; color: var(--muted); text-decoration: none; display: inline-flex; gap: 6px; }
         .back:hover { color: var(--ink); }
         .layout { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 40px; align-items: start; margin-top: 18px; }
@@ -191,13 +195,15 @@ class DeskThread extends LitElement {
             this._diffOpen = false;
             this._changeOpen = true; // a draft's change shows open: you read it before confirming
             this._rebaseAsked = false;
+            this._previewFailed = null;
             this._scrollPending = true;
             this._load();
         }
         if (this._scrollPending && this._loaded) {
             this._scrollPending = false;
-            this._scrollToLatest();
+            if (!this.compact) this._scrollToLatest();
         }
+        if (changed.has('_thread') || changed.has('_editing')) this._autoPreview();
         if (changed.has('_lines')) {
             const box = this.renderRoot.querySelector('.lines');
             if (box) box.scrollTop = box.scrollHeight;
@@ -368,6 +374,32 @@ class DeskThread extends LitElement {
         this._edit = { ...this._edit, comments: this._edit.comments.filter((_, j) => j !== i) };
     }
 
+    /** The draft's preview (exactly what will be sent, and its one-time confirmation) is loaded. */
+    _previewed() {
+        const d = this._thread?.draft;
+        return !!d && this._preview?.draftId === d.id;
+    }
+
+    /**
+     * A draft is previewed as soon as it shows, so the send buttons sit right under it: one click posts. Not while
+     * editing, and not again after a preview failed (the draft's own button retries).
+     */
+    async _autoPreview() {
+        const d = this._thread?.draft;
+        if (!d || this._editing || this._previewed() || this._previewing || this._previewFailed === d.id) return;
+        this._previewing = true;
+        try {
+            const desk = await api();
+            const p = await desk.previewPost({ draftId: d.id });
+            if (this._thread?.draft?.id === d.id && !this._editing) this._preview = p;
+        } catch (e) {
+            this._previewFailed = d.id;
+            this._error = errorMessage(e);
+        } finally {
+            this._previewing = false;
+        }
+    }
+
     async _previewPost() {
         this._busy = true;
         this._doing = 'preview';
@@ -421,13 +453,18 @@ class DeskThread extends LitElement {
             const r = await desk.post({ draftId: this._preview.draftId, confirm: this._preview.confirm, asDraft });
             this._posted = r.url;
             this._preview = null;
+            this.dispatchEvent(new CustomEvent('thread-posted', { bubbles: true, composed: true, detail: { url: r.url } }));
             // A push starts CI again: drop the old result (and its CI failing menu) until the board catches up.
             const item = knownItem(this.itemKey);
             if (r.pushedTo && item) rememberItem({ ...item, ci: 'PENDING', mergeState: 'UNKNOWN' });
             await this._load();
         } catch (e) {
-            this._error = errorMessage(e);
+            const msg = errorMessage(e);
+            this._error = msg.includes('Preview it again')
+                ? 'That preview had expired, so nothing was sent. It is refreshed now: check it and click again.' : msg;
             this._preview = null;
+            this._previewFailed = null;
+            this._autoPreview();
         } finally {
             this._busy = false;
             this._doing = null;
@@ -437,6 +474,7 @@ class DeskThread extends LitElement {
     // ---- rendering ----
 
     render() {
+        if (this.compact) return this._renderCompact();
         const t = this._thread;
         const item = knownItem(this.itemKey);
         const title = t?.title ?? item?.title ?? this.itemKey;
@@ -460,10 +498,39 @@ class DeskThread extends LitElement {
                     ${t ? t.turns.map(turn => this._renderTurn(turn)) : ''}
                     ${t?.job ? this._renderJob(t) : ''}
                     ${t?.draft ? this._renderDraft(t.draft) : ''}
-                    ${this._preview ? this._renderConfirm(this._preview) : ''}
+                    ${this._previewed() && !this._editing ? this._renderConfirm(this._preview) : ''}
                     ${this._loaded ? this._renderComposer(t) : ''}
                 </div>
                 ${this._loaded ? this._renderAside(t, kind, url, item) : ''}
+            </div>
+        `;
+    }
+
+    /**
+     * Inside a board row: what the agent said last, what it's doing, the draft with its send buttons, and a box to
+     * reply. The full page has the history and everything else.
+     */
+    _renderCompact() {
+        const t = this._thread;
+        const kind = t?.kind ?? knownItem(this.itemKey)?.kind;
+        const url = t?.url ?? knownItem(this.itemKey)?.url;
+        const lastAnswer = [...(t?.turns ?? [])].reverse().find(x => x.role === 'agent');
+        const lastNote = t?.turns?.length && t.turns[t.turns.length - 1].role === 'system' ? t.turns[t.turns.length - 1] : null;
+        return html`
+            <div class="compact">
+                ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : ''}
+                ${this._posted ? html`<p class="posted"><span class="chip ok">Posted</span>
+                    <a href=${this._posted} target="_blank" rel="noopener">${this._posted}</a></p>` : ''}
+                ${!this._loaded ? this._renderSkeleton() : ''}
+                ${this._loaded && !t ? html`<p class="muted small" style="margin:0">No agent has looked at this yet.</p>` : ''}
+                ${lastAnswer && !t?.job ? this._renderTurn(lastAnswer) : ''}
+                ${lastNote && !t?.job ? this._renderTurn(lastNote) : ''}
+                ${t?.job ? this._renderJob(t) : ''}
+                ${kind === 'PR' && url && t?.draft?.kind === 'review' ? this._renderFiles(url) : ''}
+                ${t?.draft ? this._renderDraft(t.draft) : ''}
+                ${this._previewed() && !this._editing ? this._renderConfirm(this._preview) : ''}
+                ${this._loaded ? this._renderComposer(t) : ''}
+                <a class="small" href=${threadHref(this.itemKey)}>Open the full page${t?.turns?.length > 1 ? ` (${t.turns.length} turns)` : ''}</a>
             </div>
         `;
     }
@@ -713,7 +780,7 @@ class DeskThread extends LitElement {
                     ${this._renderChange(p.patch, p.patchCut, p.diffstat)}
                 </div>
                 <div class="draft-acts">
-                    <button class="primary" ?disabled=${this._busy || this._preview} @click=${this._previewPost}>${this._spin('preview')}Push…</button>
+                    ${this._previewed() ? '' : html`<button class="primary" ?disabled=${this._busy || this._previewing} @click=${this._previewPost}>${this._spin('preview')}Push…</button>`}
                     <button class="quiet danger" ?disabled=${this._busy} @click=${() => this._do(d2 => d2.discardDraft({ draftId: dv.id }), 'discard')}>
                         ${this._spin('discard')}Discard</button>
                     <span class="muted small">Ask the agent below if you want changes first.</span>
@@ -738,7 +805,7 @@ class DeskThread extends LitElement {
                     ${this._renderChange(p.patch, p.patchCut, p.diffstat)}
                 </div>
                 <div class="draft-acts">
-                    <button class="primary" ?disabled=${this._busy || this._preview} @click=${this._previewPost}>${this._spin('preview')}Open PR…</button>
+                    ${this._previewed() ? '' : html`<button class="primary" ?disabled=${this._busy || this._previewing} @click=${this._previewPost}>${this._spin('preview')}Open PR…</button>`}
                     <button ?disabled=${this._busy} @click=${this._beginEdit}>Edit</button>
                     <button class="quiet danger" ?disabled=${this._busy} @click=${() => this._do(d2 => d2.discardDraft({ draftId: dv.id }), 'discard')}>
                         ${this._spin('discard')}Discard</button>
@@ -790,7 +857,7 @@ class DeskThread extends LitElement {
                         </div>` : ''}
                 </div>
                 <div class="draft-acts">
-                    <button class="primary" ?disabled=${this._busy || this._preview} @click=${this._previewPost}>${this._spin('preview')}Post…</button>
+                    ${this._previewed() ? '' : html`<button class="primary" ?disabled=${this._busy || this._previewing} @click=${this._previewPost}>${this._spin('preview')}Post…</button>`}
                     <button ?disabled=${this._busy} @click=${this._beginEdit}>Edit</button>
                     <button class="quiet danger" ?disabled=${this._busy} @click=${() => this._do(d2 => d2.discardDraft({ draftId: dv.id }), 'discard')}>
                         ${this._spin('discard')}Discard</button>
@@ -817,7 +884,7 @@ class DeskThread extends LitElement {
                         </div>` : ''}
                 </div>
                 <div class="draft-acts">
-                    <button class="primary" ?disabled=${this._busy || this._preview} @click=${this._previewPost}>${this._spin('preview')}Open issue…</button>
+                    ${this._previewed() ? '' : html`<button class="primary" ?disabled=${this._busy || this._previewing} @click=${this._previewPost}>${this._spin('preview')}Open issue…</button>`}
                     <button ?disabled=${this._busy} @click=${this._beginEdit}>Edit</button>
                     <button class="quiet danger" ?disabled=${this._busy} @click=${() => this._do(d2 => d2.discardDraft({ draftId: dv.id }), 'discard')}>
                         ${this._spin('discard')}Discard</button>
@@ -875,81 +942,46 @@ class DeskThread extends LitElement {
         `;
     }
 
+    /**
+     * Under a previewed draft: where it goes, what happens, and the buttons that send it. The draft above is exactly
+     * what is sent, so this doesn't repeat it.
+     */
     _renderConfirm(p) {
+        const sending = this._doing === 'post' || this._doing === 'post-ready';
+        let what, buttons;
         if (p.kind === 'push') {
-            return html`
-                <section class="confirm" role="alertdialog" aria-label="Confirm push">
-                    <div class="draft-head"><b>${p.target}</b></div>
-                    <div class="draft-body">
-                        ${p.push.squashed
-                            ? html`<p>This replaces the PR's branch with one commit on ${p.push.base}, under your GitHub account (a
-                                force push). It only goes through if the branch is still where it was when this was made.</p>`
-                            : html`<p>This pushes to the PR's branch under your GitHub account. It only goes through if the branch
-                                hasn't moved since the agent started, and it never force-pushes.</p>`}
-                        <ul style="margin:0;padding-left:18px">${p.push.commits.map(c => html`<li>${c.subject}</li>`)}</ul>
-                    </div>
-                    <div class="draft-acts">
-                        <button class="primary" ?disabled=${this._busy} @click=${this._post}>${this._spin('post')}${this._doing === 'post' ? 'Pushing' : 'Push to GitHub'}</button>
-                        <button class="quiet" ?disabled=${this._busy} @click=${() => { this._preview = null; }}>Cancel</button>
-                    </div>
-                </section>
-            `;
+            what = p.push.squashed
+                ? html`This replaces the PR's branch with one commit on ${p.push.base}, under your GitHub account (a force push).
+                    It only goes through if the branch is still where it was when this was made.`
+                : html`This pushes to the PR's branch under your GitHub account. It only goes through if the branch hasn't
+                    moved since the agent started, and it never force-pushes.`;
+            buttons = html`<button class="primary" ?disabled=${this._busy} @click=${this._post}>${this._spin('post')}${sending ? 'Pushing' : 'Push to GitHub'}</button>`;
+        } else if (p.kind === 'pr') {
+            what = html`This syncs ${p.pr.headRepo}'s ${p.pr.base} with ${p.pr.repo}, pushes the commit to a new branch
+                ${p.pr.headRef} there (never a force push), and opens the PR on ${p.pr.base} under your name.`;
+            buttons = html`
+                <button class="primary" ?disabled=${this._busy} @click=${() => this._post(false)}>${this._spin('post-ready')}${this._doing === 'post-ready' ? 'Opening' : 'Push and open PR'}</button>
+                <button ?disabled=${this._busy} @click=${() => this._post(true)}>${this._spin('post')}${this._doing === 'post' ? 'Opening' : 'Push and open as draft'}</button>`;
+        } else if (p.kind === 'issue') {
+            what = html`This opens the issue in ${p.draft.repo} under your name, exactly as shown.${p.draft.then
+                ? ` The comment on ${this.itemKey} is drafted next, for you to post separately.` : ''}`;
+            buttons = html`<button class="primary" ?disabled=${this._busy} @click=${this._post}>${this._spin('post')}${sending ? 'Opening' : 'Open issue on GitHub'}</button>`;
+        } else {
+            const d = p.draft;
+            const inline = p.kind === 'review' && d.comments?.length
+                ? `, with ${d.comments.length} inline comment${d.comments.length === 1 ? '' : 's'}` : '';
+            what = html`This posts to GitHub under your name, exactly as shown${inline}.`;
+            buttons = html`<button class="primary" ?disabled=${this._busy} @click=${this._post}>${this._spin('post')}${sending ? 'Posting' : 'Post to GitHub'}</button>`;
         }
-        if (p.kind === 'pr') {
-            return html`
-                <section class="confirm" role="alertdialog" aria-label="Confirm new PR">
-                    <div class="draft-head"><b>${p.target}</b></div>
-                    <div class="draft-body">
-                        ${p.warning ? html`<p class="error" role="alert">${p.warning}</p>` : ''}
-                        <p>This syncs ${p.pr.headRepo}'s ${p.pr.base} with ${p.pr.repo}, pushes the commit to a new branch
-                            ${p.pr.headRef} there (never a force push), and opens this PR on ${p.pr.base} under your name.
-                            Open it ready for review, or as a draft to mark ready later.</p>
-                        <h3 class="issue-title">${p.pr.title}</h3>
-                        <div class="md">${markdown(p.pr.body)}</div>
-                    </div>
-                    <div class="draft-acts">
-                        <button class="primary" ?disabled=${this._busy} @click=${() => this._post(false)}>${this._spin('post-ready')}${this._doing === 'post-ready' ? 'Opening' : 'Push and open PR'}</button>
-                        <button ?disabled=${this._busy} @click=${() => this._post(true)}>${this._spin('post')}${this._doing === 'post' ? 'Opening' : 'Push and open as draft'}</button>
-                        <button class="quiet" ?disabled=${this._busy} @click=${() => { this._preview = null; }}>Cancel</button>
-                    </div>
-                </section>
-            `;
-        }
-        const d = p.draft;
-        if (p.kind === 'issue') {
-            return html`
-                <section class="confirm" role="alertdialog" aria-label="Confirm new issue">
-                    <div class="draft-head"><b>${p.target}</b></div>
-                    <div class="draft-body">
-                        <p>This opens a new issue in ${d.repo} under your name, exactly as shown.${d.then
-                            ? ` The comment on ${this.itemKey} is drafted next, for you to post separately.` : ''}</p>
-                        <h3 class="issue-title">${d.title}</h3>
-                        <div class="md">${markdown(d.body)}</div>
-                    </div>
-                    <div class="draft-acts">
-                        <button class="primary" ?disabled=${this._busy} @click=${this._post}>${this._spin('post')}${this._doing === 'post' ? 'Opening' : 'Open issue on GitHub'}</button>
-                        <button class="quiet" ?disabled=${this._busy} @click=${() => { this._preview = null; }}>Cancel</button>
-                    </div>
-                </section>
-            `;
-        }
-        const isReview = p.kind === 'review';
-        const inline = isReview && d.comments?.length
-            ? `, with ${d.comments.length} inline comment${d.comments.length === 1 ? '' : 's'}` : '';
         return html`
-            <section class="confirm" role="alertdialog" aria-label="Confirm post">
-                <div class="draft-head">
-                    <b>${p.target}</b>
-                    ${isReview ? html`<span class="chip">${EVENTS[d.event] ?? 'Comment'}</span>` : ''}
-                </div>
+            <section class="confirm" aria-label="Send">
+                <div class="draft-head"><b>${p.target}</b>${p.kind === 'review'
+                    ? html`<span class="chip">${EVENTS[p.draft.event] ?? 'Comment'}</span>` : ''}</div>
                 <div class="draft-body">
-                    <p>This posts to GitHub under your name, exactly as shown${inline}.</p>
-                    <div class="md">${markdown(d.body)}</div>
+                    ${p.warning ? html`<p class="error" role="alert">${p.warning}</p>` : ''}
+                    <p>${what}</p>
                 </div>
-                <div class="draft-acts">
-                    <button class="primary" ?disabled=${this._busy} @click=${this._post}>${this._spin('post')}${this._doing === 'post' ? 'Posting' : 'Post to GitHub'}</button>
-                    <button class="quiet" ?disabled=${this._busy} @click=${() => { this._preview = null; }}>Cancel</button>
-                </div>
+                <div class="draft-acts">${buttons}</div>
             </section>
         `;
     }

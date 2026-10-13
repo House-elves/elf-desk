@@ -98,7 +98,8 @@ public class DeskApi {
         merges.rememberToken(user.login(), user.githubToken());
         return boards.board(user.login(), user.githubToken(), refresh)
                 .with(threads.summaries(), merges.recent(), runner.connected())
-                .mvnpmChecks(mvnpmRuns.state());
+                .mvnpmChecks(mvnpmRuns.state())
+                .withFlows(java.time.Instant.now());
     }
 
     // ---- threads ----

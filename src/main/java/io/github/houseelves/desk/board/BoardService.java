@@ -70,6 +70,8 @@ public class BoardService {
     private final Map<String, BoardClassifier.Fetched> cache = new ConcurrentHashMap<>();
     /** Per login: PRs that moved on since your review, from the last fetch. */
     private final Map<String, Map<String, String>> sinceReview = new ConcurrentHashMap<>();
+    /** Per login: others' PRs you reviewed, and when you last did, from the last fetch. */
+    private final Map<String, Map<String, Instant>> reviewedAt = new ConcurrentHashMap<>();
 
     /** login -> issue key -> open PRs that fix or mention it, from the last fetch. */
     private final Map<String, Map<String, List<GitHub.LinkedPr>>> linkedPrs = new ConcurrentHashMap<>();
@@ -114,6 +116,7 @@ public class BoardService {
         return BoardClassifier.classify(fetched, scopes.scope(), mvnpm.repos(), mvnpm.installed(), mvnpm.state(),
                 settings.refreshMinutes(), ignores.keys()).refreshing(refreshing).returned(ignores.recentlyReturned())
                 .sinceReview(sinceReview.getOrDefault(login, Map.of()))
+                .reviewedAt(reviewedAt.getOrDefault(login, Map.of()))
                 .linkedPrs(linkedPrs.getOrDefault(login, Map.of()));
     }
 
@@ -304,6 +307,11 @@ public class BoardService {
             LOG.warnf("Reading PR merge states failed: %s", e.getMessage());
         }
         sinceReview.put(login, sinceYourReview(login, details, inv.items(), rev.items(), done.items()));
+        Map<String, Instant> reviewTimes = new HashMap<>();
+        details.forEach((key, d) -> {
+            if (d.myReviewAt() != null) reviewTimes.put(key, d.myReviewAt());
+        });
+        reviewedAt.put(login, reviewTimes);
         try {
             linkedPrs.put(login, await(links));
         } catch (Exception e) {
