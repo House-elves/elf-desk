@@ -260,6 +260,30 @@ public class Poster {
         return url;
     }
 
+    /** Marks your own draft PR ready for review: the PR you opened from a fix, once you've read the change. */
+    public void ready(String itemKey, String login) {
+        if (!itemKey.matches("[A-Za-z0-9-]+/[A-Za-z0-9._-]+#\\d+")) throw new IllegalArgumentException("Not a PR: " + itemKey);
+        String repo = itemKey.substring(0, itemKey.indexOf('#'));
+        int number = Integer.parseInt(itemKey.substring(itemKey.indexOf('#') + 1));
+        try {
+            writes.readyForReview(repo, number);
+        } catch (GitHubWriter.WriteFailed e) {
+            throw new IllegalStateException("GitHub refused it: " + githubMessage(e));
+        }
+        QuarkusTransaction.requiringNew().run(() -> {
+            DeskThread t = DeskThread.byKey(itemKey);
+            GitHubAction a = new GitHubAction();
+            a.threadId = t == null ? null : t.id;
+            a.kind = "ready";
+            a.request = "{\"item\":\"" + itemKey + "\",\"ready\":true}";
+            a.resultUrl = "https://github.com/" + repo + "/pull/" + number;
+            a.login = login;
+            a.persist();
+            if (t != null) Turn.add(t.id, Turn.SYSTEM, null, "You marked the PR ready for review.");
+        });
+        live.changed(itemKey);
+    }
+
     /**
      * Assigns you to an issue or PR on GitHub. GitHub quietly ignores assignees without write access to the repo,
      * so the answer is checked.
@@ -340,8 +364,9 @@ public class Poster {
     }
 
     /**
-     * Opens the PR: brings your fork's base branch up to date (so the push sends only the fix), pushes the commit to
-     * a new branch there (never a force push), and opens the PR from it. If the PR is refused after the push, the
+     * Opens the PR, as a draft: brings your fork's base branch up to date (so the push sends only the fix), pushes the
+     * commit to a new branch there (never a force push), and opens the draft PR from it. You read the change on
+     * GitHub, then mark it ready for review ({@link #ready}). If the PR is refused after the push, the
      * branch stays; opening again pushes nothing new.
      */
     private Posted openPr(Draft draft, DeskThread t, String login) {
@@ -380,7 +405,8 @@ public class Poster {
             a.resultUrl = url;
             a.login = login;
             a.persist();
-            Turn.add(t.id, Turn.SYSTEM, null, "You opened the PR: " + url);
+            Turn.add(t.id, Turn.SYSTEM, null, "You opened a draft PR: " + url + ". Read the change on GitHub, then mark it"
+                    + " ready for review from its page here (or on GitHub).");
         });
         live.changed(t.itemKey);
         return new Posted(url, null);

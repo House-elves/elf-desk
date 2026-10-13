@@ -160,6 +160,12 @@ public class DeskApi {
         return url;
     }
 
+    /** Mark your own draft PR ready for review (through the runner). Returns the PR as it is now. */
+    public Item readyForReview(String itemKey) {
+        poster.ready(itemKey, user.login());
+        return boards.refreshItem(user.login(), user.githubToken(), itemKey);
+    }
+
     /** Assign yourself to an issue or PR on GitHub (through the runner). */
     public boolean assignMe(String itemKey) {
         poster.assign(itemKey, user.login());

@@ -5,6 +5,7 @@ import './merge-control.js';
 import './ci-menu.js';
 import './conflict-menu.js';
 import './pr-activity.js';
+import { lastBoard } from './desk-board.js';
 
 const EVENTS = {
     COMMENT: 'Comment',
@@ -240,6 +241,14 @@ class DeskThread extends LitElement {
         }, 'rebase');
     }
 
+    async _ready() {
+        await this._do(async d => {
+            const item = await d.readyForReview({ itemKey: this.itemKey });
+            if (item) rememberItem(item);
+            return null;
+        }, 'ready');
+    }
+
     _squash() {
         return this._do(d => d.squash({ itemKey: this.itemKey }), 'squash');
     }
@@ -466,6 +475,10 @@ class DeskThread extends LitElement {
                         ? html`<button ?disabled=${this._busy} @click=${this._squash}
                             title="Make the PR one commit on its base. You confirm the push.">
                             ${this._spin('squash')}Squash into one commit (${this._commits})</button>` : ''}
+                    ${kind === 'PR' && item?.draft && !merged && !this._closed
+                        && item.author?.toLowerCase() === lastBoard?.login?.toLowerCase() ? html`
+                        <button class="primary" ?disabled=${this._busy} @click=${this._ready}
+                            title="Your draft PR: once you've read the change on GitHub, ask for reviews">${this._spin('ready')}Ready for review</button>` : ''}
                     ${kind === 'PR' && !merged ? html`<pr-activity block .itemKey=${this.itemKey}></pr-activity>` : ''}
                     ${url ? html`<a class="btn" href=${url} target="_blank" rel="noopener">Open on GitHub</a>` : ''}
                     ${!merged && !this._closed ? html`<button class="quiet" ?disabled=${this._busy} @click=${this._toggleIgnore}
@@ -673,7 +686,7 @@ class DeskThread extends LitElement {
                     ${p.diffstat ? html`<pre class="lines" style="max-height:12rem">${p.diffstat}</pre>` : ''}
                 </div>
                 <div class="draft-acts">
-                    <button class="primary" ?disabled=${this._busy || this._preview} @click=${this._previewPost}>${this._spin('preview')}Open PR…</button>
+                    <button class="primary" ?disabled=${this._busy || this._preview} @click=${this._previewPost}>${this._spin('preview')}Open draft PR…</button>
                     <button ?disabled=${this._busy} @click=${this._beginEdit}>Edit</button>
                     <button class="quiet danger" ?disabled=${this._busy} @click=${() => this._do(d2 => d2.discardDraft({ draftId: dv.id }), 'discard')}>
                         ${this._spin('discard')}Discard</button>
@@ -837,12 +850,13 @@ class DeskThread extends LitElement {
                     <div class="draft-body">
                         ${p.warning ? html`<p class="error" role="alert">${p.warning}</p>` : ''}
                         <p>This syncs ${p.pr.headRepo}'s ${p.pr.base} with ${p.pr.repo}, pushes the commit to a new branch
-                            ${p.pr.headRef} there (never a force push), and opens this PR on ${p.pr.base} under your name.</p>
+                            ${p.pr.headRef} there (never a force push), and opens this as a <b>draft</b> PR on ${p.pr.base} under
+                            your name. Read the change on GitHub, then mark it ready for review.</p>
                         <h3 class="issue-title">${p.pr.title}</h3>
                         <div class="md">${markdown(p.pr.body)}</div>
                     </div>
                     <div class="draft-acts">
-                        <button class="primary" ?disabled=${this._busy} @click=${this._post}>${this._spin('post')}${this._doing === 'post' ? 'Opening' : 'Push and open PR'}</button>
+                        <button class="primary" ?disabled=${this._busy} @click=${this._post}>${this._spin('post')}${this._doing === 'post' ? 'Opening' : 'Push and open draft PR'}</button>
                         <button class="quiet" ?disabled=${this._busy} @click=${() => { this._preview = null; }}>Cancel</button>
                     </div>
                 </section>

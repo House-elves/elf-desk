@@ -73,6 +73,7 @@ class DeskBoard extends LitElement {
         _mvnpmStarting: { state: true },
         _activityFor: { state: true },
         _assigning: { state: true },
+        _readying: { state: true },
         _rebasing: { state: true },
         _rebaseAsked: { state: true },
         _ignoring: { state: true },
@@ -170,6 +171,7 @@ class DeskBoard extends LitElement {
         this._ignoring = null;
         this._rebasing = null;
         this._assigning = null;
+        this._readying = null;
         this._mvnpmStarting = null;
     }
 
@@ -295,6 +297,27 @@ class DeskBoard extends LitElement {
         if (this._rebaseAsked?.has(item.key)) return html`<span class="chip run">${spinner}Dependabot is rebasing</span>`;
         return html`<button class="sm quiet" ?disabled=${this._rebasing !== null} @click=${() => this._askRebase(item)}
                 title='Comment "@dependabot rebase" on the PR, as you'>${this._rebasing === item.key ? spinner : ''}Rebase</button>`;
+    }
+
+    async _ready(item) {
+        this._readying = item.key;
+        this._error = null;
+        try {
+            const desk = await api();
+            await desk.readyForReview({ itemKey: item.key });
+            this._setBoard(await desk.board({ refresh: false }));
+        } catch (e) {
+            this._error = `Couldn't mark ${item.key} ready for review: ${errorMessage(e)}`;
+        } finally {
+            this._readying = null;
+        }
+    }
+
+    /** Your own draft PR (for example one opened from a fix): once you've read it on GitHub, ask for reviews. */
+    _readyButton(item, laneId) {
+        if (laneId !== 'mine' || !item.draft) return '';
+        return html`<button class="sm" ?disabled=${this._readying !== null} @click=${() => this._ready(item)}
+                title="Mark the draft PR ready for review on GitHub">${this._readying === item.key ? spinner : ''}Ready for review</button>`;
     }
 
     async _assignMe(item) {
@@ -586,7 +609,7 @@ class DeskBoard extends LitElement {
                 title="The PR covers it: move the issue to Ignored">${this._ignoring === item.key ? spinner : ''}Ignore</button>` : '';
         if (t) {
             return html`<a class="btn sm ${['draft', 'answered'].includes(t.state) ? 'primary' : ''}" href=${threadHref(item.key)}>
-                ${{ draft: 'Review draft', answered: 'Read answer' }[t.state] ?? 'Open thread'}</a>${fixActs}${merge}${this._rebaseButton(item)}${this._assignButton(item, laneId)}${this._more(item, { withIgnore: !fix, withMergeAnyway: !ownReady })}`;
+                ${{ draft: 'Review draft', answered: 'Read answer' }[t.state] ?? 'Open thread'}</a>${fixActs}${merge}${this._readyButton(item, laneId)}${this._rebaseButton(item)}${this._assignButton(item, laneId)}${this._more(item, { withIgnore: !fix, withMergeAnyway: !ownReady })}`;
         }
         if (fix) return html`${fixActs}${this._assignButton(item, laneId)}${this._more(item, { withIgnore: false })}`;
         const starting = this._starting === item.key;
@@ -601,7 +624,7 @@ class DeskBoard extends LitElement {
             main = html`<button class="sm primary" ?disabled=${busy} @click=${() => this._start(item, 'investigate')}>
                 ${starting ? spinner : ''}Investigate</button>`;
         }
-        return html`${main}<a class="btn sm quiet" href=${threadHref(item.key)}>Ask</a>${merge}${this._rebaseButton(item)}${this._assignButton(item, laneId)}${this._more(item, { withMergeAnyway: !ownReady })}`;
+        return html`${main}<a class="btn sm quiet" href=${threadHref(item.key)}>Ask</a>${merge}${this._readyButton(item, laneId)}${this._rebaseButton(item)}${this._assignButton(item, laneId)}${this._more(item, { withMergeAnyway: !ownReady })}`;
     }
 
     _mergeAnywayControl(item) {

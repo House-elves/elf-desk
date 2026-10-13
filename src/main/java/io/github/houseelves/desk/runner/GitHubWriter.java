@@ -57,10 +57,18 @@ public class GitHubWriter {
         return write("POST", "/repos/" + repo + "/issues", Map.of("title", title, "body", body), RunnerHub.ISSUE_SINCE);
     }
 
-    /** Opens a PR from {@code head} ("you:branch", the runner refuses anyone else's fork) onto {@code base}. */
+    /**
+     * Opens a draft PR from {@code head} ("you:branch", the runner refuses anyone else's fork) onto {@code base}. Always
+     * a draft: you read the change on GitHub, then {@link #readyForReview}.
+     */
     public JsonNode createPull(String repo, String title, String head, String base, String body) {
-        return write("POST", "/repos/" + repo + "/pulls", Map.of("title", title, "head", head, "base", base, "body", body),
-                RunnerHub.PR_SINCE);
+        return write("POST", "/repos/" + repo + "/pulls",
+                Map.of("title", title, "head", head, "base", base, "body", body, "draft", true), RunnerHub.PR_SINCE);
+    }
+
+    /** Marks your own draft PR ready for review (the runner refuses anyone else's). */
+    public JsonNode readyForReview(String repo, int number) {
+        return send(hub.message("github.ready").put("repo", repo).put("number", number), RunnerHub.PR_SINCE);
     }
 
     /** Brings a branch of your fork up to date with its upstream, as GitHub's "Sync fork" does. */

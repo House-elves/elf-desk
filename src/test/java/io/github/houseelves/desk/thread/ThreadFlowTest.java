@@ -302,6 +302,10 @@ class ThreadFlowTest {
         verify(writes).syncFork("phillip-kruger/quarkus", "main");
         verify(writes).push("quarkusio/quarkus", 32850, "phillip-kruger/quarkus", "fix-32850-aaaaaaa", base, fix, null);
         assertNull(threads.view(issue).draft());
+
+        // A draft PR: ready for review is its own click, once you've read the change on GitHub.
+        poster.ready("quarkusio/quarkus#57300", "phillip-kruger");
+        verify(writes).readyForReview("quarkusio/quarkus", 57300);
     }
 
     @Test
