@@ -65,6 +65,22 @@ class FlowClassifierTest {
     }
 
     @Test
+    void aReviewerSpeakingAfterYouMakesItYourMove() {
+        Item waiting = pr2(ME, "SUCCESS", "BLOCKED", "MERGEABLE", false, false, "REVIEW_REQUIRED");
+        Instant at = NOW.minusSeconds(3600);
+        Flow f = FlowClassifier.flow("mine", waiting, new FlowClassifier.Ctx(ME, null, null, null, null, List.of(), null, false, NOW,
+                new GitHub.Feedback("brunobat", at, "COMMENTED", true, 2)));
+        is(f, Flow.YOU, 2, "whats-new");
+        assertEquals("brunobat reviewed, 2 threads open.", f.say());
+        assertEquals(at, f.since());
+        // You answered since: back to waiting on them, with the threads still mentioned.
+        f = FlowClassifier.flow("mine", waiting, new FlowClassifier.Ctx(ME, null, null, null, null, List.of(), null, false, NOW,
+                new GitHub.Feedback("brunobat", at, "COMMENTED", false, 1)));
+        is(f, Flow.OTHERS, 2, null);
+        org.junit.jupiter.api.Assertions.assertTrue(f.say().endsWith(", 1 thread open."), f.say());
+    }
+
+    @Test
     void afterTheAgentExplainedFailingCiTheNextStepIsTheFix() {
         Item red = pr2(ME, "FAILURE", "UNSTABLE", "MERGEABLE", false, false, null);
         is(FlowClassifier.flow("mine", red, ctx(thread("working", "ci-why", null), null, null, null, List.of())), Flow.AGENT, 1, "open");

@@ -38,7 +38,13 @@ public final class FlowClassifier {
 
     /** Everything the rules look at, for one item. */
     record Ctx(String login, ThreadView.Summary thread, MergeService.View merge, String sinceReview, Instant reviewedAt,
-            List<GitHub.LinkedPr> links, Board.MvnpmRow mvnpm, boolean mvnpmChecking, Instant now) {
+            List<GitHub.LinkedPr> links, Board.MvnpmRow mvnpm, boolean mvnpmChecking, Instant now,
+            GitHub.Feedback feedback) {
+
+        Ctx(String login, ThreadView.Summary thread, MergeService.View merge, String sinceReview, Instant reviewedAt,
+                List<GitHub.LinkedPr> links, Board.MvnpmRow mvnpm, boolean mvnpmChecking, Instant now) {
+            this(login, thread, merge, sinceReview, reviewedAt, links, mvnpm, mvnpmChecking, now, null);
+        }
     }
 
     public static Map<String, Flow> flows(Board b, Instant now) {
@@ -58,7 +64,7 @@ public final class FlowClassifier {
                 || running.contains("mvnpm-dependabot-pr-" + i.repo().replace('/', '-') + "-" + i.number() + ".service"));
         return new Ctx(b.login(), get(b.threads(), i.key()), get(b.merges(), i.key()), get(b.sinceReview(), i.key()),
                 get(b.reviewedAt(), i.key()), Objects.requireNonNullElse(get(b.linkedPrs(), i.key()), List.of()), row,
-                checking, now);
+                checking, now, get(b.feedback(), i.key()));
     }
 
     private static <T> T get(Map<String, T> m, String key) {
@@ -183,9 +189,19 @@ public final class FlowClassifier {
         }
         Flow problem = ciProblem("mine", MINE_STEPS, 1, i, last, true);
         if (problem != null) return problem;
+        GitHub.Feedback said = c.feedback();
+        if (said != null && said.afterYou() && !"APPROVED".equals(said.state())) {
+            String what = switch (said.state()) {
+                case "CHANGES_REQUESTED" -> " asked for changes";
+                case "COMMENT" -> " commented";
+                default -> " reviewed";
+            };
+            return flow("mine", MINE_STEPS, 2, Flow.YOU, said.at(), said.who() + what + openThreads(said) + ".",
+                    new Flow.Next("whats-new", "Read the review"), List.of(new Flow.Next("open", "Ask the agent")));
+        }
         if (pending(i)) return flow("mine", MINE_STEPS, 1, Flow.CI, i.updatedAt(), "CI is running.", null, List.of());
         if ("CHANGES_REQUESTED".equals(i.reviewDecision())) {
-            return flow("mine", MINE_STEPS, 2, Flow.YOU, i.updatedAt(), "A reviewer asked for changes.",
+            return flow("mine", MINE_STEPS, 2, Flow.YOU, i.updatedAt(), "A reviewer asked for changes" + openThreads(said) + ".",
                     new Flow.Next("whats-new", "What's new"), List.of(new Flow.Next("open", "Ask the agent")));
         }
         if (mergeable(i)) {
@@ -195,8 +211,14 @@ public final class FlowClassifier {
             return flow("mine", MINE_STEPS, 2, Flow.OTHERS, i.updatedAt(), "Green. Waiting for a review" + waited(i, c) + ".",
                     null, List.of(new Flow.Next("merge-anyway", "Merge without approval"), new Flow.Next("whats-new", "What's new")));
         }
-        return flow("mine", MINE_STEPS, 2, Flow.OTHERS, i.updatedAt(), "Waiting on reviewers" + waited(i, c) + ".", null,
+        return flow("mine", MINE_STEPS, 2, Flow.OTHERS, i.updatedAt(), "Waiting on reviewers" + waited(i, c) + openThreads(said) + ".", null,
                 List.of(new Flow.Next("whats-new", "What's new")));
+    }
+
+    /** ", 2 threads open" (none: ""). */
+    static String openThreads(GitHub.Feedback said) {
+        if (said == null || said.openThreads() == 0) return "";
+        return said.openThreads() == 1 ? ", 1 thread open" : ", " + said.openThreads() + " threads open";
     }
 
     /** Someone else's PR: review it, wait for the author, then CI and merge. */

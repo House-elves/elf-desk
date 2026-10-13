@@ -226,4 +226,30 @@ class GitHubTest {
         assertTrue(!prs.get(1).fixes() && prs.get(1).draft());
         assertTrue(!links.containsKey("quarkusio/quarkus#1"));
     }
+
+    @Test
+    void feedbackIsTheLastPersonToSpeakAndWhetherThatWasAfterYou() throws Exception {
+        JsonNode pr = json("""
+                {"lastCommit": {"nodes": [{"commit": {"committedDate": "2026-10-11T23:21:35Z"}}]},
+                 "allReviews": {"nodes": [
+                   {"state": "COMMENTED", "submittedAt": "2026-10-13T14:07:40Z", "author": {"__typename": "User", "login": "brunobat"}},
+                   {"state": "PENDING", "submittedAt": null, "author": {"__typename": "User", "login": "brunobat"}},
+                   {"state": "COMMENTED", "submittedAt": "2026-10-13T15:38:39Z", "author": {"__typename": "User", "login": "brunobat"}}]},
+                 "comments": {"nodes": [
+                   {"createdAt": "2026-10-13T01:29:09Z", "author": {"__typename": "User", "login": "phillip-kruger"}},
+                   {"createdAt": "2026-10-13T20:00:00Z", "author": {"__typename": "Bot", "login": "quarkus-bot"}}]},
+                 "reviewThreads": {"nodes": [{"isResolved": false}, {"isResolved": true}, {"isResolved": false}]}}
+                """);
+        GitHub.Feedback f = GitHub.feedback(pr, "phillip-kruger");
+        assertEquals("brunobat", f.who());
+        assertEquals("COMMENTED", f.state());
+        assertEquals("2026-10-13T15:38:39Z", f.at().toString());
+        assertTrue(f.afterYou());
+        assertEquals(2, f.openThreads());
+
+        // You replied after: not your move any more.
+        ((com.fasterxml.jackson.databind.node.ArrayNode) pr.path("comments").path("nodes")).addObject()
+                .put("createdAt", "2026-10-13T16:00:00Z").putObject("author").put("__typename", "User").put("login", "phillip-kruger");
+        assertTrue(!GitHub.feedback(pr, "phillip-kruger").afterYou());
+    }
 }

@@ -72,6 +72,7 @@ public class BoardService {
     private final Map<String, Map<String, String>> sinceReview = new ConcurrentHashMap<>();
     /** Per login: others' PRs you reviewed, and when you last did, from the last fetch. */
     private final Map<String, Map<String, Instant>> reviewedAt = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, GitHub.Feedback>> feedback = new ConcurrentHashMap<>();
 
     /** login -> issue key -> open PRs that fix or mention it, from the last fetch. */
     private final Map<String, Map<String, List<GitHub.LinkedPr>>> linkedPrs = new ConcurrentHashMap<>();
@@ -117,6 +118,7 @@ public class BoardService {
                 settings.refreshMinutes(), ignores.keys()).refreshing(refreshing).returned(ignores.recentlyReturned())
                 .sinceReview(sinceReview.getOrDefault(login, Map.of()))
                 .reviewedAt(reviewedAt.getOrDefault(login, Map.of()))
+                .feedback(feedback.getOrDefault(login, Map.of()))
                 .linkedPrs(linkedPrs.getOrDefault(login, Map.of()));
     }
 
@@ -312,6 +314,11 @@ public class BoardService {
             if (d.myReviewAt() != null) reviewTimes.put(key, d.myReviewAt());
         });
         reviewedAt.put(login, reviewTimes);
+        Map<String, GitHub.Feedback> said = new HashMap<>();
+        details.forEach((key, d) -> {
+            if (d.feedback() != null) said.put(key, d.feedback());
+        });
+        feedback.put(login, said);
         try {
             linkedPrs.put(login, await(links));
         } catch (Exception e) {

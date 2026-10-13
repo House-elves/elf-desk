@@ -24,6 +24,7 @@ import io.github.houseelves.desk.thread.ThreadView;
  * @param returned  ignored items that came back in the last day, with why
  * @param linkedPrs open PRs that fix or mention an issue, by the issue's key
  * @param reviewedAt others' PRs you reviewed, with when you last did
+ * @param feedback  your PRs: what reviewers said last, by item key
  * @param flows     where each item is in its flow and whose move it is, by item key (see {@link FlowClassifier})
  */
 public record Board(
@@ -45,56 +46,63 @@ public record Board(
         Map<String, String> sinceReview,
         Map<String, List<GitHub.LinkedPr>> linkedPrs,
         Map<String, Instant> reviewedAt,
-        Map<String, Flow> flows) {
+        Map<String, Flow> flows,
+        Map<String, GitHub.Feedback> feedback) {
 
     /** The same board with the desk's own state (threads, merges, runner) added. */
     public Board with(Map<String, ThreadView.Summary> threads, Map<String, MergeService.View> merges,
             boolean runnerConnected) {
         return new Board(login, fetchedAt, refreshMinutes, scopeEmpty, truncated, lanes, mvnpm, hidden, ignored, threads,
-                runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, linkedPrs, reviewedAt, flows);
+                runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, linkedPrs, reviewedAt, flows, feedback);
     }
 
     /** Adds which PRs you reviewed moved on since ("New commits since your review"). */
     public Board sinceReview(Map<String, String> since) {
         return new Board(login, fetchedAt, refreshMinutes, scopeEmpty, truncated, lanes, mvnpm, hidden, ignored, threads,
-                runnerConnected, refreshing, merges, returned, mvnpmChecks, since, linkedPrs, reviewedAt, flows);
+                runnerConnected, refreshing, merges, returned, mvnpmChecks, since, linkedPrs, reviewedAt, flows, feedback);
     }
 
     /** Adds which mvnpm-dependabot checks are running now. */
     public Board mvnpmChecks(MvnpmRuns.State checks) {
         return new Board(login, fetchedAt, refreshMinutes, scopeEmpty, truncated, lanes, mvnpm, hidden, ignored, threads,
-                runnerConnected, refreshing, merges, returned, checks, sinceReview, linkedPrs, reviewedAt, flows);
+                runnerConnected, refreshing, merges, returned, checks, sinceReview, linkedPrs, reviewedAt, flows, feedback);
     }
 
     /** Adds why recently un-ignored items came back ("Review requested", "You were mentioned"). */
     public Board returned(Map<String, String> returned) {
         return new Board(login, fetchedAt, refreshMinutes, scopeEmpty, truncated, lanes, mvnpm, hidden, ignored, threads,
-                runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, linkedPrs, reviewedAt, flows);
+                runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, linkedPrs, reviewedAt, flows, feedback);
     }
 
     /** Adds when you last reviewed each of others' PRs. */
     public Board reviewedAt(Map<String, Instant> at) {
         return new Board(login, fetchedAt, refreshMinutes, scopeEmpty, truncated, lanes, mvnpm, hidden, ignored, threads,
-                runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, linkedPrs, at, flows);
+                runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, linkedPrs, at, flows, feedback);
+    }
+
+    /** Adds what reviewers said last on your PRs. */
+    public Board feedback(Map<String, GitHub.Feedback> said) {
+        return new Board(login, fetchedAt, refreshMinutes, scopeEmpty, truncated, lanes, mvnpm, hidden, ignored, threads,
+                runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, linkedPrs, reviewedAt, flows, said);
     }
 
     /** Works out every item's flow from everything else on the board. Call last. */
     public Board withFlows(Instant now) {
         return new Board(login, fetchedAt, refreshMinutes, scopeEmpty, truncated, lanes, mvnpm, hidden, ignored, threads,
                 runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, linkedPrs, reviewedAt,
-                FlowClassifier.flows(this, now));
+                FlowClassifier.flows(this, now), feedback);
     }
 
     /** Adds the open PRs that fix or mention each issue. */
     public Board linkedPrs(Map<String, List<GitHub.LinkedPr>> links) {
         return new Board(login, fetchedAt, refreshMinutes, scopeEmpty, truncated, lanes, mvnpm, hidden, ignored, threads,
-                runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, links, reviewedAt, flows);
+                runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, links, reviewedAt, flows, feedback);
     }
 
     /** Marks a board served from a stale cache while fresh data is being fetched. */
     public Board refreshing(boolean refreshing) {
         return new Board(login, fetchedAt, refreshMinutes, scopeEmpty, truncated, lanes, mvnpm, hidden, ignored, threads,
-                runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, linkedPrs, reviewedAt, flows);
+                runnerConnected, refreshing, merges, returned, mvnpmChecks, sinceReview, linkedPrs, reviewedAt, flows, feedback);
     }
 
     public record Lane(String id, String title, List<Item> items) {

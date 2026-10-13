@@ -522,12 +522,31 @@ public class GitHub {
     /**
      * @param myReviewAt     when you last reviewed this PR, or null
      * @param myReviewedSha  the head commit you reviewed, or null
+     * @param feedback       on your own PRs: what reviewers said last, or null
      */
-    public record PrDetails(String mergeState, boolean awaitingApproval, Instant myReviewAt, String myReviewedSha) {
+    public record PrDetails(String mergeState, boolean awaitingApproval, Instant myReviewAt, String myReviewedSha,
+            Feedback feedback) {
 
         public PrDetails(String mergeState, boolean awaitingApproval) {
-            this(mergeState, awaitingApproval, null, null);
+            this(mergeState, awaitingApproval, null, null, null);
         }
+
+        public PrDetails(String mergeState, boolean awaitingApproval, Instant myReviewAt, String myReviewedSha) {
+            this(mergeState, awaitingApproval, myReviewAt, myReviewedSha, null);
+        }
+    }
+
+    /**
+     * The last word from a person (not a bot) on your PR. A "Commented" review leaves GitHub's review decision at
+     * "review required", so this is how the desk knows a reviewer said something.
+     *
+     * @param who         their login, or null when nobody but you and bots said anything
+     * @param at          when
+     * @param state       a review's state (COMMENTED, CHANGES_REQUESTED, APPROVED), or COMMENT for a plain comment
+     * @param afterYou    it came after your last commit, comment and review: your move
+     * @param openThreads review threads not resolved yet
+     */
+    public record Feedback(String who, Instant at, String state, boolean afterYou, int openThreads) {
     }
 
     public static final int DETAILS_PER_QUERY = 25;
@@ -605,7 +624,8 @@ public class GitHub {
                         .append(repo[1]).append("\") { pullRequest(number: ").append(key.substring(key.indexOf('#') + 1))
                         .append(") { mergeStateStatus commits(last: 1) { nodes { commit { "
                                 + "checkSuites(first: 30) { nodes { conclusion workflowRun { databaseId } } } } } } ")
-                        .append(mine ? "reviews(author: \"" + login + "\", last: 1) { nodes { submittedAt commit { oid } } } " : "")
+                        .append(mine ? "reviews(author: \"" + login + "\", last: 1) { nodes { submittedAt commit { oid } } } "
+                                + "author { login } " + FEEDBACK : "")
                         .append("} }\n");
             }
             q.append("}");
@@ -614,12 +634,54 @@ public class GitHub {
                 JsonNode pr = data.path("p" + i).path("pullRequest");
                 if (!pr.isObject()) continue;
                 JsonNode review = pr.path("reviews").path("nodes").path(0);
+                boolean myPr = mine && login.equalsIgnoreCase(pr.path("author").path("login").asText());
                 out.put(chunk.get(i), new PrDetails(textOrNull(pr.path("mergeStateStatus")),
                         !awaitingApproval(pr.path("commits").path("nodes").path(0).path("commit")).isEmpty(),
-                        instant(review.path("submittedAt")), textOrNull(review.path("commit").path("oid"))));
+                        instant(review.path("submittedAt")), textOrNull(review.path("commit").path("oid")),
+                        myPr ? feedback(pr, login) : null));
             }
         }
         return out;
+    }
+
+    /** Reviews, comments and threads on a PR, for {@link #feedback}. */
+    private static final String FEEDBACK = "lastCommit: commits(last: 1) { nodes { commit { committedDate } } } "
+            + "allReviews: reviews(last: 30) { nodes { state submittedAt author { __typename login } } } "
+            + "comments(last: 30) { nodes { createdAt author { __typename login } } } "
+            + "reviewThreads(last: 100) { nodes { isResolved } } ";
+
+    /** Who spoke last on your PR, and whether that came after you did. Null when nobody did and nothing is open. */
+    static Feedback feedback(JsonNode pr, String login) {
+        Instant mine = instant(pr.path("lastCommit").path("nodes").path(0).path("commit").path("committedDate"));
+        String who = null, state = null;
+        Instant at = null;
+        List<JsonNode> said = new ArrayList<>();
+        pr.path("allReviews").path("nodes").forEach(said::add);
+        pr.path("comments").path("nodes").forEach(said::add);
+        for (JsonNode n : said) {
+            boolean review = n.has("state");
+            if (review && "PENDING".equals(n.path("state").asText())) continue;
+            Instant when = instant(n.path(review ? "submittedAt" : "createdAt"));
+            if (when == null) continue;
+            String by = n.path("author").path("login").asText("");
+            if (by.equalsIgnoreCase(login)) {
+                if (mine == null || when.isAfter(mine)) mine = when;
+            } else if (!isBot(n.path("author")) && (at == null || when.isAfter(at))) {
+                who = by;
+                at = when;
+                state = review ? n.path("state").asText() : "COMMENT";
+            }
+        }
+        int open = 0;
+        for (JsonNode t : pr.path("reviewThreads").path("nodes")) if (!t.path("isResolved").asBoolean()) open++;
+        if (who == null && open == 0) return null;
+        return new Feedback(who, at, state, at != null && (mine == null || at.isAfter(mine)), open);
+    }
+
+    static boolean isBot(JsonNode author) {
+        String login = author.path("login").asText("");
+        return "Bot".equals(author.path("__typename").asText()) || login.isEmpty() || login.endsWith("[bot]")
+                || login.endsWith("-bot");
     }
 
     private static final String ACTIVITY = """
