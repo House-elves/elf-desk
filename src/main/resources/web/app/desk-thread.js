@@ -189,7 +189,7 @@ class DeskThread extends LitElement {
             this._commits = 0;
             this._diff = null;
             this._diffOpen = false;
-            this._changeOpen = false;
+            this._changeOpen = true; // a draft's change shows open: you read it before confirming
             this._rebaseAsked = false;
             this._scrollPending = true;
             this._load();
@@ -285,16 +285,16 @@ class DeskThread extends LitElement {
             </section>`;
     }
 
-    /** A draft's change (commits to push, or a fix to open as a PR), to read before confirming. */
+    /** A draft's change (commits to push, or a fix to open as a PR), open to read before confirming. */
     _renderChange(patch, cut, diffstat) {
         if (!patch) return diffstat ? html`<pre class="lines" style="max-height:12rem">${diffstat}</pre>` : '';
         return html`
             <div class="change">
+                ${this._changeOpen ? html`<diff-view .diff=${patch} .cut=${cut}></diff-view>`
+                    : diffstat ? html`<pre class="lines" style="max-height:12rem">${diffstat}</pre>` : ''}
                 <button class="files-toggle" aria-expanded=${this._changeOpen ? 'true' : 'false'}
                         @click=${() => { this._changeOpen = !this._changeOpen; }}>
                     ${this._changeOpen ? 'Hide the change' : 'Show the change'}</button>
-                ${this._changeOpen ? html`<diff-view .diff=${patch} .cut=${cut}></diff-view>`
-                    : diffstat ? html`<pre class="lines" style="max-height:12rem">${diffstat}</pre>` : ''}
             </div>`;
     }
 
