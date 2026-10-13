@@ -311,9 +311,8 @@ class DeskBoard extends LitElement {
         this._error = null;
         try {
             const desk = await api();
-            const checks = await desk.mvnpmRun(item ? { repo: item.repo, pr: item.number } : { repo: null, pr: null });
-            this._setBoard({ ...this._board, mvnpmChecks: checks });
-            this._softReload();
+            await desk.mvnpmRun(item ? { repo: item.repo, pr: item.number } : { repo: null, pr: null });
+            await this._reloadNow(); // the row moves to "checking" with its new flow
         } catch (e) {
             this._error = `Couldn't start the mvnpm check: ${errorMessage(e)}`;
         } finally {

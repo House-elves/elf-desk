@@ -56,10 +56,20 @@ public class MvnpmRuns {
         if (result.path("status").asInt() != 200) {
             throw new IllegalStateException(result.path("error").asText("The runner couldn't start the check"));
         }
+        // The runner reports its units a few seconds later; until then the board shows the check as running.
+        String unit = repo == null ? "mvnpm-dependabot.service"
+                : "mvnpm-dependabot-pr-" + repo.replace('/', '-') + "-" + pr + ".service";
+        synchronized (this) {
+            if (!running.contains(unit)) {
+                if (running.isEmpty()) since = Instant.now();
+                running = java.util.stream.Stream.concat(running.stream(), java.util.stream.Stream.of(unit)).toList();
+            }
+        }
+        live.boardUpdated();
     }
 
     /** From the runner: which checks run now. When the last one finishes, the board refreshes. */
-    public void onState(List<String> now) {
+    public synchronized void onState(List<String> now) {
         boolean finished = !running.isEmpty() && now.isEmpty();
         if (running.isEmpty() && !now.isEmpty()) since = Instant.now();
         running = List.copyOf(now);
@@ -71,7 +81,7 @@ public class MvnpmRuns {
     }
 
     /** The runner went away: its report of running checks is no longer known. */
-    public void onRunnerGone() {
+    public synchronized void onRunnerGone() {
         running = List.of();
         since = null;
     }
