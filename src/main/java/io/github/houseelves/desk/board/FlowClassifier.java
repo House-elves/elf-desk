@@ -205,8 +205,17 @@ public final class FlowClassifier {
 
     // ---- GitHub's state, per flow ----
 
-    /** Your own PR: self-review, CI green, others' reviews, merge. */
+    /** Your own PR: self-review, CI green, others' reviews, merge. Self-review fits at every stage, CI running included. */
     static Flow mine(Item i, Ctx c) {
+        Flow f = mineState(i, c);
+        Flow.Next self = new Flow.Next("review", "Self-review");
+        if (f.next() != null && f.next().id().equals("review") || f.more().stream().anyMatch(n -> n.id().equals("review"))) return f;
+        List<Flow.Next> more = new ArrayList<>(f.more());
+        more.add(self);
+        return f.with(f.waiting(), f.since(), f.say(), f.next(), List.copyOf(more));
+    }
+
+    private static Flow mineState(Item i, Ctx c) {
         String last = c.thread() == null ? null : c.thread().action();
         if (Boolean.TRUE.equals(i.draft())) {
             return flow("mine", MINE_STEPS, 0, Flow.PARKED, i.updatedAt(), "A draft PR. Mark it ready for review when you're happy with it.",

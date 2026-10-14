@@ -65,6 +65,22 @@ class FlowClassifierTest {
     }
 
     @Test
+    void youCanSelfReviewYourPrAtAnyStageEvenWhileCiRuns() {
+        for (Item p : List.of(pr2(ME, "PENDING", "BLOCKED", "MERGEABLE", false, false, null),
+                pr2(ME, "FAILURE", "UNSTABLE", "MERGEABLE", false, false, null),
+                pr2(ME, "SUCCESS", "CLEAN", "MERGEABLE", false, false, null),
+                pr2(ME, "SUCCESS", "DRAFT", "MERGEABLE", false, true, null))) {
+            Flow f = FlowClassifier.flow("mine", p, ctx());
+            assertEquals(1, f.more().stream().filter(n -> n.id().equals("review")).count(), f.say());
+        }
+        // While the agent works, nothing else is offered.
+        Flow working = FlowClassifier.flow("mine", pr2(ME, "PENDING", "BLOCKED", "MERGEABLE", false, false, null),
+                ctx(thread("working", "review", null), null, null, null, List.of()));
+        is(working, Flow.AGENT, 0, "open");
+        assertEquals(List.of(), working.more());
+    }
+
+    @Test
     void rightAfterAPushNoChecksYetMeansCiIsStarting() {
         Item noChecks = pr2(ME, null, "BLOCKED", "MERGEABLE", false, false, "REVIEW_REQUIRED");
         ThreadView.Summary pushed = new ThreadView.Summary("k", "idle", "ci-fix", null, NOW, false, "push", NOW.minusSeconds(240));
