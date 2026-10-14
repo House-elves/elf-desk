@@ -305,7 +305,9 @@ public class DeskApi {
 
     /** Comment "@dependabot rebase" on a Dependabot PR (as you, through the runner). Returns the comment's URL. */
     public String askDependabotToRebase(String itemKey) {
-        return conflicts.askDependabotToRebase(itemKey, user.login(), user.githubToken());
+        String url = conflicts.askDependabotToRebase(itemKey, user.login(), user.githubToken());
+        boards.markRebasing(user.login(), itemKey);
+        return url;
     }
 
     /** Bring a PR that's behind its base up to date: method REBASE (Dependabot PRs: "@dependabot rebase"). */

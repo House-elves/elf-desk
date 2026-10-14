@@ -39,11 +39,17 @@ public final class FlowClassifier {
     /** Everything the rules look at, for one item. */
     record Ctx(String login, ThreadView.Summary thread, MergeService.View merge, String sinceReview, Instant reviewedAt,
             List<GitHub.LinkedPr> links, Board.MvnpmRow mvnpm, boolean mvnpmChecking, Instant now,
-            GitHub.Feedback feedback) {
+            GitHub.Feedback feedback, Instant rebaseAsked) {
 
         Ctx(String login, ThreadView.Summary thread, MergeService.View merge, String sinceReview, Instant reviewedAt,
                 List<GitHub.LinkedPr> links, Board.MvnpmRow mvnpm, boolean mvnpmChecking, Instant now) {
-            this(login, thread, merge, sinceReview, reviewedAt, links, mvnpm, mvnpmChecking, now, null);
+            this(login, thread, merge, sinceReview, reviewedAt, links, mvnpm, mvnpmChecking, now, null, null);
+        }
+
+        Ctx(String login, ThreadView.Summary thread, MergeService.View merge, String sinceReview, Instant reviewedAt,
+                List<GitHub.LinkedPr> links, Board.MvnpmRow mvnpm, boolean mvnpmChecking, Instant now,
+                GitHub.Feedback feedback) {
+            this(login, thread, merge, sinceReview, reviewedAt, links, mvnpm, mvnpmChecking, now, feedback, null);
         }
     }
 
@@ -64,8 +70,18 @@ public final class FlowClassifier {
                 || running.contains("mvnpm-dependabot-pr-" + i.repo().replace('/', '-') + "-" + i.number() + ".service"));
         return new Ctx(b.login(), get(b.threads(), i.key()), get(b.merges(), i.key()), get(b.sinceReview(), i.key()),
                 get(b.reviewedAt(), i.key()), Objects.requireNonNullElse(get(b.linkedPrs(), i.key()), List.of()), row,
-                checking, now, get(b.feedback(), i.key()));
+                checking, now, get(b.feedback(), i.key()), rebaseAsked(b.rebasing(), i, now));
     }
+
+    /** You asked Dependabot to rebase this head commit within the last hour: it hasn't pushed yet. */
+    static Instant rebaseAsked(Map<String, Board.Rebase> asked, Item i, Instant now) {
+        Board.Rebase r = get(asked, i.key());
+        if (r == null || r.sha() == null || !r.sha().equals(i.headSha()) || r.at().isBefore(now.minus(REBASE_WAIT))) return null;
+        return r.at();
+    }
+
+    /** How long a rebase you asked Dependabot for counts as on its way. */
+    static final java.time.Duration REBASE_WAIT = java.time.Duration.ofHours(1);
 
     private static <T> T get(Map<String, T> m, String key) {
         return m == null ? null : m.get(key);
@@ -86,7 +102,14 @@ public final class FlowClassifier {
             case "mvnpm" -> mvnpm(i, c);
             default -> involved(i, c);
         };
-        return merge(agent(base, c), c);
+        return merge(agent(rebasing(base, c), c), c);
+    }
+
+    /** You asked Dependabot to rebase: wait for it rather than ask again. */
+    private static Flow rebasing(Flow f, Ctx c) {
+        if (c.rebaseAsked() == null) return f;
+        List<Flow.Next> more = f.more().stream().filter(n -> n.id().equals("close")).toList();
+        return f.with(Flow.OTHERS, c.rebaseAsked(), "You asked Dependabot to rebase it. Waiting for its push.", null, more);
     }
 
     // ---- the desk's own state, over GitHub's ----

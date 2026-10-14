@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -73,6 +74,8 @@ public class BoardService {
     /** Per login: others' PRs you reviewed, and when you last did, from the last fetch. */
     private final Map<String, Map<String, Instant>> reviewedAt = new ConcurrentHashMap<>();
     private final Map<String, Map<String, GitHub.Feedback>> feedback = new ConcurrentHashMap<>();
+    /** Per login: Dependabot PRs you asked to rebase, at which head. Kept until a fetch shows the head moved. */
+    private final Map<String, Map<String, Board.Rebase>> rebasing = new ConcurrentHashMap<>();
 
     /** login -> issue key -> open PRs that fix or mention it, from the last fetch. */
     private final Map<String, Map<String, List<GitHub.LinkedPr>>> linkedPrs = new ConcurrentHashMap<>();
@@ -119,6 +122,7 @@ public class BoardService {
                 .sinceReview(sinceReview.getOrDefault(login, Map.of()))
                 .reviewedAt(reviewedAt.getOrDefault(login, Map.of()))
                 .feedback(feedback.getOrDefault(login, Map.of()))
+                .rebasing(Map.copyOf(rebasing.getOrDefault(login, Map.of())))
                 .linkedPrs(linkedPrs.getOrDefault(login, Map.of()));
     }
 
@@ -179,6 +183,17 @@ public class BoardService {
      * Sets one item's CI state in the cached board, e.g. PENDING right after a re-run, so the board doesn't keep
      * showing the old failure until the next fetch. Open boards are told to reload.
      */
+    /** You asked Dependabot to rebase: the row waits for its push instead of offering to ask again. */
+    public void markRebasing(String login, String itemKey) {
+        BoardClassifier.Fetched f = cache.get(login);
+        String sha = f == null ? null : java.util.stream.Stream.of(f.involved(), f.reviewRequested(), f.reviewedByMe(), f.mvnpmCandidates())
+                .flatMap(List::stream).filter(i -> i.key().equals(itemKey)).map(Item::headSha).filter(Objects::nonNull)
+                .findFirst().orElse(null);
+        if (sha == null) return;
+        rebasing.computeIfAbsent(login, l -> new ConcurrentHashMap<>()).put(itemKey, new Board.Rebase(sha, clock.instant()));
+        live.boardUpdated();
+    }
+
     public void markCi(String login, String itemKey, String ci) {
         cache.computeIfPresent(login, (l, f) -> new BoardClassifier.Fetched(f.login(), f.at(),
                 withCi(f.involved(), itemKey, ci), withCi(f.reviewRequested(), itemKey, ci),

@@ -109,6 +109,17 @@ class FlowClassifierTest {
         Flow f = FlowClassifier.flow("mvnpm", bump, new FlowClassifier.Ctx(ME, null, null, null, null, List.of(), row, false, NOW));
         is(f, Flow.YOU, 1, "dependabot-rebase");
         assertEquals(List.of("ci-why", "ci-rerun", "close"), f.more().stream().map(Flow.Next::id).toList());
+
+        // Asked: wait for Dependabot's push, no button to ask again.
+        Instant asked = NOW.minusSeconds(120);
+        Flow waiting = FlowClassifier.flow("mvnpm", bump, new FlowClassifier.Ctx(ME, null, null, null, null, List.of(), row, false, NOW,
+                null, FlowClassifier.rebaseAsked(java.util.Map.of(bump.key(), new Board.Rebase(bump.headSha(), asked)), bump, NOW)));
+        is(waiting, Flow.OTHERS, 1, null);
+        assertEquals(List.of("close"), waiting.more().stream().map(Flow.Next::id).toList());
+        // Once the head moved (or an hour went by), the ask is done with.
+        assertNull(FlowClassifier.rebaseAsked(java.util.Map.of(bump.key(), new Board.Rebase("older-sha", asked)), bump, NOW));
+        assertNull(FlowClassifier.rebaseAsked(java.util.Map.of(bump.key(), new Board.Rebase(bump.headSha(), NOW.minusSeconds(7200))),
+                bump, NOW));
     }
 
     // ---- PRs to review ----
