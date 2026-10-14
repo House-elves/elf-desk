@@ -23,10 +23,17 @@ class DeskDashboard extends LitElement {
         _triage: { state: true },
         _loaded: { state: true },
         _errors: { state: true },
+        /** Refresh everything: GitHub is being fetched. */
+        _fetching: { state: true },
+        _refreshError: { state: true },
     };
 
     static styles = [shared, css`
         .page { display: grid; gap: 34px; max-width: 52rem; }
+        .top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px 24px; }
+        .refresh { display: grid; gap: 6px; justify-items: end; }
+        .refresh .hint { font-size: 13px; color: var(--muted); margin: 0; text-align: right; }
+        @media (max-width: 600px) { .refresh { justify-items: start; } .refresh .hint { text-align: left; } }
         .date { color: var(--muted); font-size: 15px; }
         h1 { font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.022em; margin-top: 8px; }
         .tabs { display: grid; gap: 14px; }
@@ -115,6 +122,28 @@ class DeskDashboard extends LitElement {
         ]);
     }
 
+    /** The morning button: fetch GitHub, and run the email triage and the Zulip digest, all at once. */
+    async _refreshAll() {
+        this._refreshError = null;
+        const desk = await api().catch(e => { this._refreshError = errorMessage(e); return null; });
+        if (!desk) return;
+        const problems = [];
+        const triage = mode => this._triage?.running?.[mode] ? null
+            : desk.triageRun({ mode }).then(state => { this._triage = state; })
+                .catch(e => problems.push(`${mode === 'email' ? 'Email' : 'Zulip'}: ${errorMessage(e)}`));
+        this._fetching = true;
+        const github = desk.board({ refresh: true })
+            .then(b => { this._board = b; this._errors = { ...this._errors, github: null }; })
+            .catch(e => problems.push(`GitHub: ${errorMessage(e)}`))
+            .finally(() => { this._fetching = false; });
+        await Promise.all([github, triage('email'), triage('zulip')]);
+        if (problems.length) this._refreshError = `Not everything refreshed. ${problems.join(' ')}`;
+    }
+
+    _busy() {
+        return this._fetching || !!this._triage?.running?.email || !!this._triage?.running?.zulip;
+    }
+
     _running(mode) {
         const since = this._triage?.running?.[mode];
         return since ? html`<span class="running" role="status">${spinner}Running, started ${ago(since)}</span>` : '';
@@ -150,7 +179,8 @@ class DeskDashboard extends LitElement {
         }
         const meta = b ? html`
             <span>Runner ${b.runnerConnected ? 'online' : 'offline'}</span>
-            <span>${b.refreshing ? html`${spinner}Updating` : html`Updated ${ago(b.fetchedAt)}`}</span>` : '';
+            <span>${b.refreshing || this._fetching ? html`<span class="running" role="status">${spinner}Fetching from GitHub</span>`
+                : html`Updated ${ago(b.fetchedAt)}`}</span>` : '';
         return this._card({ id: 'github', key: 'github', title: 'GitHub', href: '#github', open: 'Open the board', say, meta, attention });
     }
 
@@ -209,10 +239,18 @@ class DeskDashboard extends LitElement {
     render() {
         return html`
             <div class="page">
-                <div>
-                    <span class="date">${DATE.format(new Date())}</span>
-                    <h1>Your desk</h1>
+                <div class="top">
+                    <div>
+                        <span class="date">${DATE.format(new Date())}</span>
+                        <h1>Your desk</h1>
+                    </div>
+                    <div class="refresh">
+                        <button class="primary" ?disabled=${this._busy()} @click=${this._refreshAll}>
+                            ${this._busy() ? spinner : ''}${this._busy() ? 'Refreshing' : 'Refresh everything'}</button>
+                        <p class="hint">Fetches GitHub, triages new email and catches up on Zulip.</p>
+                    </div>
                 </div>
+                ${this._refreshError ? html`<p class="error" role="alert">${this._refreshError}</p>` : ''}
                 <div class="tabs">
                     ${this._github()}
                     ${this._emailCard()}
