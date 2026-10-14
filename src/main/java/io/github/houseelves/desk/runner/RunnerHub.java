@@ -74,6 +74,7 @@ public class RunnerHub {
     static final String ISSUE_SINCE = "0.11.0";
     public static final String TRIAGE_SINCE = "0.12.0";
     public static final String EMAIL_TRIAGE_SINCE = "0.13.0";
+    public static final String STATUS_SINCE = "0.24.0";
     static final String PR_SINCE = "0.15.0";
     static final String READY_PR_SINCE = "0.21.0";
 

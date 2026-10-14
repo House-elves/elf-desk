@@ -22,9 +22,9 @@ import jakarta.inject.Inject;
 @ApplicationScoped
 public class TriageRuns {
 
-    /** The email triage and the Zulip digest. */
-    public static final String EMAIL = "email", ZULIP = "zulip";
-    static final Set<String> MODES = Set.of(EMAIL, ZULIP);
+    /** The email triage, the Zulip digest, and the weekly-status elf's draft (it runs the same way). */
+    public static final String EMAIL = "email", ZULIP = "zulip", STATUS = "status";
+    static final Set<String> MODES = Set.of(EMAIL, ZULIP, STATUS);
 
     @Inject
     RunnerHub hub;
@@ -51,7 +51,11 @@ public class TriageRuns {
         JsonNode result;
         try {
             result = hub.request(hub.message("triage.run").put("mode", mode),
-                    mode.equals(EMAIL) ? RunnerHub.EMAIL_TRIAGE_SINCE : RunnerHub.TRIAGE_SINCE)
+                    switch (mode) {
+                        case EMAIL -> RunnerHub.EMAIL_TRIAGE_SINCE;
+                        case STATUS -> RunnerHub.STATUS_SINCE;
+                        default -> RunnerHub.TRIAGE_SINCE;
+                    })
                     .get(60, TimeUnit.SECONDS);
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;

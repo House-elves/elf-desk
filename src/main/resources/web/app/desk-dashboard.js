@@ -3,6 +3,7 @@ import { shared, ago, spinner } from './shared.js';
 import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
 import { boardHeadline, count, joinParts, lastBoard } from './desk-board.js';
 import { runTime } from './triage-run.js';
+import { statusState } from './desk-status.js';
 
 const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -20,6 +21,7 @@ class DeskDashboard extends LitElement {
         _board: { state: true },
         _email: { state: true },
         _zulip: { state: true },
+        _status: { state: true },
         _triage: { state: true },
         _loaded: { state: true },
         _errors: { state: true },
@@ -119,6 +121,7 @@ class DeskDashboard extends LitElement {
             one('triage', () => desk.triageState()),
             one('email', () => desk.email({ runId: null })),
             one('zulip', () => desk.zulip({ runId: null })),
+            one('status', () => desk.weeklyStatus({ runId: null })),
         ]);
     }
 
@@ -238,6 +241,19 @@ class DeskDashboard extends LitElement {
         return this._card({ id: 'zulip', key: 'zulip', title: 'Zulip', href: '#zulip', open: 'Open Zulip', say, meta, attention });
     }
 
+    /** The weekly status: from Monday on, it asks for your attention until this week's is sent. */
+    _statusCard() {
+        const s = this._status;
+        const state = statusState(s);
+        let say = null;
+        if (state === 'sent') say = `This week's status went to ${s.sentTo ?? s.to} ${ago(s.sentAt)}.`;
+        else if (state === 'draft') say = html`<a href="#status">This week's status</a> is drafted and ready to send.`;
+        else if (this._loaded.status) say = html`Nothing drafted this week yet. <a href="#status">Draft it now</a>, or it drafts itself Monday at 08:00.`;
+        const meta = [this._running('status'), this._failed('status')];
+        return this._card({ id: 'status', key: 'status', title: 'Weekly status', href: '#status', open: 'Open status',
+            say, meta, attention: this._loaded.status && state !== 'sent' });
+    }
+
     render() {
         return html`
             <div class="page">
@@ -257,6 +273,7 @@ class DeskDashboard extends LitElement {
                     ${this._github()}
                     ${this._emailCard()}
                     ${this._zulipCard()}
+                    ${this._statusCard()}
                 </div>
             </div>
         `;

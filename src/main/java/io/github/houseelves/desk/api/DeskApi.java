@@ -13,6 +13,7 @@ import io.github.houseelves.desk.github.Item;
 import io.github.houseelves.desk.ignore.IgnoreService;
 import io.github.houseelves.desk.runner.Live;
 import io.github.houseelves.desk.merge.MergeService;
+import io.github.houseelves.desk.status.StatusElf;
 import io.github.houseelves.desk.triage.EmailDoneService;
 import io.github.houseelves.desk.triage.TriageElf;
 import io.github.houseelves.desk.triage.TriageRuns;
@@ -94,6 +95,9 @@ public class DeskApi {
 
     @Inject
     ZulipDoneService zulipDone;
+
+    @Inject
+    StatusElf status;
 
     @Inject
     TriageRuns triageRuns;
@@ -217,7 +221,20 @@ public class DeskApi {
 
     /** Saved runs of one kind ("email" or "zulip"), newest first. */
     public List<TriageElf.RunInfo> triageRuns(String kind) {
+        if (kind.equals(TriageRuns.STATUS)) return status.runs();
         return triage.runs(TriageElf.Kind.valueOf(kind.toUpperCase(Locale.ROOT)));
+    }
+
+    // ---- weekly-status ----
+
+    /** A weekly status draft (the newest when runId is null), or null when there is none. */
+    public StatusElf.Status weeklyStatus(String runId) {
+        return status.status(runId);
+    }
+
+    /** Send the draft, with your edits, to the recipients in the elf's config. Only from your click. */
+    public StatusElf.Status sendWeeklyStatus(String runId, String body) {
+        return status.send(runId, body);
     }
 
     /** An email triage run (the newest when runId is null), or null when there is none. */
