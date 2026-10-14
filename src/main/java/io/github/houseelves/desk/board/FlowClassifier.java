@@ -302,8 +302,13 @@ public final class FlowClassifier {
             case "SAFE" -> {
                 if (pending(i)) yield flow("mvnpm", MVNPM_STEPS, 1, Flow.CI, i.updatedAt(), "Safe. CI is running.", null, List.of());
                 if (ciFailing(i)) {
-                    yield flow("mvnpm", MVNPM_STEPS, 1, Flow.YOU, i.updatedAt(), "Safe, but CI is failing.",
-                            new Flow.Next("ci-rerun", "Re-run failed jobs"), List.of(new Flow.Next("close", "Close")));
+                    // A web-jar bump rarely breaks the build: usually CI broke on the base and was fixed there since.
+                    // Re-running tests the same old merge again; a rebase takes the fix from the base.
+                    yield flow("mvnpm", MVNPM_STEPS, 1, Flow.YOU, i.updatedAt(),
+                            "Safe, but CI is failing. Rebasing picks up any CI fixes on its base.",
+                            new Flow.Next("dependabot-rebase", "Ask Dependabot to rebase"),
+                            List.of(new Flow.Next("ci-why", "Why did CI fail?"), new Flow.Next("ci-rerun", "Re-run failed jobs"),
+                                    new Flow.Next("close", "Close")));
                 }
                 if (mergeable(i)) yield flow("mvnpm", MVNPM_STEPS, 1, Flow.YOU, i.updatedAt(), "Safe and green.", new Flow.Next("merge", "Merge"), List.of());
                 if (green(i)) yield flow("mvnpm", MVNPM_STEPS, 1, Flow.YOU, i.updatedAt(), "Safe and green.",

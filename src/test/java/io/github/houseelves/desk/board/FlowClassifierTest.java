@@ -101,6 +101,16 @@ class FlowClassifierTest {
                 List.of())), Flow.DONE, 3, null);
     }
 
+    @Test
+    void aSafeBumpWithFailingCiIsRebasedFirst() {
+        Item bump = pr2("dependabot[bot]", "FAILURE", "UNSTABLE", "MERGEABLE", false, false, null);
+        Board.MvnpmRow row = new Board.MvnpmRow(bump, new io.github.houseelves.desk.mvnpm.MvnpmElf.Check(bump.headSha(), "SAFE", true,
+                null, NOW), true);
+        Flow f = FlowClassifier.flow("mvnpm", bump, new FlowClassifier.Ctx(ME, null, null, null, null, List.of(), row, false, NOW));
+        is(f, Flow.YOU, 1, "dependabot-rebase");
+        assertEquals(List.of("ci-why", "ci-rerun", "close"), f.more().stream().map(Flow.Next::id).toList());
+    }
+
     // ---- PRs to review ----
 
     @Test
