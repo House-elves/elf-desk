@@ -209,7 +209,7 @@ public final class FlowClassifier {
     static Flow mine(Item i, Ctx c) {
         String last = c.thread() == null ? null : c.thread().action();
         if (Boolean.TRUE.equals(i.draft())) {
-            return flow("mine", MINE_STEPS, 0, Flow.YOU, i.updatedAt(), "A draft PR. Mark it ready for review when you're happy with it.",
+            return flow("mine", MINE_STEPS, 0, Flow.PARKED, i.updatedAt(), "A draft PR. Mark it ready for review when you're happy with it.",
                     new Flow.Next("ready", "Ready for review"), List.of(new Flow.Next("review", "Self-review")));
         }
         Flow problem = ciProblem("mine", MINE_STEPS, 1, i, last, true);

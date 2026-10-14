@@ -16,6 +16,7 @@ const SECTIONS = [
     { id: 'agent', title: 'Agent working' },
     { id: 'ci', title: 'Waiting on CI' },
     { id: 'others', title: 'Waiting on others', fold: true },
+    { id: 'parked', title: 'Draft PRs', fold: true },
     { id: 'done', title: 'Done', fold: true },
     { id: 'watching', title: 'Just involved', fold: true },
 ];

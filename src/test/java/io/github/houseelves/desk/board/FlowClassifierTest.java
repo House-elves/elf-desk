@@ -59,7 +59,7 @@ class FlowClassifierTest {
         is(FlowClassifier.flow("mine", pr2(ME, "SUCCESS", "CLEAN", "MERGEABLE", false, false, "CHANGES_REQUESTED"), ctx()),
                 Flow.YOU, 2, "read-review");
         is(FlowClassifier.flow("mine", pr2(ME, "SUCCESS", "CLEAN", "MERGEABLE", true, false, "APPROVED"), ctx()), Flow.YOU, 3, "merge");
-        is(FlowClassifier.flow("mine", pr2(ME, "SUCCESS", "DRAFT", "MERGEABLE", false, true, null), ctx()), Flow.YOU, 0, "ready");
+        is(FlowClassifier.flow("mine", pr2(ME, "SUCCESS", "DRAFT", "MERGEABLE", false, true, null), ctx()), Flow.PARKED, 0, "ready");
         is(FlowClassifier.flow("mine", pr2(ME, "SUCCESS", "DIRTY", "CONFLICTING", false, false, null), ctx()), Flow.YOU, 1, "conflicts");
         is(FlowClassifier.flow("mine", pr2(ME, "SUCCESS", "BEHIND", "MERGEABLE", true, false, null), ctx()), Flow.YOU, 1, "update-branch");
     }
