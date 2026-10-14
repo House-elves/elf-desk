@@ -720,6 +720,120 @@ public class GitHub {
     public record Event(String kind, String who, Instant at, String text, String url) {
     }
 
+    private static final String REVIEWS = """
+            query($owner: String!, $name: String!, $number: Int!) {
+              repository(owner: $owner, name: $name) {
+                pullRequest(number: $number) {
+                  url author { login }
+                  lastCommit: commits(last: 1) { nodes { commit { committedDate } } }
+                  allReviews: reviews(last: 50) { nodes { url state body submittedAt author { __typename login } } }
+                  comments(last: 50) { nodes { url body createdAt author { __typename login } } }
+                  reviewThreads(last: 100) {
+                    nodes {
+                      isResolved isOutdated path line originalLine
+                      comments(first: 50) { nodes { url body createdAt diffHunk author { __typename login } } }
+                    }
+                  }
+                }
+              }
+            }
+            """;
+
+    /**
+     * What reviewers said on a PR, in full, for reading it on the desk: review bodies and plain comments from people
+     * (not bots), and every inline thread with the code it is on.
+     *
+     * @param you      your login
+     * @param yourLast your last commit, comment or review: what came after is new
+     */
+    public record Reviews(String itemKey, String url, String you, Instant yourLast, List<Said> said, List<ReviewThread> threads) {
+    }
+
+    /**
+     * A review's summary or a plain comment.
+     *
+     * @param state a review's state (COMMENTED, CHANGES_REQUESTED, APPROVED), or COMMENT for a plain comment
+     */
+    public record Said(String who, Instant at, String state, String body, String url, boolean isNew) {
+    }
+
+    /**
+     * An inline thread.
+     *
+     * @param line     the line in the current code, or the original line when outdated
+     * @param diffHunk the code the thread starts on (GitHub's hunk, ending at that line)
+     * @param isNew    a reply from someone else came after your last move
+     */
+    public record ReviewThread(String path, Integer line, boolean resolved, boolean outdated, String diffHunk,
+            List<Said> comments, boolean isNew) {
+    }
+
+    public Reviews reviews(String token, String login, String repo, int number) {
+        String[] parts = repo.split("/", 2);
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("owner", parts[0]);
+        vars.put("name", parts[1]);
+        vars.put("number", number);
+        JsonNode pr = call(token, REVIEWS, vars).path("repository").path("pullRequest");
+        if (!pr.isObject()) throw new GitHubException(repo + "#" + number + " is not a pull request");
+        return reviewsFrom(Item.key(repo, number), pr, login);
+    }
+
+    static Reviews reviewsFrom(String key, JsonNode pr, String login) {
+        // Your last move: your last commit, comment, review or thread reply.
+        Instant mine = instant(pr.path("lastCommit").path("nodes").path(0).path("commit").path("committedDate"));
+        List<JsonNode> all = new ArrayList<>();
+        pr.path("allReviews").path("nodes").forEach(all::add);
+        pr.path("comments").path("nodes").forEach(all::add);
+        for (JsonNode t : pr.path("reviewThreads").path("nodes")) t.path("comments").path("nodes").forEach(all::add);
+        for (JsonNode n : all) {
+            Instant when = instant(n.path(n.has("submittedAt") ? "submittedAt" : "createdAt"));
+            if (when != null && n.path("author").path("login").asText("").equalsIgnoreCase(login)
+                    && (mine == null || when.isAfter(mine))) mine = when;
+        }
+        final Instant yourLast = mine;
+        List<Said> said = new ArrayList<>();
+        for (JsonNode n : pr.path("allReviews").path("nodes")) {
+            String state = n.path("state").asText();
+            if ("PENDING".equals(state) || isBot(n.path("author"))) continue;
+            // A "Commented" review without a summary is only the wrapper of its inline comments: the threads show those.
+            if ("COMMENTED".equals(state) && n.path("body").asText("").isBlank()) continue;
+            said.add(said(n, "submittedAt", state, login, yourLast));
+        }
+        for (JsonNode n : pr.path("comments").path("nodes")) {
+            if (!isBot(n.path("author"))) said.add(said(n, "createdAt", "COMMENT", login, yourLast));
+        }
+        said.sort(Comparator.comparing(Said::at, Comparator.nullsFirst(Comparator.naturalOrder())));
+        List<ReviewThread> threads = new ArrayList<>();
+        for (JsonNode t : pr.path("reviewThreads").path("nodes")) {
+            List<Said> comments = new ArrayList<>();
+            String hunk = null;
+            for (JsonNode c : t.path("comments").path("nodes")) {
+                if (hunk == null) hunk = textOrNull(c.path("diffHunk"));
+                comments.add(said(c, "createdAt", "COMMENT", login, yourLast));
+            }
+            if (comments.isEmpty()) continue;
+            boolean outdated = t.path("isOutdated").asBoolean();
+            JsonNode line = t.path(outdated || t.path("line").isNull() ? "originalLine" : "line");
+            threads.add(new ReviewThread(t.path("path").asText(""), line.isInt() ? line.asInt() : null,
+                    t.path("isResolved").asBoolean(), outdated, hunk, comments, comments.stream().anyMatch(Said::isNew)));
+        }
+        // Open threads with something new first, then open ones, then resolved; each group in file order.
+        threads.sort(Comparator.comparing((ReviewThread t) -> t.resolved())
+                .thenComparing(t -> !t.isNew())
+                .thenComparing(ReviewThread::path)
+                .thenComparing(t -> t.line() == null ? 0 : t.line()));
+        return new Reviews(key, pr.path("url").asText(null), login, yourLast, said, threads);
+    }
+
+    private static Said said(JsonNode n, String atField, String state, String login, Instant yourLast) {
+        String who = n.path("author").path("login").asText("");
+        Instant at = instant(n.path(atField));
+        boolean theirs = !who.equalsIgnoreCase(login);
+        return new Said(who, at, state, n.path("body").asText(""), n.path("url").asText(null),
+                theirs && at != null && (yourLast == null || at.isAfter(yourLast)));
+    }
+
     public Activity activity(String token, String login, String repo, int number) {
         String[] parts = repo.split("/", 2);
         Map<String, Object> vars = new HashMap<>();

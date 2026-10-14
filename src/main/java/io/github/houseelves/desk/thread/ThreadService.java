@@ -143,7 +143,7 @@ public class ThreadService {
     public ThreadView start(String itemKey, String action, String question, String login, String token, String extra,
             ObjectNode checkoutExtras) {
         if (!List.of(Prompts.REVIEW, Prompts.INVESTIGATE, Prompts.FIX, Prompts.ASK, Prompts.CI_WHY, Prompts.CI_FIX,
-                Prompts.CONFLICTS).contains(action)) {
+                Prompts.CONFLICTS, Prompts.ADDRESS).contains(action)) {
             throw new IllegalArgumentException("Unknown action " + action);
         }
         if (action.equals(Prompts.ASK) && (question == null || question.isBlank())) {
@@ -152,7 +152,8 @@ public class ThreadService {
         String repo = itemKey.substring(0, itemKey.indexOf('#'));
         int number = Integer.parseInt(itemKey.substring(itemKey.indexOf('#') + 1));
         ItemContext ctx = github.context(token, repo, number);
-        if ((action.equals(Prompts.REVIEW) || action.startsWith("ci-") || action.equals(Prompts.CONFLICTS))
+        if ((action.equals(Prompts.REVIEW) || action.startsWith("ci-") || action.equals(Prompts.CONFLICTS)
+                || action.equals(Prompts.ADDRESS))
                 && ctx.kind() != Item.Kind.PR) {
             throw new IllegalArgumentException(itemKey + " is an issue, not a PR");
         }

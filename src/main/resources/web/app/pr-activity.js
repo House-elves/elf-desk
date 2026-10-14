@@ -25,6 +25,8 @@ class PrActivity extends LitElement {
         block: { type: Boolean },
         /** Open straight away (picked from a menu). */
         autoOpen: { type: Boolean },
+        /** Only the panel, no button (the board's row has its own). */
+        bare: { type: Boolean },
         _open: { state: true },
         _activity: { state: true },
         _busy: { state: true },
@@ -35,7 +37,7 @@ class PrActivity extends LitElement {
         :host { display: contents; }
         button.chip { border: 0; cursor: pointer; font-family: var(--font); }
         .panel-a {
-            flex-basis: 100%; display: grid; gap: 10px; padding: 12px 14px; margin-top: 6px;
+            flex-basis: 100%; display: grid; gap: 10px; padding: 12px 14px; margin-top: 6px; min-width: 0;
             border: 1.5px solid var(--accent); border-radius: var(--r-panel); background: var(--surface); font-size: 14px;
             color: var(--ink); text-align: left;
         }
@@ -96,7 +98,7 @@ class PrActivity extends LitElement {
         const trigger = this.label
             ? html`<button class="chip run" aria-expanded=${this._open ? 'true' : 'false'} @click=${this._toggle}>${this.label} ▾</button>`
             : html`<button class="sm ${this.block ? '' : 'quiet'}" aria-expanded=${this._open ? 'true' : 'false'} @click=${this._toggle}>What's new</button>`;
-        return html`${trigger}${this._open ? this._renderPanel() : ''}`;
+        return html`${this.bare ? '' : trigger}${this._open ? this._renderPanel() : ''}`;
     }
 
     _renderPanel() {

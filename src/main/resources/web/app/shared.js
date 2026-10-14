@@ -200,7 +200,8 @@ export function markdown(text) {
 }
 
 export const markdownStyles = css`
-    .md { overflow-wrap: anywhere; line-height: 1.6; }
+    .md { overflow-wrap: anywhere; line-height: 1.6; min-width: 0; }
+    .md img { max-width: 100%; height: auto; border-radius: 6px; }
     .md > :first-child { margin-top: 0; }
     .md > :last-child { margin-bottom: 0; }
     .md p, .md ul, .md ol { margin: 0 0 12px; }

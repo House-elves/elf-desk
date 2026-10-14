@@ -11,7 +11,8 @@ import io.github.houseelves.desk.github.ItemContext;
 public final class Prompts {
 
     public static final String REVIEW = "review", INVESTIGATE = "investigate", ASK = "ask", REPLY = "reply",
-            CI_WHY = "ci-why", CI_FIX = "ci-fix", CONFLICTS = "conflicts", FIX = "fix";
+            CI_WHY = "ci-why", CI_FIX = "ci-fix", CONFLICTS = "conflicts", FIX = "fix",
+            ADDRESS = "address";
 
     private static final int MAX_BODY = 12_000;
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
@@ -28,6 +29,7 @@ public final class Prompts {
             case CI_WHY -> "Why is CI failing?";
             case CI_FIX -> "Fix the CI failure.";
             case CONFLICTS -> "Resolve the merge conflicts.";
+            case ADDRESS -> "Address the review comments.";
             default -> question;
         };
     }
@@ -235,6 +237,16 @@ public final class Prompts {
 
                     `reply`: what was failing, what you changed (or why you didn't), and what you ran to check.
                     `draft`: null.
+                    """;
+            case ADDRESS -> """
+                    Reviewers left feedback on this PR: the open review threads and what they said are above,                     under "Review feedback". Address it in the working directory.
+
+                    1. Go through every open thread and every point in the review summaries. For each, decide:                     make the change the reviewer asks for, or don't, because it's wrong, out of scope, or needs the                     maintainer to decide. When the reviewer reports a bug, reproduce it first where you can.
+                    2. Make the changes in the style of the code around them, with tests where the project tests                     this area. Build, and run the tests of the modules you touched.
+                    3. Commit with `git commit` and a clear one-line message (one commit is fine). Don't push,                     don't rebase, don't amend: the desk squashes the PR and your commits into one commit, which the                     maintainer reviews and pushes.
+
+                    `reply`: one line per point, in the order above: the file and line (or "summary"), then what                     you changed, or why you didn't. Then what you built and ran. Flag anything the maintainer                     should decide.
+                    `draft`: null. Your commits are offered as the push; once it's out, the maintainer may ask you                     for replies to the reviewer.
                     """;
             case CONFLICTS -> """
                     This PR has merge conflicts with its base branch `%1$s`. The PR's head is checked out and \

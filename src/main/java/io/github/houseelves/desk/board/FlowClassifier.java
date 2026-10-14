@@ -130,7 +130,8 @@ public final class FlowClassifier {
     private static Flow agentStep(Flow f, String action) {
         if (action == null) return f;
         int step = switch (f.role()) {
-            case "mine" -> action.equals("review") ? 0 : action.startsWith("ci-") || action.equals("conflicts") ? 1 : -1;
+            case "mine" -> action.equals("review") ? 0 : action.startsWith("ci-") || action.equals("conflicts") ? 1
+                    : action.equals("address") ? 2 : -1;
             case "review" -> action.equals("review") ? 0 : action.startsWith("ci-") ? 2 : -1;
             case "issue" -> action.equals("investigate") ? 0 : action.equals("fix") ? 1 : -1;
             default -> -1;
@@ -146,6 +147,7 @@ public final class FlowClassifier {
             case "ci-why" -> "looking into the failing CI";
             case "ci-fix" -> "fixing the failing CI";
             case "conflicts" -> "resolving the conflicts";
+            case "address" -> "addressing the review";
             default -> "answering";
         };
     }
@@ -197,12 +199,12 @@ public final class FlowClassifier {
                 default -> " reviewed";
             };
             return flow("mine", MINE_STEPS, 2, Flow.YOU, said.at(), said.who() + what + openThreads(said) + ".",
-                    new Flow.Next("whats-new", "Read the review"), List.of(new Flow.Next("open", "Ask the agent")));
+                    new Flow.Next("read-review", "Read the review"), List.of(new Flow.Next("address", "Address the review")));
         }
         if (pending(i)) return flow("mine", MINE_STEPS, 1, Flow.CI, i.updatedAt(), "CI is running.", null, List.of());
         if ("CHANGES_REQUESTED".equals(i.reviewDecision())) {
             return flow("mine", MINE_STEPS, 2, Flow.YOU, i.updatedAt(), "A reviewer asked for changes" + openThreads(said) + ".",
-                    new Flow.Next("whats-new", "What's new"), List.of(new Flow.Next("open", "Ask the agent")));
+                    new Flow.Next("read-review", "Read the review"), List.of(new Flow.Next("address", "Address the review")));
         }
         if (mergeable(i)) {
             return flow("mine", MINE_STEPS, 3, Flow.YOU, i.updatedAt(), "Approved and green.", new Flow.Next("merge", "Merge"), List.of());
@@ -212,7 +214,9 @@ public final class FlowClassifier {
                     null, List.of(new Flow.Next("merge-anyway", "Merge without approval"), new Flow.Next("whats-new", "What's new")));
         }
         return flow("mine", MINE_STEPS, 2, Flow.OTHERS, i.updatedAt(), "Waiting on reviewers" + waited(i, c) + openThreads(said) + ".", null,
-                List.of(new Flow.Next("whats-new", "What's new")));
+                said != null && said.openThreads() > 0
+                        ? List.of(new Flow.Next("read-review", "Read the review"), new Flow.Next("address", "Address the review"))
+                        : List.of(new Flow.Next("whats-new", "What's new")));
     }
 
     /** ", 2 threads open" (none: ""). */

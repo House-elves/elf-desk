@@ -252,4 +252,33 @@ class GitHubTest {
                 .put("createdAt", "2026-10-13T16:00:00Z").putObject("author").put("__typename", "User").put("login", "phillip-kruger");
         assertTrue(!GitHub.feedback(pr, "phillip-kruger").afterYou());
     }
+
+    @Test
+    void reviewsPutOpenThreadsWithNewRepliesFirstAndSkipBotsAndEmptyWrappers() throws Exception {
+        JsonNode pr = json("""
+                {"url": "https://github.com/quarkusio/quarkus/pull/56951",
+                 "lastCommit": {"nodes": [{"commit": {"committedDate": "2026-10-11T23:21:35Z"}}]},
+                 "allReviews": {"nodes": [
+                   {"state": "COMMENTED", "body": "", "submittedAt": "2026-10-13T15:38:39Z", "author": {"__typename": "User", "login": "brunobat"}},
+                   {"state": "COMMENTED", "body": "Found a bug", "submittedAt": "2026-10-13T14:07:40Z", "author": {"__typename": "User", "login": "brunobat"}}]},
+                 "comments": {"nodes": [
+                   {"body": "CI report", "createdAt": "2026-10-13T20:00:00Z", "author": {"__typename": "Bot", "login": "quarkus-bot"}},
+                   {"body": "Updated", "createdAt": "2026-10-13T01:29:09Z", "author": {"__typename": "User", "login": "phillip-kruger"}}]},
+                 "reviewThreads": {"nodes": [
+                   {"isResolved": true, "isOutdated": false, "path": "a/A.java", "line": 3, "originalLine": 3,
+                    "comments": {"nodes": [{"body": "old", "createdAt": "2026-10-01T00:00:00Z", "diffHunk": "@@ x", "author": {"login": "brunobat"}}]}},
+                   {"isResolved": false, "isOutdated": true, "path": "b/B.java", "line": null, "originalLine": 40,
+                    "comments": {"nodes": [{"body": "Why?", "createdAt": "2026-10-13T14:07:40Z", "diffHunk": "@@ y", "author": {"login": "brunobat"}}]}},
+                   {"isResolved": false, "isOutdated": false, "path": "a/A.java", "line": 9, "originalLine": 9,
+                    "comments": {"nodes": [{"body": "Hmm", "createdAt": "2026-10-10T00:00:00Z", "diffHunk": "@@ z", "author": {"login": "brunobat"}},
+                                           {"body": "Done", "createdAt": "2026-10-11T00:00:00Z", "diffHunk": "@@ z", "author": {"login": "phillip-kruger"}}]}}]}}
+                """);
+        GitHub.Reviews r = GitHub.reviewsFrom("quarkusio/quarkus#56951", pr, "phillip-kruger");
+        assertEquals("2026-10-13T01:29:09Z", r.yourLast().toString());
+        assertEquals(List.of("Updated", "Found a bug"), r.said().stream().map(GitHub.Said::body).toList()); // oldest first
+        assertTrue(!r.said().get(0).isNew() && r.said().get(1).isNew());
+        assertEquals(List.of("b/B.java", "a/A.java", "a/A.java"), r.threads().stream().map(GitHub.ReviewThread::path).toList());
+        assertEquals(40, r.threads().get(0).line()); // outdated: the original line
+        assertTrue(r.threads().get(0).isNew() && !r.threads().get(1).isNew() && r.threads().get(2).resolved());
+    }
 }

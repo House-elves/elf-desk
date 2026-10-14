@@ -5,6 +5,7 @@ import './merge-control.js';
 import './ci-menu.js';
 import './conflict-menu.js';
 import './pr-activity.js';
+import './pr-review.js';
 import './desk-thread.js';
 
 const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -33,6 +34,7 @@ const CALLS = {
     conflicts: (d, key) => d.resolveConflicts({ itemKey: key }),
     'dependabot-rebase': (d, key) => d.askDependabotToRebase({ itemKey: key }),
     ready: (d, key) => d.readyForReview({ itemKey: key }),
+    address: (d, key) => d.addressReview({ itemKey: key }),
     assign: (d, key) => d.assignMe({ itemKey: key }),
 };
 
@@ -95,7 +97,8 @@ class DeskBoard extends LitElement {
         _confirmClose: { state: true },
         _moreFor: { state: true },
         _mergeAnyway: { state: true },
-        _activityFor: { state: true },
+        /** What the open row shows under it: thread (the agent), review (Read the review) or activity (What's new). */
+        _panel: { state: true },
         _mvnpmStarting: { state: true },
         _ignoring: { state: true },
         _unfolded: { state: true },
@@ -168,7 +171,7 @@ class DeskBoard extends LitElement {
         .seg i.done { background: color-mix(in srgb, var(--accent) 45%, var(--line)); }
         .seg i.now { background: var(--accent); }
         .stage { font-weight: 500; }
-        .acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
+        .acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; max-width: 26rem; }
         .inline { grid-column: 2 / -1; padding: 8px 0 4px; min-width: 0; }
         .empty { color: var(--muted); padding: 16px 18px; margin: 0; font-size: 14px; }
 
@@ -211,7 +214,7 @@ class DeskBoard extends LitElement {
         this._confirmClose = null;
         this._moreFor = null;
         this._mergeAnyway = null;
-        this._activityFor = null;
+        this._panel = 'thread';
         this._mvnpmStarting = null;
         this._ignoring = null;
         this._unfolded = new Set();
@@ -366,8 +369,12 @@ class DeskBoard extends LitElement {
         }
     }
 
-    _toggle(key) {
-        this._open = this._open === key ? null : key;
+    /** Opens a row's panel (the agent's thread unless said otherwise), or closes it when it's already showing. */
+    _toggle(key, panel = 'thread') {
+        const same = this._open === key && this._panel === panel;
+        this._open = same ? null : key;
+        this._panel = panel;
+        this._moreFor = null;
     }
 
     _jump(id) {
@@ -541,11 +548,22 @@ class DeskBoard extends LitElement {
                     </div>
                 </div>
                 <div class="acts">${this._actions(item, f)}</div>
-                ${open ? html`<div class="inline">
-                    <desk-thread compact .itemKey=${item.key}
-                        @thread-posted=${() => { this._open = null; this._reloadNow(); }}></desk-thread></div>` : ''}
+                ${open ? html`<div class="inline">${this._inline(item)}</div>` : ''}
             </li>
         `;
+    }
+
+    _inline(item) {
+        switch (this._panel) {
+            case 'review':
+                return html`<pr-review .itemKey=${item.key} @review-closed=${() => { this._open = null; }}
+                    @agent-started=${() => { this._panel = 'thread'; this._reloadNow(); }}></pr-review>`;
+            case 'activity':
+                return html`<pr-activity bare autoOpen .itemKey=${item.key} @activity-closed=${() => { this._open = null; }}></pr-activity>`;
+            default:
+                return html`<desk-thread compact .itemKey=${item.key}
+                    @thread-posted=${() => { this._open = null; this._reloadNow(); }}></desk-thread>`;
+        }
     }
 
     /** "▬▬▭▭ CI": how far along the flow is, and the stage it's at. */
@@ -560,9 +578,6 @@ class DeskBoard extends LitElement {
     _actions(item, f) {
         if (this._confirmClose === item.key) return this._closeButton(item);
         if (this._mergeAnyway === item.key) return this._mergeAnywayControl(item);
-        if (this._activityFor === item.key) {
-            return html`<pr-activity autoOpen .itemKey=${item.key} @activity-closed=${() => { this._activityFor = null; }}></pr-activity>`;
-        }
         const main = f.next ? this._action(item, f.next, true) : '';
         if (this._moreFor !== item.key) {
             return html`${main}<button class="sm quiet" aria-expanded="false" aria-label="More actions"
@@ -595,7 +610,7 @@ class DeskBoard extends LitElement {
         const busy = this._doing === `${item.key} ${n.id}` || (n.id === 'mvnpm-check' && this._mvnpmStarting === item.key);
         switch (n.id) {
             case 'open': {
-                const open = this._open === item.key;
+                const open = this._open === item.key && this._panel === 'thread';
                 return html`<button class=${cls} aria-expanded=${open ? 'true' : 'false'} @click=${() => this._toggle(item.key)}>
                     ${open ? 'Close' : n.label}</button>`;
             }
@@ -610,7 +625,9 @@ class DeskBoard extends LitElement {
             case 'update-branch':
                 return html`<conflict-menu behind .itemKey=${item.key} @ci-changed=${() => this._reloadNow()}></conflict-menu>`;
             case 'whats-new':
-                return html`<button class=${cls} @click=${() => { this._activityFor = item.key; this._moreFor = null; }}>${n.label}</button>`;
+                return this._panelButton(item, 'activity', n.label, cls);
+            case 'read-review':
+                return this._panelButton(item, 'review', n.label, cls);
             case 'close':
                 return html`<button class=${cls} @click=${() => { this._confirmClose = item.key; }}>${n.label}</button>`;
             case 'ignore':
@@ -620,6 +637,12 @@ class DeskBoard extends LitElement {
                 return html`<button class=${cls} ?disabled=${this._doing !== null || this._mvnpmStarting != null}
                     @click=${() => this._run(item, n)}>${busy ? spinner : ''}${n.label}</button>`;
         }
+    }
+
+    _panelButton(item, panel, label, cls) {
+        const open = this._open === item.key && this._panel === panel;
+        return html`<button class=${cls} aria-expanded=${open ? 'true' : 'false'} @click=${() => this._toggle(item.key, panel)}>
+            ${open ? 'Close' : label}</button>`;
     }
 
     /** Two clicks to close: the button, then the inline confirmation. */

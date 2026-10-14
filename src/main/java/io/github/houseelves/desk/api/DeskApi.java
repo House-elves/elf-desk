@@ -226,6 +226,13 @@ public class DeskApi {
         return github.activity(user.githubToken(), user.login(), repo, number);
     }
 
+    /** What reviewers said on a PR, in full: review summaries, comments and inline threads with their code. */
+    public GitHub.Reviews prReviews(String itemKey) {
+        String repo = itemKey.substring(0, itemKey.indexOf('#'));
+        int number = Integer.parseInt(itemKey.substring(itemKey.indexOf('#') + 1));
+        return github.reviews(user.githubToken(), user.login(), repo, number);
+    }
+
     // ---- ignore ----
 
     /** Move an item to Ignored: you're involved, but someone else is handling it. Nothing changes on GitHub. */
@@ -283,6 +290,11 @@ public class DeskApi {
     /** Start the agent on fixing CI; its commits come back as a push draft for you to confirm. */
     public ThreadView ciFix(String itemKey) {
         return ci.fix(itemKey, user.login(), user.githubToken());
+    }
+
+    /** Start the agent on the open review threads of your PR; its commits come back as a push draft. */
+    public ThreadView addressReview(String itemKey) {
+        return ci.address(itemKey, user.login(), user.githubToken());
     }
 
     // ---- merge conflicts ----

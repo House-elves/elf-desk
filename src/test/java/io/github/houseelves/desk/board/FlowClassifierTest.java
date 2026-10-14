@@ -57,7 +57,7 @@ class FlowClassifierTest {
         is(FlowClassifier.flow("mine", pr2(ME, "FAILURE", "UNSTABLE", "MERGEABLE", false, false, null), ctx()), Flow.YOU, 1, "ci-why");
         is(FlowClassifier.flow("mine", pr2(ME, "SUCCESS", "CLEAN", "MERGEABLE", false, false, null), ctx()), Flow.OTHERS, 2, null);
         is(FlowClassifier.flow("mine", pr2(ME, "SUCCESS", "CLEAN", "MERGEABLE", false, false, "CHANGES_REQUESTED"), ctx()),
-                Flow.YOU, 2, "whats-new");
+                Flow.YOU, 2, "read-review");
         is(FlowClassifier.flow("mine", pr2(ME, "SUCCESS", "CLEAN", "MERGEABLE", true, false, "APPROVED"), ctx()), Flow.YOU, 3, "merge");
         is(FlowClassifier.flow("mine", pr2(ME, "SUCCESS", "DRAFT", "MERGEABLE", false, true, null), ctx()), Flow.YOU, 0, "ready");
         is(FlowClassifier.flow("mine", pr2(ME, "SUCCESS", "DIRTY", "CONFLICTING", false, false, null), ctx()), Flow.YOU, 1, "conflicts");
@@ -70,7 +70,8 @@ class FlowClassifierTest {
         Instant at = NOW.minusSeconds(3600);
         Flow f = FlowClassifier.flow("mine", waiting, new FlowClassifier.Ctx(ME, null, null, null, null, List.of(), null, false, NOW,
                 new GitHub.Feedback("brunobat", at, "COMMENTED", true, 2)));
-        is(f, Flow.YOU, 2, "whats-new");
+        is(f, Flow.YOU, 2, "read-review");
+        assertEquals("address", f.more().get(0).id());
         assertEquals("brunobat reviewed, 2 threads open.", f.say());
         assertEquals(at, f.since());
         // You answered since: back to waiting on them, with the threads still mentioned.
