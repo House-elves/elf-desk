@@ -65,6 +65,16 @@ class FlowClassifierTest {
     }
 
     @Test
+    void rightAfterAPushNoChecksYetMeansCiIsStarting() {
+        Item noChecks = pr2(ME, null, "BLOCKED", "MERGEABLE", false, false, "REVIEW_REQUIRED");
+        ThreadView.Summary pushed = new ThreadView.Summary("k", "idle", "ci-fix", null, NOW, false, "push", NOW.minusSeconds(240));
+        is(FlowClassifier.flow("mine", noChecks, ctx(pushed, null, null, null, List.of())), Flow.CI, 1, null);
+        // An hour later still nothing: not CI starting, the repo just has no checks.
+        ThreadView.Summary old = new ThreadView.Summary("k", "idle", "ci-fix", null, NOW, false, "push", NOW.minusSeconds(3600));
+        is(FlowClassifier.flow("mine", noChecks, ctx(old, null, null, null, List.of())), Flow.OTHERS, 2, null);
+    }
+
+    @Test
     void aReviewerSpeakingAfterYouMakesItYourMove() {
         Item waiting = pr2(ME, "SUCCESS", "BLOCKED", "MERGEABLE", false, false, "REVIEW_REQUIRED");
         Instant at = NOW.minusSeconds(3600);

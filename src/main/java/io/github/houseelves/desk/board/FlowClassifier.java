@@ -225,6 +225,7 @@ public final class FlowClassifier {
                     new Flow.Next("read-review", "Read the review"), List.of(new Flow.Next("address", "Address the review")));
         }
         if (pending(i)) return flow("mine", MINE_STEPS, 1, Flow.CI, i.updatedAt(), "CI is running.", null, List.of());
+        if (ciStarting(i, c)) return flow("mine", MINE_STEPS, 1, Flow.CI, i.updatedAt(), "Pushed. Waiting for CI to start.", null, List.of());
         if ("CHANGES_REQUESTED".equals(i.reviewDecision())) {
             return flow("mine", MINE_STEPS, 2, Flow.YOU, i.updatedAt(), "A reviewer asked for changes" + openThreads(said) + ".",
                     new Flow.Next("read-review", "Read the review"), List.of(new Flow.Next("address", "Address the review")));
@@ -414,6 +415,20 @@ public final class FlowClassifier {
                 // Green so far, but required checks haven't all run (often: the real CI hasn't started yet).
                 || "SUCCESS".equals(i.ci()) && "BLOCKED".equals(i.mergeState()) && !Boolean.TRUE.equals(i.draft())
                         && !"REVIEW_REQUIRED".equals(i.reviewDecision()) && !"CHANGES_REQUESTED".equals(i.reviewDecision());
+    }
+
+    /**
+     * No checks on the head commit yet, but it was pushed moments ago: GitHub takes a few minutes to queue the runs,
+     * so this is CI about to start, not a PR without CI. Recent means the desk pushed it in the last half hour, or
+     * the PR changed in the last quarter hour.
+     */
+    static boolean ciStarting(Item i, Ctx c) {
+        if (i.ci() != null || !i.isPr()) return false;
+        ThreadView.Summary t = c.thread();
+        boolean pushedHere = t != null && "push".equals(t.postedKind()) && t.postedAt() != null
+                && t.postedAt().isAfter(c.now().minus(java.time.Duration.ofMinutes(30)));
+        boolean changed = i.updatedAt() != null && i.updatedAt().isAfter(c.now().minus(java.time.Duration.ofMinutes(15)));
+        return pushedHere || changed;
     }
 
     static boolean green(Item i) {
