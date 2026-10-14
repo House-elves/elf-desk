@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared } from './shared.js';
+import { shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { runTime, took } from './triage-run.js';
 import './triage-run.js';
@@ -13,6 +13,7 @@ class DeskEmail extends LitElement {
     static properties = {
         _run: { state: true },
         _picked: { state: true },
+        _doing: { state: true },
         _loading: { state: true },
         _error: { state: true },
     };
@@ -24,7 +25,8 @@ class DeskEmail extends LitElement {
         section { display: grid; gap: 14px; }
         .account { font-weight: 600; font-size: 15px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
         ul { list-style: none; margin: 0; padding: 4px 0; }
-        li { padding: 11px 18px; display: grid; gap: 3px; min-width: 0; }
+        li { padding: 11px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 14px; align-items: center; }
+        li > .text { display: grid; gap: 3px; min-width: 0; }
         li + li { border-top: 1px solid var(--line); }
         .subject { font-weight: 500; overflow-wrap: anywhere; color: var(--ink); text-decoration: none; }
         a.subject:hover { text-decoration: underline; }
@@ -65,14 +67,35 @@ class DeskEmail extends LitElement {
         return `https://mail.google.com/mail/?authuser=${encodeURIComponent(account)}#search/rfc822msgid:${encodeURIComponent(id)}`;
     }
 
-    _email(account, d) {
+    /** Done: Gmail marks the thread read, and it moves to the done list. */
+    async _done(account, d) {
+        this._doing = d.messageId;
+        this._error = null;
+        try {
+            const desk = await api();
+            const r = await desk.emailDone({ account, messageId: d.messageId });
+            if (!this._picked) this._run = r;
+            else await this._load();
+        } catch (e) {
+            this._error = `${d.subject || 'That email'}: ${errorMessage(e)}`;
+        } finally {
+            this._doing = null;
+        }
+    }
+
+    _email(account, d, done) {
         const href = this._gmail(account, d);
         const subject = (d.subject || '(no subject)').replace(/\s+/g, ' ');
         return html`<li>
-            ${href ? html`<a class="subject" href=${href} target="_blank" rel="noopener">${subject}</a>`
-                : html`<span class="subject">${subject}</span>`}
-            <span class="from">${d.from}</span>
-            <span class="why">${d.reason}</span>
+            <span class="text">
+                ${href ? html`<a class="subject" href=${href} target="_blank" rel="noopener">${subject}</a>`
+                    : html`<span class="subject">${subject}</span>`}
+                <span class="from">${d.from}</span>
+                <span class="why">${d.reason}</span>
+            </span>
+            ${done && d.messageId ? html`<button class="sm" ?disabled=${this._doing}
+                title="Marks the thread read in Gmail" @click=${() => this._done(account, d)}>
+                ${this._doing === d.messageId ? spinner : ''}Done</button>` : ''}
         </li>`;
     }
 
@@ -82,7 +105,8 @@ class DeskEmail extends LitElement {
         return html`
             <section aria-label="Email triage">
                 ${accounts.map(a => {
-                    const kept = (a.decisions ?? []).filter(d => d.decision !== 'MARK_READ');
+                    const kept = (a.decisions ?? []).filter(d => d.decision !== 'MARK_READ' && !d.done);
+                    const done = (a.decisions ?? []).filter(d => d.decision !== 'MARK_READ' && d.done);
                     const read = (a.decisions ?? []).filter(d => d.decision === 'MARK_READ');
                     return html`
                         <div class="account">
@@ -91,9 +115,14 @@ class DeskEmail extends LitElement {
                             <span class="chip">${read.length} marked read</span>
                         </div>
                         <div class="panel">
-                            ${kept.length ? html`<ul>${kept.map(d => this._email(a.email, d))}</ul>`
-                                : html`<p class="empty">Nothing in this inbox needs you.</p>`}
+                            ${kept.length ? html`<ul>${kept.map(d => this._email(a.email, d, true))}</ul>`
+                                : html`<p class="empty">${done.length ? 'All done.' : 'Nothing in this inbox needs you.'}</p>`}
                         </div>
+                        ${done.length ? html`
+                            <details class="panel">
+                                <summary>Done (${done.length})</summary>
+                                <ul>${done.map(d => this._email(a.email, d))}</ul>
+                            </details>` : ''}
                         ${read.length ? html`
                             <details class="panel">
                                 <summary>Marked read and labelled (${read.length})</summary>

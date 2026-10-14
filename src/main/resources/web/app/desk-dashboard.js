@@ -189,8 +189,8 @@ class DeskDashboard extends LitElement {
         let say = null, attention = false, meta = [];
         if (b) {
             const decisions = (b.accounts ?? []).flatMap(a => a.decisions ?? []);
-            const need = decisions.filter(d => d.decision !== 'MARK_READ').length;
-            const read = decisions.length - need;
+            const need = decisions.filter(d => d.decision !== 'MARK_READ' && !d.done).length;
+            const read = decisions.filter(d => d.decision === 'MARK_READ').length;
             attention = need > 0;
             say = !decisions.length ? 'No new email in that run.'
                 : need ? html`<a href="#email">${count(need, 'email')}</a> ${need === 1 ? 'needs' : 'need'} you${read ? html`, and ${read} ${read === 1 ? 'was' : 'were'} marked read` : ''}.`

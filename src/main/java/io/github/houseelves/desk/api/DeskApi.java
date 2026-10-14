@@ -13,6 +13,7 @@ import io.github.houseelves.desk.github.Item;
 import io.github.houseelves.desk.ignore.IgnoreService;
 import io.github.houseelves.desk.runner.Live;
 import io.github.houseelves.desk.merge.MergeService;
+import io.github.houseelves.desk.triage.EmailDoneService;
 import io.github.houseelves.desk.triage.TriageElf;
 import io.github.houseelves.desk.triage.TriageRuns;
 import io.github.houseelves.desk.mvnpm.MvnpmElf;
@@ -86,6 +87,9 @@ public class DeskApi {
 
     @Inject
     TriageElf triage;
+
+    @Inject
+    EmailDoneService emailDone;
 
     @Inject
     TriageRuns triageRuns;
@@ -214,7 +218,13 @@ public class DeskApi {
 
     /** An email triage run (the newest when runId is null), or null when there is none. */
     public TriageElf.Email email(String runId) {
-        return triage.email(runId);
+        return emailDone.withDone(triage.email(runId));
+    }
+
+    /** Done on an email: its Gmail thread is marked read (by daily-triage, through the runner). */
+    public TriageElf.Email emailDone(String account, String messageId) {
+        emailDone.done(account, messageId);
+        return emailDone.withDone(triage.email(null));
     }
 
     /** A Zulip run (the newest when runId is null), or null when there is none. */
