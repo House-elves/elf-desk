@@ -136,15 +136,6 @@ public final class FlowClassifier {
         if (f.next() != null && !f.next().id().equals("open")) after.add(f.next());
         after.addAll(f.more());
         Flow at = agentStep(f, t.action());
-        // Your PR, and the agent explained why CI fails: the fix is the next step, not a comment to yourself.
-        Flow.Next fixCi = after.stream().filter(n -> n.id().equals("ci-fix")).findFirst().orElse(null);
-        if (f.role().equals("mine") && "ci-why".equals(t.action()) && fixCi != null
-                && (t.state().equals("answered") || t.state().equals("draft"))) {
-            List<Flow.Next> rest = new ArrayList<>();
-            rest.add(new Flow.Next("open", "Read the answer"));
-            after.stream().filter(n -> n != fixCi).forEach(rest::add);
-            return at.with(Flow.YOU, t.since(), "The agent found why CI fails.", fixCi, rest);
-        }
         return switch (t.state()) {
             case "working" -> at.with(Flow.AGENT, t.since(), "The agent is " + doing(t.action()) + ".", new Flow.Next("open", "Watch"),
                     List.of());

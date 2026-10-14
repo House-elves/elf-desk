@@ -38,6 +38,9 @@ const CALLS = {
     assign: (d, key) => d.assignMe({ itemKey: key }),
 };
 
+/** Steps that start the agent or CI, which an open row's panel offers next to the agent's answer. */
+const PANEL_STEPS = new Set(['ci-fix', 'ci-why', 'ci-rerun', 'conflicts', 'address', 'fix', 'investigate', 'review']);
+
 /** The last board this page saw: going back to the board shows it at once while it updates. */
 export let lastBoard = null;
 
@@ -561,9 +564,17 @@ class DeskBoard extends LitElement {
             case 'activity':
                 return html`<pr-activity bare autoOpen .itemKey=${item.key} @activity-closed=${() => { this._open = null; }}></pr-activity>`;
             default:
-                return html`<desk-thread compact .itemKey=${item.key}
+                return html`<desk-thread compact .itemKey=${item.key} .steps=${this._panelSteps(item)}
+                    @run-step=${e => this._run(item, e.detail)}
                     @thread-posted=${() => { this._open = null; this._reloadNow(); }}></desk-thread>`;
         }
+    }
+
+    /** The row's agent and CI steps, offered inside its open panel: after reading an answer, the fix is one click. */
+    _panelSteps(item) {
+        const f = this._board?.flows?.[item.key];
+        if (!f) return [];
+        return [f.next, ...f.more].filter(n => n && PANEL_STEPS.has(n.id));
     }
 
     /** "▬▬▭▭ CI": how far along the flow is, and the stage it's at. */

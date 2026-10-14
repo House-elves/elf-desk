@@ -25,6 +25,8 @@ class DeskThread extends LitElement {
     static properties = {
         itemKey: { type: String },
         compact: { type: Boolean },  // inside a board row: the latest answer, the draft and the composer only
+        /** In a board row: the item's other next steps ({id, label}), offered under the answer; picked: run-step. */
+        steps: { type: Array },
         _thread: { state: true },
         _loaded: { state: true },
         _lines: { state: true },
@@ -50,6 +52,7 @@ class DeskThread extends LitElement {
     };
 
     static styles = [shared, markdownStyles, css`
+        .steps-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
         :host([compact]) { display: block; }
         .compact { display: grid; gap: 14px; min-width: 0; }
         .back { font-size: 14px; color: var(--muted); text-decoration: none; display: inline-flex; gap: 6px; }
@@ -529,6 +532,11 @@ class DeskThread extends LitElement {
                 ${kind === 'PR' && url && t?.draft?.kind === 'review' ? this._renderFiles(url) : ''}
                 ${t?.draft ? this._renderDraft(t.draft) : ''}
                 ${this._previewed() && !this._editing ? this._renderConfirm(this._preview) : ''}
+                ${this.steps?.length && !t?.job ? html`<div class="steps-bar" role="group" aria-label="Next steps">
+                    <span class="muted small">${t?.draft ? 'Or instead' : 'Next'}</span>
+                    ${this.steps.map(s => html`<button class="sm" @click=${() => this.dispatchEvent(new CustomEvent('run-step',
+                        { detail: s, bubbles: true, composed: true }))}>${s.label}</button>`)}
+                </div>` : ''}
                 ${this._loaded ? this._renderComposer(t) : ''}
                 <a class="small" href=${threadHref(this.itemKey)}>Open the full page${t?.turns?.length > 1 ? ` (${t.turns.length} turns)` : ''}</a>
             </div>
