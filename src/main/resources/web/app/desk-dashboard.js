@@ -210,13 +210,15 @@ class DeskDashboard extends LitElement {
             const topics = new Map();
             for (const m of z.messages ?? []) {
                 const key = `${m.stream} > ${m.topic}`;
-                const t = topics.get(key) ?? { you: false, mention: false, unread: false };
+                const t = topics.get(key) ?? { key, you: false, mention: false, unread: false, last: 0 };
+                t.last = Math.max(t.last, m.time);
                 t.you ||= m.mention || m.involvesMe;
                 t.mention ||= m.mention;
                 t.unread ||= m.unread;
                 topics.set(key, t);
             }
-            const all = [...topics.values()];
+            // Topics you marked Done count again once they have newer messages.
+            const all = [...topics.values()].filter(t => !(z.done?.[t.key] && Date.parse(z.done[t.key]) >= t.last * 1000));
             const mentions = all.filter(t => t.mention).length;
             const you = all.filter(t => t.you && !t.mention).length;
             const unread = all.filter(t => t.unread).length;

@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared, markdown, markdownStyles } from './shared.js';
+import { shared, spinner, markdown, markdownStyles } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { runTime, took } from './triage-run.js';
 import './triage-run.js';
@@ -13,6 +13,7 @@ class DeskZulip extends LitElement {
     static properties = {
         _run: { state: true },
         _picked: { state: true },
+        _doing: { state: true },
         _loading: { state: true },
         _error: { state: true },
     };
@@ -25,6 +26,9 @@ class DeskZulip extends LitElement {
         article { padding: 16px 18px; display: grid; gap: 8px; min-width: 0; }
         article.you { box-shadow: inset 3px 0 0 var(--accent); }
         .where { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+        .where .sm { margin-left: auto; align-self: center; }
+        details.done > summary { padding: 4px 0; }
+        details.done[open] > .topics { margin-top: 12px; }
         .stream { font-size: 13px; color: var(--muted); }
         .topic { font-weight: 600; font-size: 15.5px; overflow-wrap: anywhere; color: var(--ink); text-decoration: none; }
         a.topic:hover { text-decoration: underline; }
@@ -80,10 +84,28 @@ class DeskZulip extends LitElement {
             t.you = t.mention || t.messages.some(m => m.involvesMe);
             t.unread = t.messages.filter(m => m.unread).length;
             t.digest = run.digests?.[t.key];
+            // Done until a newer message arrives.
+            t.done = !!run.done?.[t.key] && Date.parse(run.done[t.key]) >= t.last.time * 1000;
             return t;
         });
         const rank = t => (t.you ? 2 : 0) + (t.unread ? 1 : 0);
         return topics.sort((a, b) => rank(b) - rank(a) || b.last.time - a.last.time);
+    }
+
+    /** Done: Zulip marks the topic read, and it folds away until it has newer messages. */
+    async _done(t) {
+        this._doing = t.key;
+        this._error = null;
+        try {
+            const desk = await api();
+            const r = await desk.zulipDone({ server: t.last.server, stream: t.stream, topic: t.topic });
+            if (!this._picked) this._run = r;
+            else await this._load();
+        } catch (e) {
+            this._error = `${t.topic || t.stream}: ${errorMessage(e)}`;
+        } finally {
+            this._doing = null;
+        }
     }
 
     _time(seconds) {
@@ -96,6 +118,9 @@ class DeskZulip extends LitElement {
                 <div class="where">
                     <span class="stream">${t.stream === 'DM' ? 'Direct message' : `#${t.stream}`}</span>
                     <a class="topic" href=${t.last.url} target="_blank" rel="noopener">${t.topic || '(no topic)'}</a>
+                    ${t.done ? '' : html`<button class="sm" ?disabled=${this._doing}
+                        title=${t.stream === 'DM' ? 'Marks these direct messages read in Zulip' : 'Marks the topic read in Zulip'}
+                        @click=${() => this._done(t)}>${this._doing === t.key ? spinner : ''}Done</button>`}
                 </div>
                 <div class="chips">
                     ${t.mention ? html`<span class="chip run">Mentions you</span>`
@@ -120,14 +145,16 @@ class DeskZulip extends LitElement {
 
     render() {
         const run = this._run;
-        const topics = run ? this._topics(run) : [];
+        const all = run ? this._topics(run) : [];
+        const topics = all.filter(t => !t.done);
+        const done = all.filter(t => t.done);
         return html`
             <div class="page">
                 <div>
                     <h1>Zulip</h1>
                     <p class="sub">
-                        ${run ? html`The ${run.hours} hours up to ${runTime(run.run.at)}: ${topics.length}
-                                ${topics.length === 1 ? 'topic' : 'topics'}, ${run.messages?.length ?? 0} messages${run.durationMs ? `, took ${took(run.durationMs)}` : ''}`
+                        ${run ? html`The ${run.hours} hours up to ${runTime(run.run.at)}: ${all.length}
+                                ${all.length === 1 ? 'topic' : 'topics'}, ${run.messages?.length ?? 0} messages${run.durationMs ? `, took ${took(run.durationMs)}` : ''}`
                             : this._loading ? '' : 'Not checked yet.'}
                     </p>
                 </div>
@@ -139,8 +166,13 @@ class DeskZulip extends LitElement {
                 ${this._loading && !run ? html`<div class="topics">${[1, 2, 3].map(() => html`<div class="skeleton"></div>`)}</div>` : ''}
                 ${run ? html`
                     <div class="topics">
-                        ${topics.length ? topics.map(t => this._topic(t)) : html`<p class="panel empty">Nothing happened on Zulip in that time.</p>`}
-                    </div>` : ''}
+                        ${topics.length ? topics.map(t => this._topic(t)) : html`<p class="panel empty">${done.length
+                            ? 'All done.' : 'Nothing happened on Zulip in that time.'}</p>`}
+                    </div>
+                    ${done.length ? html`<details class="done">
+                        <summary>Done (${done.length})</summary>
+                        <div class="topics">${done.map(t => this._topic(t))}</div>
+                    </details>` : ''}` : ''}
             </div>
         `;
     }

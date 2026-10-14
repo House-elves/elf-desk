@@ -58,8 +58,16 @@ public class TriageElf {
     public record Email(RunInfo run, JsonNode accounts, boolean emailed, long durationMs) {
     }
 
-    /** A Zulip run: the messages of the last {@code hours} and a digest per "stream > topic". */
-    public record Zulip(RunInfo run, int hours, JsonNode messages, JsonNode digests, long durationMs) {
+    /**
+     * A Zulip run: the messages of the last {@code hours} and a digest per "stream > topic".
+     *
+     * @param done per "stream > topic" you marked Done on the desk, when (filled in by {@link ZulipDoneService})
+     */
+    public record Zulip(RunInfo run, int hours, JsonNode messages, JsonNode digests, long durationMs, java.util.Map<String, String> done) {
+
+        public Zulip(RunInfo run, int hours, JsonNode messages, JsonNode digests, long durationMs) {
+            this(run, hours, messages, digests, durationMs, java.util.Map.of());
+        }
     }
 
     private final Path dir;
