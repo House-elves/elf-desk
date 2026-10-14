@@ -125,6 +125,11 @@ public class DeskApi {
         return threads.start(itemKey, action, question, user.login(), user.githubToken());
     }
 
+    /** After a self-review: the agent makes the fixes it listed. */
+    public ThreadView fixReview(String itemKey) {
+        return threads.fixReview(itemKey);
+    }
+
     public ThreadView reply(String itemKey, String text) {
         return threads.reply(itemKey, text, user.login(), user.githubToken());
     }

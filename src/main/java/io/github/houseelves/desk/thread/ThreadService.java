@@ -106,9 +106,11 @@ public class ThreadService {
                     default -> job == null ? t.updated : job.finished != null ? job.finished : job.created;
                 };
                 boolean failed = !working && job != null && (job.state.equals(Job.FAILED) || job.state.equals(Job.CANCELLED));
+                Job review = Job.lastReviewFor(t.id);
+                int fixes = review != null && review.action.equals(Prompts.REVIEW) && review.fixes != null ? review.fixes : 0;
                 out.put(t.itemKey, new ThreadView.Summary(t.itemKey, state, job == null ? null : job.action,
                         draft == null ? null : draft.kind, since, failed && draft == null,
-                        posted == null ? null : posted.kind, posted == null ? null : posted.postedAt));
+                        posted == null ? null : posted.kind, posted == null ? null : posted.postedAt, fixes));
             }
             return out;
         });
@@ -217,6 +219,26 @@ public class ThreadService {
             // Nothing to continue (no thread, or its first run failed): start over with the question.
             return start(itemKey, Prompts.ASK, text, login, token);
         }
+        return followUp(itemKey, Prompts.REPLY, text, since -> Prompts.reply(text, since));
+    }
+
+    /**
+     * "Fix the review items" after a self-review that found some: the agent makes them in the review's session
+     * and worktree, and its commits become a push you check.
+     */
+    public ThreadView fixReview(String itemKey) {
+        boolean ok = QuarkusTransaction.requiringNew().call(() -> {
+            DeskThread t = DeskThread.byKey(itemKey);
+            if (t == null || t.claudeSession == null) return false;
+            Job last = Job.lastReviewFor(t.id);
+            return last != null && last.action.equals(Prompts.REVIEW) && last.fixes != null && last.fixes > 0;
+        });
+        if (!ok) throw new IllegalStateException("There's no self-review with fixes to make. Run Self-review first.");
+        return followUp(itemKey, Prompts.SELF_FIX, Prompts.label(Prompts.SELF_FIX, null), Prompts::selfFix);
+    }
+
+    private ThreadView followUp(String itemKey, String action, String text,
+            java.util.function.Function<List<String>, String> prompt) {
         long jobId = QuarkusTransaction.requiringNew().call(() -> {
             DeskThread t = DeskThread.byKey(itemKey);
             requireIdle(t);
@@ -227,12 +249,12 @@ public class ThreadService {
             for (int i = turns.size() - 1; i >= 0 && !turns.get(i).role.equals(Turn.AGENT); i--) {
                 if (turns.get(i).role.equals(Turn.SYSTEM)) since.addFirst(turns.get(i).text);
             }
-            Turn.add(t.id, Turn.YOU, Prompts.REPLY, text);
+            Turn.add(t.id, Turn.YOU, action, text);
             Job last = Job.find("threadId = ?1 order by id desc", t.id).firstResult();
             // A follow-up keeps the worktree as the agent left it (its commits included).
             ObjectNode checkout = (ObjectNode) mapper.readTree(last.checkout);
             checkout.remove("reset");
-            return newJob(t, Prompts.REPLY, Prompts.reply(text, since), checkout.toString(), null).id;
+            return newJob(t, action, prompt.apply(since), checkout.toString(), null).id;
         });
         dispatch(jobId);
         live.changed(itemKey);
@@ -352,6 +374,7 @@ public class ThreadService {
             j.state = Job.DONE;
             j.finished = Instant.now();
             j.costUsd = cost;
+            if (j.action.equals(Prompts.REVIEW)) j.fixes = result.fixes();
             DeskThread t = DeskThread.findById(j.threadId);
             if (session != null) t.claudeSession = session;
             t.updated = Instant.now();

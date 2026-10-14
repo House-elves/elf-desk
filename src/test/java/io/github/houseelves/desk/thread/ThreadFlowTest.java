@@ -146,6 +146,30 @@ class ThreadFlowTest {
     }
 
     @Test
+    void aSelfReviewsFixesAreOfferedUntilTheAgentMakesThem() throws Exception {
+        assertThrows(IllegalStateException.class, () -> threads.fixReview(KEY));
+        threads.start(KEY, Prompts.REVIEW, null, "phillip-kruger", "gho_t");
+        threads.jobDone(openJob(), "s", mapper.readTree("""
+                {"reply": "1. Null check in Foo. 2. Missing test.", "draft": null, "fixes": 2}"""), null);
+        assertEquals(2, threads.summaries().get(KEY).reviewFixes());
+
+        // Chatting about the review keeps the offer.
+        threads.reply(KEY, "Is the second one needed?", "phillip-kruger", "gho_t");
+        threads.jobDone(openJob(), "s", output("Yes.", "null"), null);
+        assertEquals(2, threads.summaries().get(KEY).reviewFixes());
+
+        threads.fixReview(KEY);
+        Job fix = QuarkusTransaction.requiringNew().call(() -> Job.findById(openJob()));
+        assertEquals(Prompts.SELF_FIX, fix.action);
+        assertTrue(fix.prompt.contains("Make the fixes your review listed"));
+        assertTrue(!fix.checkout.contains("\"reset\"")); // in the review's worktree
+        assertEquals("Fix the review items.", threads.view(KEY).turns().get(4).text());
+        threads.jobDone(fix.id, "s", output("Done both.", "null"), null);
+        assertEquals(0, threads.summaries().get(KEY).reviewFixes());
+        assertThrows(IllegalStateException.class, () -> threads.fixReview(KEY));
+    }
+
+    @Test
     void closingCallsGitHubAndIsAudited() throws Exception {
         threads.start(KEY, Prompts.REVIEW, null, "me", "t"); // a thread exists, so it gets a note
         when(writes.close("quarkusio/quarkus", 50087))

@@ -81,6 +81,26 @@ class FlowClassifierTest {
     }
 
     @Test
+    void aSelfReviewWithFixesOffersToMakeThem() {
+        Item running = pr2(ME, "PENDING", "BLOCKED", "MERGEABLE", false, false, null);
+        ThreadView.Summary answered = new ThreadView.Summary("k", "answered", "review", null, NOW, false, null, null, 3);
+        Flow f = FlowClassifier.flow("mine", running, ctx(answered, null, null, null, List.of()));
+        is(f, Flow.YOU, 0, "open");
+        assertEquals("The agent reviewed it: 3 fixes worth making.", f.say());
+        assertEquals("self-fix", f.more().get(0).id());
+        // Read: back to CI, the fixes still offered.
+        ThreadView.Summary read = new ThreadView.Summary("k", "idle", "review", null, NOW, false, null, null, 3);
+        f = FlowClassifier.flow("mine", running, ctx(read, null, null, null, List.of()));
+        is(f, Flow.CI, 1, null);
+        assertEquals("self-fix", f.more().get(0).id());
+        // Nothing to fix: no offer.
+        ThreadView.Summary clean = new ThreadView.Summary("k", "answered", "review", null, NOW, false, null, null, 0);
+        f = FlowClassifier.flow("mine", running, ctx(clean, null, null, null, List.of()));
+        assertEquals("The agent reviewed it.", f.say());
+        assertEquals(0, f.more().stream().filter(n -> n.id().equals("self-fix")).count());
+    }
+
+    @Test
     void rightAfterAPushNoChecksYetMeansCiIsStarting() {
         Item noChecks = pr2(ME, null, "BLOCKED", "MERGEABLE", false, false, "REVIEW_REQUIRED");
         ThreadView.Summary pushed = new ThreadView.Summary("k", "idle", "ci-fix", null, NOW, false, "push", NOW.minusSeconds(240));

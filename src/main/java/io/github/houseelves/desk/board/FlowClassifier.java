@@ -133,6 +133,9 @@ public final class FlowClassifier {
         ThreadView.Summary t = c.thread();
         if (t == null) return f;
         List<Flow.Next> after = new ArrayList<>();
+        // Your self-review found fixes: making them is the next step, until they're made or you review again.
+        boolean fixes = f.role().equals("mine") && t.reviewFixes() > 0;
+        if (fixes) after.add(new Flow.Next("self-fix", "Fix the review items"));
         if (f.next() != null && !f.next().id().equals("open")) after.add(f.next());
         after.addAll(f.more());
         Flow at = agentStep(f, t.action());
@@ -141,19 +144,20 @@ public final class FlowClassifier {
                     List.of());
             case "draft" -> at.with(Flow.YOU, t.since(), drafted(t.draftKind()), new Flow.Next("open", readDraft(t.draftKind())),
                     after);
-            case "answered" -> at.with(Flow.YOU, t.since(), "The agent " + did(t.action()) + ".", new Flow.Next("open", "Read answer"),
-                    after);
+            case "answered" -> at.with(Flow.YOU, t.since(), "The agent " + did(t.action()) + (fixes && t.action().equals("review")
+                    ? ": " + (t.reviewFixes() == 1 ? "1 fix" : t.reviewFixes() + " fixes") + " worth making" : "") + ".",
+                    new Flow.Next("open", "Read answer"), after);
             default -> t.failed()
                     ? at.with(Flow.YOU, t.since(), "The agent stopped before it finished " + doing(t.action()) + ".",
                             new Flow.Next("open", "See what happened"), after)
-                    : f;
+                    : fixes ? f.with(f.waiting(), f.since(), f.say(), f.next(), after) : f;
         };
     }
 
     private static Flow agentStep(Flow f, String action) {
         if (action == null) return f;
         int step = switch (f.role()) {
-            case "mine" -> action.equals("review") ? 0 : action.startsWith("ci-") || action.equals("conflicts") ? 1
+            case "mine" -> action.equals("review") || action.equals("self-fix") ? 0 : action.startsWith("ci-") || action.equals("conflicts") ? 1
                     : action.equals("address") ? 2 : -1;
             case "review" -> action.equals("review") ? 0 : action.startsWith("ci-") ? 2 : -1;
             case "issue" -> action.equals("investigate") ? 0 : action.equals("fix") ? 1 : -1;
@@ -171,6 +175,7 @@ public final class FlowClassifier {
             case "ci-fix" -> "fixing the failing CI";
             case "conflicts" -> "resolving the conflicts";
             case "address" -> "addressing the review";
+            case "self-fix" -> "fixing the review items";
             default -> "answering";
         };
     }
@@ -178,6 +183,7 @@ public final class FlowClassifier {
     private static String did(String action) {
         return switch (action == null ? "" : action) {
             case "review" -> "reviewed it";
+            case "self-fix" -> "worked on the review items";
             case "investigate" -> "investigated it";
             case "ci-why" -> "looked into the failing CI";
             default -> "answered";

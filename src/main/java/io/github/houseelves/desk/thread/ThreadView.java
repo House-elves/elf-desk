@@ -42,12 +42,18 @@ public record ThreadView(
      * @param failed     the last job failed or was cancelled (state idle)
      * @param postedKind what you last posted from here (review, comment, push, pr, issue), or null
      * @param postedAt   when
+     * @param reviewFixes the fixes the last self-review found and nobody has made yet (0: none, or not a self-review)
      */
     public record Summary(String itemKey, String state, String action, String draftKind, java.time.Instant since,
-            boolean failed, String postedKind, java.time.Instant postedAt) {
+            boolean failed, String postedKind, java.time.Instant postedAt, int reviewFixes) {
 
         public Summary(String itemKey, String state) {
-            this(itemKey, state, null, null, null, false, null, null);
+            this(itemKey, state, null, null, null, false, null, null, 0);
+        }
+
+        public Summary(String itemKey, String state, String action, String draftKind, java.time.Instant since,
+                boolean failed, String postedKind, java.time.Instant postedAt) {
+            this(itemKey, state, action, draftKind, since, failed, postedKind, postedAt, 0);
         }
     }
 }

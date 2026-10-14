@@ -36,11 +36,12 @@ const CALLS = {
     'dependabot-rebase': (d, key) => d.askDependabotToRebase({ itemKey: key }),
     ready: (d, key) => d.readyForReview({ itemKey: key }),
     address: (d, key) => d.addressReview({ itemKey: key }),
+    'self-fix': (d, key) => d.fixReview({ itemKey: key }),
     assign: (d, key) => d.assignMe({ itemKey: key }),
 };
 
 /** Steps that start the agent or CI, which an open row's panel offers next to the agent's answer. */
-const PANEL_STEPS = new Set(['ci-fix', 'ci-why', 'ci-rerun', 'conflicts', 'address', 'fix', 'investigate', 'review']);
+const PANEL_STEPS = new Set(['self-fix', 'ci-fix', 'ci-why', 'ci-rerun', 'conflicts', 'address', 'fix', 'investigate', 'review']);
 
 /** The last board this page saw: going back to the board shows it at once while it updates. */
 export let lastBoard = null;

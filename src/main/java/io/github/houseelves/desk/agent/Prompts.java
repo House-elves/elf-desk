@@ -12,7 +12,7 @@ public final class Prompts {
 
     public static final String REVIEW = "review", INVESTIGATE = "investigate", ASK = "ask", REPLY = "reply",
             CI_WHY = "ci-why", CI_FIX = "ci-fix", CONFLICTS = "conflicts", FIX = "fix",
-            ADDRESS = "address";
+            ADDRESS = "address", SELF_FIX = "self-fix";
 
     private static final int MAX_BODY = 12_000;
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
@@ -30,6 +30,7 @@ public final class Prompts {
             case CI_FIX -> "Fix the CI failure.";
             case CONFLICTS -> "Resolve the merge conflicts.";
             case ADDRESS -> "Address the review comments.";
+            case SELF_FIX -> "Fix the review items.";
             default -> question;
         };
     }
@@ -91,6 +92,16 @@ public final class Prompts {
                 Answer in `reply`. If this changes what should be posted, return the complete new `draft`; \
                 if the current draft still stands, return `draft` as null.
                 """.formatted(text);
+    }
+
+    /** "Fix the review items": a follow-up in the self-review's session, which still has the review in it. */
+    public static String selfFix(List<String> since) {
+        return reply("""
+                Make the fixes your review listed as worth making. Change the code and commit on the PR's branch \
+                (small, focused commits are fine; they're squashed before pushing). Run the relevant tests. Skip \
+                any point you no longer think is right, and say why.
+
+                In `reply`, say what you changed and what you left. `draft`: null. Set `fixes` to 0.""", since);
     }
 
     static String preamble(ItemContext ctx, String login) {
@@ -155,6 +166,9 @@ public final class Prompts {
                 `reply`: the fixes worth making, most important first, each concrete (file, line, what to change). \
                 Then minor points, then what you checked. The maintainer may ask you to make the fixes next: then \
                 change the code and commit, and your commits are offered to them as a push.
+
+                `fixes`: how many fixes worth making your reply lists (minor points included only if you'd make \
+                them), 0 when the PR is good as it is.
 
                 `draft`: usually null, since the useful output for your own PR is the list of fixes. Only if a \
                 public note would help reviewers (for example explaining a design choice), a `kind` "review" with \

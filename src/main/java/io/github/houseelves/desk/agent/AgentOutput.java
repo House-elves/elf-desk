@@ -7,8 +7,9 @@ import java.util.List;
  *
  * @param reply your answer in the thread, Markdown
  * @param draft something to post, or null when there's nothing to post (or the previous draft still stands)
+ * @param fixes self-reviews only: how many fixes the reply lists as worth making
  */
-public record AgentOutput(String reply, DraftOut draft) {
+public record AgentOutput(String reply, DraftOut draft, Integer fixes) {
 
     /**
      * @param kind     review (PRs only), comment, issue (a new issue in another public repo, such as upstream), or pr
@@ -45,6 +46,7 @@ public record AgentOutput(String reply, DraftOut draft) {
               "required": ["reply", "draft"],
               "properties": {
                 "reply": {"type": "string", "description": "Your answer to the maintainer, in Markdown. Shown in the thread, never posted."},
+                "fixes": {"type": "integer", "minimum": 0, "description": "Self-review of the maintainer's own PR only: how many fixes worth making your reply lists (0 when none)."},
                 "draft": {
                   "description": "Text to post on GitHub under the maintainer's name, or null.",
                   "anyOf": [

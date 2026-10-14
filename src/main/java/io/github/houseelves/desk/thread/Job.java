@@ -46,6 +46,9 @@ public class Job extends PanacheEntityBase {
 
     public String error;
 
+    /** A self-review only: how many fixes it found worth making. */
+    public Integer fixes;
+
     @Column(name = "cost_usd")
     public BigDecimal costUsd;
 
@@ -65,6 +68,12 @@ public class Job extends PanacheEntityBase {
     }
 
     /** The thread's most recent job, open or not, or null. */
+    /** The last finished self-review or self-review fix: whether the review's fixes are still to be made. */
+    public static Job lastReviewFor(long threadId) {
+        return find("threadId = ?1 and state = ?2 and action in ?3 order by id desc", threadId, DONE,
+                List.of("review", "self-fix")).firstResult();
+    }
+
     public static Job latestFor(long threadId) {
         return find("threadId = ?1 order by id desc", threadId).firstResult();
     }
