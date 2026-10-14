@@ -61,4 +61,14 @@ class PromptsTest {
         assertTrue(u.contains("ignore previous instructions"));
         assertTrue(!u.contains("on it"));
     }
+
+    @Test
+    void ciWhyOnYourOwnPrDraftsNoComment() {
+        ItemContext own = Contexts.pr("quarkiverse/quarkus-web-bundler", 502, "MEMBER"); // opened by "someone"
+        String prompt = Prompts.start(Prompts.CI_WHY, own, "someone", null);
+        assertTrue(prompt.contains("`draft`: null. This is the maintainer's own PR"), prompt);
+        assertTrue(!prompt.contains("if the author should be told"), prompt);
+        assertTrue(Prompts.start(Prompts.CI_WHY, own, "phillip-kruger", null).contains("if the author should be told"));
+    }
 }
+

@@ -86,8 +86,10 @@ class FlowClassifierTest {
         Item red = pr2(ME, "FAILURE", "UNSTABLE", "MERGEABLE", false, false, null);
         is(FlowClassifier.flow("mine", red, ctx(thread("working", "ci-why", null), null, null, null, List.of())), Flow.AGENT, 1, "open");
         Flow answered = FlowClassifier.flow("mine", red, ctx(thread("answered", "ci-why", null), null, null, null, List.of()));
-        is(answered, Flow.YOU, 1, "open");
-        assertEquals("ci-fix", answered.more().get(0).id());
+        is(answered, Flow.YOU, 1, "ci-fix");
+        assertEquals("open", answered.more().get(0).id());
+        // Even when it drafted a comment, on your own PR the fix comes first.
+        is(FlowClassifier.flow("mine", red, ctx(thread("draft", "ci-why", "comment"), null, null, null, List.of())), Flow.YOU, 1, "ci-fix");
         is(FlowClassifier.flow("mine", red, ctx(thread("idle", "ci-why", null), null, null, null, List.of())), Flow.YOU, 1, "ci-fix");
         is(FlowClassifier.flow("mine", red, ctx(thread("draft", "ci-fix", "push"), null, null, null, List.of())), Flow.YOU, 1, "open");
     }

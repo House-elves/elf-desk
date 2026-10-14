@@ -164,6 +164,10 @@ public final class Prompts {
 
     static String task(String action, ItemContext ctx, String question, String login) {
         if (action.equals(REVIEW) && isOwn(ctx, login)) return selfReview();
+        if (action.equals(CI_WHY) && isOwn(ctx, login)) {
+            return task(action, ctx, question).replaceFirst("(?s)`draft`: a `kind` \"comment\".*$",
+                    "`draft`: null. This is the maintainer's own PR: the next step is the fix, which they can ask you for.\n");
+        }
         return task(action, ctx, question);
     }
 
