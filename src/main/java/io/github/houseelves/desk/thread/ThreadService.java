@@ -142,6 +142,15 @@ public class ThreadService {
      */
     public ThreadView start(String itemKey, String action, String question, String login, String token, String extra,
             ObjectNode checkoutExtras) {
+        return start(itemKey, action, question, login, token, extra, checkoutExtras, null);
+    }
+
+    /**
+     * As above, with {@code extraUntrusted}: text in {@code extra} written by people outside the repo (review
+     * threads), which goes through the runner's safety triage with the item's own untrusted text.
+     */
+    public ThreadView start(String itemKey, String action, String question, String login, String token, String extra,
+            ObjectNode checkoutExtras, String extraUntrusted) {
         if (!List.of(Prompts.REVIEW, Prompts.INVESTIGATE, Prompts.FIX, Prompts.ASK, Prompts.CI_WHY, Prompts.CI_FIX,
                 Prompts.CONFLICTS, Prompts.ADDRESS).contains(action)) {
             throw new IllegalArgumentException("Unknown action " + action);
@@ -171,7 +180,7 @@ public class ThreadService {
                     ? Prompts.start(action, ctx, login, question, material)
                     : Prompts.again(action, ctx, question, material, login);
             // Every action sends the item's current text, which may have new comments since the last check.
-            String untrusted = ctx.untrustedText();
+            String untrusted = java.util.Objects.requireNonNullElse(join(ctx.untrustedText(), blankToNull(extraUntrusted)), "");
             ObjectNode checkout = (ObjectNode) mapper.readTree(checkout(ctx));
             checkout.put("reset", true); // a new action starts from the PR's current head
             if (Prompts.isOwn(ctx, login)) checkout.put("own", true); // your PR: reviews can only be COMMENT

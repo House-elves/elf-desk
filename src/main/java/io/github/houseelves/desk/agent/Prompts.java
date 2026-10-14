@@ -136,7 +136,7 @@ public final class Prompts {
         sb.append("\n\n<description>\n").append(clip(ctx.body())).append("\n</description>\n");
         for (ItemContext.Comment c : ctx.comments()) {
             if ((c.body() == null || c.body().isBlank()) && c.state() == null) continue;
-            sb.append("\n<comment author=\"").append(c.author()).append("\" association=\"")
+            sb.append("\n<comment author=\"").append(quote(c.author())).append("\" association=\"")
                     .append(c.authorAssociation()).append('"');
             if (c.state() != null) sb.append(" review=\"").append(c.state()).append('"');
             if (c.createdAt() != null) sb.append(" date=\"").append(DAY.format(c.createdAt())).append('"');
@@ -275,8 +275,20 @@ public final class Prompts {
         };
     }
 
+    /** The tags that mark quoted GitHub text in prompts. */
+    private static final java.util.regex.Pattern DELIMITER = java.util.regex.Pattern.compile(
+            "<(/?)(description|comment|thread|review|code|log)\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Text from GitHub for inside one of the prompt's tags: any of those tags in it are defused ({@code </comment>}
+     * becomes {@code &lt;/comment>}), so the text can't close its block early and pass as the desk's own words.
+     */
+    public static String quote(String s) {
+        return s == null ? "" : DELIMITER.matcher(s).replaceAll("&lt;$1$2");
+    }
+
     private static String clip(String s) {
         if (s == null || s.isBlank()) return "(empty)";
-        return s.length() <= MAX_BODY ? s : s.substring(0, MAX_BODY) + "\n…(cut)";
+        return quote(s.length() <= MAX_BODY ? s : s.substring(0, MAX_BODY) + "\n…(cut)");
     }
 }

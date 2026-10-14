@@ -726,12 +726,12 @@ public class GitHub {
                 pullRequest(number: $number) {
                   url author { login }
                   lastCommit: commits(last: 1) { nodes { commit { committedDate } } }
-                  allReviews: reviews(last: 50) { nodes { url state body submittedAt author { __typename login } } }
-                  comments(last: 50) { nodes { url body createdAt author { __typename login } } }
+                  allReviews: reviews(last: 50) { nodes { url state body submittedAt authorAssociation author { __typename login } } }
+                  comments(last: 50) { nodes { url body createdAt authorAssociation author { __typename login } } }
                   reviewThreads(last: 100) {
                     nodes {
                       isResolved isOutdated path line originalLine
-                      comments(first: 50) { nodes { url body createdAt diffHunk author { __typename login } } }
+                      comments(first: 50) { nodes { url body createdAt diffHunk authorAssociation author { __typename login } } }
                     }
                   }
                 }
@@ -747,14 +747,24 @@ public class GitHub {
      * @param yourLast your last commit, comment or review: what came after is new
      */
     public record Reviews(String itemKey, String url, String you, Instant yourLast, List<Said> said, List<ReviewThread> threads) {
+
+        /** Text from people outside the repo, for the runner's safety triage (as {@link ItemContext#untrustedText}). */
+        public String untrustedText() {
+            StringBuilder sb = new StringBuilder();
+            java.util.stream.Stream.concat(said.stream(), threads.stream().flatMap(t -> t.comments().stream()))
+                    .filter(s -> !ItemContext.TRUSTED.contains(s.association()) && s.body() != null && !s.body().isBlank())
+                    .forEach(s -> sb.append("---\n").append(s.body()).append("\n\n"));
+            return sb.toString().strip();
+        }
     }
 
     /**
      * A review's summary or a plain comment.
      *
-     * @param state a review's state (COMMENTED, CHANGES_REQUESTED, APPROVED), or COMMENT for a plain comment
+     * @param state       a review's state (COMMENTED, CHANGES_REQUESTED, APPROVED), or COMMENT for a plain comment
+     * @param association the author's GitHub association with the repo (MEMBER, CONTRIBUTOR, NONE...)
      */
-    public record Said(String who, Instant at, String state, String body, String url, boolean isNew) {
+    public record Said(String who, Instant at, String state, String body, String url, boolean isNew, String association) {
     }
 
     /**
@@ -831,7 +841,7 @@ public class GitHub {
         Instant at = instant(n.path(atField));
         boolean theirs = !who.equalsIgnoreCase(login);
         return new Said(who, at, state, n.path("body").asText(""), n.path("url").asText(null),
-                theirs && at != null && (yourLast == null || at.isAfter(yourLast)));
+                theirs && at != null && (yourLast == null || at.isAfter(yourLast)), n.path("authorAssociation").asText("NONE"));
     }
 
     public Activity activity(String token, String login, String repo, int number) {
