@@ -385,6 +385,7 @@ public class Poster {
         try {
             writes.push(t.repo(), t.number(), pr.headRepo(), pr.headRef(), pr.from(), pr.to(), null);
         } catch (GitHubWriter.WriteFailed e) {
+            worktreeGone(draft, t, e);
             throw new IllegalStateException("The push to " + pr.headRepo() + " didn't go through: " + e.getMessage());
         }
         String head = pr.headRepo().substring(0, pr.headRepo().indexOf('/')) + ":" + pr.headRef();
@@ -438,6 +439,27 @@ public class Poster {
         });
     }
 
+    /**
+     * The runner no longer has the agent's working copy (cleaned up, or lost when the runner moved it), so the
+     * draft's commits exist nowhere: it can never be pushed. Discards it, notes why in the thread, and says what to
+     * run again. Returns normally when that isn't the failure.
+     */
+    void worktreeGone(Draft draft, DeskThread t, GitHubWriter.WriteFailed e) {
+        if (e.getMessage() == null || !e.getMessage().contains("No worktree for")) return;
+        String again = QuarkusTransaction.requiringNew().call(() -> {
+            Draft d = Draft.findById(draft.id);
+            if (d != null && Draft.PENDING.equals(d.state)) d.state = Draft.DISCARDED;
+            Job j = draft.jobId == null ? null : Job.findById(draft.jobId);
+            String what = j == null ? null : io.github.houseelves.desk.agent.Prompts.label(j.action, null);
+            Turn.add(t.id, Turn.SYSTEM, null, "The agent's working copy for this is gone, so its commits can't be pushed."
+                    + " The draft is discarded." + (what != null ? " Start \"" + what.replaceAll("\\.$", "") + "\" again for new ones." : ""));
+            return what;
+        });
+        live.changed(t.itemKey);
+        throw new IllegalStateException("The agent's working copy for " + t.itemKey + " is gone, so these commits can't be "
+                + "pushed. The draft is discarded" + (again != null ? "; start \"" + again.replaceAll("\\.$", "") + "\" again." : "."));
+    }
+
     private PushOut readPush(String json) {
         try {
             return mapper.readValue(json, PushOut.class);
@@ -456,6 +478,7 @@ public class Poster {
         try {
             writes.push(t.repo(), t.number(), p.headRepo(), p.headRef(), p.from(), p.to(), p.squashed() ? p.base() : null);
         } catch (GitHubWriter.WriteFailed e) {
+            worktreeGone(draft, t, e);
             throw new IllegalStateException("The push didn't go through: " + e.getMessage());
         }
         String url = t.url + "/commits/" + p.to();
