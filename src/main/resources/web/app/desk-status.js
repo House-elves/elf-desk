@@ -12,11 +12,16 @@ export function weekStart(now = new Date()) {
     return d;
 }
 
-/** Where this week's status is: "sent", "draft" (ready to send), or "missing" (nothing generated this week). */
+/**
+ * Where this week's status is: "sent" (to the team), "self" (only to you so far), "draft" (ready to send), or
+ * "missing" (nothing drafted this week).
+ */
 export function statusState(s, now = new Date()) {
     const monday = weekStart(now);
-    if (s?.sentAt && new Date(s.sentAt) >= monday) return 'sent';
-    if (s && !s.sentAt && new Date(s.at) >= monday) return 'draft';
+    const sentThisWeek = target => (s?.sends ?? []).some(x => x.target === target && new Date(x.at) >= monday);
+    if (sentThisWeek('team')) return 'sent';
+    if (sentThisWeek('me')) return 'self';
+    if (s && !(s.sends ?? []).length && new Date(s.at) >= monday) return 'draft';
     return 'missing';
 }
 
@@ -90,8 +95,8 @@ class DeskStatus extends LitElement {
             const desk = await api();
             this._status = await desk.weeklyStatus({ runId: this._picked });
             const s = this._status;
-            this._body = s && !s.sentAt ? (loadEdit(s.id) ?? s.body) : null;
-            this._confirm = false;
+            this._body = s ? (loadEdit(s.id) ?? s.sentBody ?? s.body) : null;
+            this._confirm = null;
         } catch (e) {
             this._error = errorMessage(e);
         } finally {
@@ -109,14 +114,23 @@ class DeskStatus extends LitElement {
         this._body = this._status.body;
     }
 
-    async _send() {
-        this._sending = true;
+    _sent(target) {
+        return (this._status?.sends ?? []).some(s => s.target === target);
+    }
+
+    /** Whether a send is still to come: the draft stays editable until it has gone to everyone. */
+    _open(s) {
+        return !this._sent('me') || (s.teamTo && !this._sent('team'));
+    }
+
+    async _send(target) {
+        this._sending = target;
         this._error = null;
         try {
             const desk = await api();
-            this._status = await desk.sendWeeklyStatus({ runId: this._status.id, body: this._body });
-            saveEdit(this._status.id, null);
-            this._confirm = false;
+            this._status = await desk.sendWeeklyStatus({ runId: this._status.id, body: this._body, target });
+            if (!this._open(this._status)) saveEdit(this._status.id, null);
+            this._confirm = null;
         } catch (e) {
             this._error = errorMessage(e);
         } finally {
@@ -126,7 +140,7 @@ class DeskStatus extends LitElement {
 
     async _copy() {
         const s = this._status;
-        const text = s.sentAt ? s.sentBody ?? s.body : this._body;
+        const text = this._open(s) ? this._body : s.sentBody ?? s.body;
         try {
             await navigator.clipboard.writeText(`${s.subject}\n\n${text}`);
             this._copied = true;
@@ -137,31 +151,38 @@ class DeskStatus extends LitElement {
     }
 
     _draft(s) {
-        const edited = !s.sentAt && this._body !== s.body;
+        const open = this._open(s);
+        const edited = open && this._body !== s.body;
+        const address = target => target === 'team' ? s.teamTo : s.to;
+        const sendButton = (target, label, cls) => this._sent(target) || (target === 'team' && !s.teamTo) ? ''
+            : html`<button class=${cls} ?disabled=${!this._body?.trim()} @click=${() => { this._confirm = target; }}>
+                ${label} (${address(target)})</button>`;
         return html`
             <section class="panel draft" aria-label="The status">
                 <div class="head">
                     <span class="subject">${s.subject}</span>
-                    <span class="to">${s.sentAt ? html`Sent ${ago(s.sentAt)} to ${s.sentTo ?? s.to}` : html`To ${s.to}`}</span>
+                    ${(s.sends ?? []).length ? (s.sends ?? []).map(x => html`<span class="to">Sent ${ago(x.at)} to ${x.to}</span>`)
+                        : html`<span class="to">Not sent yet</span>`}
                 </div>
-                ${s.sentAt ? html`<pre class="sent">${s.sentBody ?? s.body}</pre>`
-                    : html`<textarea aria-label="Status text" .value=${this._body ?? ''} @input=${this._edit}
-                        ?disabled=${this._sending}></textarea>`}
+                ${open ? html`<textarea aria-label="Status text" .value=${this._body ?? ''} @input=${this._edit}
+                        ?disabled=${!!this._sending}></textarea>`
+                    : html`<pre class="sent">${s.sentBody ?? s.body}</pre>`}
                 ${this._confirm ? html`
                     <div class="confirm" role="group" aria-label="Confirm send">
-                        Send this status to ${s.to} now?
-                        <button class="primary" ?disabled=${this._sending} @click=${this._send}>
+                        Send this status to ${address(this._confirm)} now?
+                        <button class="primary" ?disabled=${!!this._sending} @click=${() => this._send(this._confirm)}>
                             ${this._sending ? spinner : ''}Send it</button>
-                        <button class="quiet" ?disabled=${this._sending} @click=${() => { this._confirm = false; }}>Cancel</button>
+                        <button class="quiet" ?disabled=${!!this._sending} @click=${() => { this._confirm = null; }}>Cancel</button>
                     </div>` : html`
                     <div class="acts">
-                        ${s.sentAt ? '' : html`<button class="primary" ?disabled=${!this._body?.trim()}
-                            @click=${() => { this._confirm = true; }}>Send to ${s.to}</button>`}
+                        ${sendButton('team', 'Send to team', 'primary')}
+                        ${sendButton('me', 'Send to me', '')}
                         <button @click=${this._copy}>${this._copied ? 'Copied' : 'Copy'}</button>
                         ${edited ? html`<button class="quiet" @click=${this._discard}>Discard my edits</button>` : ''}
                     </div>`}
-                ${!s.sentAt ? html`<p class="note">${edited ? 'Your edits are kept in this browser until you send. ' : ''}Send
-                    emails it from your Gmail with this subject. Nothing goes out until you confirm.</p>` : ''}
+                ${open ? html`<p class="note">${edited ? 'Your edits are kept in this browser until you send. ' : ''}Sending
+                    emails it from ${s.from || 'the elf\'s Gmail'} with this subject.
+                    Send to me first if you want to check it; nothing goes out until you confirm.</p>` : ''}
             </section>`;
     }
 
@@ -174,7 +195,8 @@ class DeskStatus extends LitElement {
                     <h1>Weekly status</h1>
                     <p class="sub">
                         ${s ? html`${s.weekStart} to ${s.weekEnd}, drafted ${runTime(s.at)}${this._picked ? ''
-                            : state === 'sent' ? '. Sent for this week.' : state === 'draft' ? '. Ready to send.'
+                            : state === 'sent' ? '. Sent to the team.' : state === 'self' ? '. Sent to you, not to the team yet.'
+                            : state === 'draft' ? '. Ready to send.'
                             : '. Nothing drafted this week yet.'}`
                             : this._loading ? '' : 'No status drafted yet.'}
                     </p>

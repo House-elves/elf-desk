@@ -232,9 +232,9 @@ public class DeskApi {
         return status.status(runId);
     }
 
-    /** Send the draft, with your edits, to the recipients in the elf's config. Only from your click. */
-    public StatusElf.Status sendWeeklyStatus(String runId, String body) {
-        return status.send(runId, body);
+    /** Send the draft, with your edits, to "me" or the "team" (addresses in the elf's config). Only from your click. */
+    public StatusElf.Status sendWeeklyStatus(String runId, String body, String target) {
+        return status.send(runId, body, target);
     }
 
     /** An email triage run (the newest when runId is null), or null when there is none. */

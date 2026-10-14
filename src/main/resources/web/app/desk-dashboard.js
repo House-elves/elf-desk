@@ -246,7 +246,8 @@ class DeskDashboard extends LitElement {
         const s = this._status;
         const state = statusState(s);
         let say = null;
-        if (state === 'sent') say = `This week's status went to ${s.sentTo ?? s.to} ${ago(s.sentAt)}.`;
+        if (state === 'sent') say = `This week's status went to the team ${ago(s.sends.find(x => x.target === 'team').at)}.`;
+        else if (state === 'self') say = html`<a href="#status">This week's status</a> went to you, not to the team yet.`;
         else if (state === 'draft') say = html`<a href="#status">This week's status</a> is drafted and ready to send.`;
         else if (this._loaded.status) say = html`Nothing drafted this week yet. <a href="#status">Draft it now</a>, or it drafts itself Monday at 08:00.`;
         const meta = [this._running('status'), this._failed('status')];

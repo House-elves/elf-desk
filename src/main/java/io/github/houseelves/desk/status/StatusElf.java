@@ -35,16 +35,30 @@ public class StatusElf {
     private static final Logger LOG = Logger.getLogger(StatusElf.class);
     static final Pattern ID = Pattern.compile("\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}");
     static final int HISTORY = 12;
-    static final String SEND_SINCE = "0.24.0";
+    static final String SEND_SINCE = "0.25.0";
+    /** Who a send goes to: you (the elf's SEND_TO) or the team (TEAM_TO). */
+    public static final String ME = "me", TEAM = "team";
 
     /**
      * A draft.
      *
-     * @param sentAt   when you sent it, null while it's a draft
-     * @param sentBody what went out (your edits included)
+     * @param from     who it's sent as (the elf's Gmail), empty for older drafts
+     * @param to       your address (SEND_TO)
+     * @param teamTo   the team's list (TEAM_TO), empty when the elf has none
+     * @param sentAt   when it was last sent, null while it's a draft
+     * @param sentBody what last went out (your edits included)
+     * @param sends    every send, oldest first: each target at most once
      */
     public record Status(String id, LocalDateTime at, Instant generatedAt, String weekStart, String weekEnd, String subject,
-            String to, String body, Instant sentAt, String sentTo, String sentBody) {
+            String from, String to, String teamTo, String body, Instant sentAt, String sentTo, String sentBody, List<Send> sends) {
+
+        public boolean sentTo(String target) {
+            return sends.stream().anyMatch(s -> s.target().equals(target));
+        }
+    }
+
+    /** One send: to me or the team, the address, when, and the text that went out. */
+    public record Send(String target, String to, Instant at, String body) {
     }
 
     @ConfigProperty(name = "elfdesk.status.runs-dir")
@@ -64,7 +78,8 @@ public class StatusElf {
         List<TriageElf.RunInfo> out = new ArrayList<>();
         for (String id : ids()) {
             Status s = status(id);
-            if (s != null) out.add(new TriageElf.RunInfo(id, s.at(), s.sentAt() != null ? "sent" : "draft"));
+            if (s != null) out.add(new TriageElf.RunInfo(id, s.at(),
+                    s.sentTo(TEAM) ? "sent to the team" : s.sentTo(ME) ? "sent to you" : "draft"));
             if (out.size() == HISTORY) break;
         }
         return out;
@@ -82,25 +97,39 @@ public class StatusElf {
         if (!Files.isRegularFile(file)) return null;
         try {
             JsonNode d = mapper.readTree(file.toFile());
+            List<Send> sends = new ArrayList<>();
+            for (JsonNode s : d.path("sends")) {
+                sends.add(new Send(s.path("target").asText(), s.path("to").asText(), instant(s, "at"), s.path("body").asText()));
+            }
+            // Sent before "sends" existed: that went to you.
+            if (sends.isEmpty() && instant(d, "sentAt") != null) {
+                sends.add(new Send(ME, d.path("sentTo").asText(d.path("to").asText()), instant(d, "sentAt"), d.path("sentBody").asText()));
+            }
             return new Status(id, LocalDateTime.parse(id.replace('_', 'T').replaceFirst("T(\\d+)-(\\d+)-", "T$1:$2:")),
                     instant(d, "generatedAt"), d.path("weekStart").asText(), d.path("weekEnd").asText(),
-                    d.path("subject").asText(), d.path("to").asText(), d.path("body").asText(), instant(d, "sentAt"),
-                    d.path("sentTo").asText(null), d.path("sentBody").asText(null));
+                    d.path("subject").asText(), d.path("from").asText(""), d.path("to").asText(), d.path("teamTo").asText(""),
+                    d.path("body").asText(),
+                    instant(d, "sentAt"), d.path("sentTo").asText(null), d.path("sentBody").asText(null), List.copyOf(sends));
         } catch (IOException e) {
             LOG.warnf("Cannot read %s: %s", file, e.getMessage());
             return null;
         }
     }
 
-    /** Send: the elf emails the draft with your body to the recipients in its own config, and marks it sent. */
-    public Status send(String id, String body) {
+    /**
+     * Send: the elf emails the draft with your body to you or the team (the addresses are in its own config), and
+     * records it. Each target once per draft.
+     */
+    public Status send(String id, String body, String target) {
+        if (!ME.equals(target) && !TEAM.equals(target)) throw new IllegalArgumentException("Send it to me or the team");
         Status s = status(id);
         if (s == null) throw new IllegalArgumentException("No such draft");
-        if (s.sentAt() != null) throw new IllegalStateException("It was already sent");
+        if (s.sentTo(target)) throw new IllegalStateException("It was already sent to " + (TEAM.equals(target) ? "the team" : "you"));
+        if (TEAM.equals(target) && s.teamTo().isBlank()) throw new IllegalStateException("The weekly-status elf has no TEAM_TO");
         if (body == null || body.isBlank()) throw new IllegalArgumentException("The status is empty");
         JsonNode result;
         try {
-            result = hub.request(hub.message("status.send").put("draft", id).put("body", body), SEND_SINCE)
+            result = hub.request(hub.message("status.send").put("draft", id).put("body", body).put("target", target), SEND_SINCE)
                     .get(150, TimeUnit.SECONDS);
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
