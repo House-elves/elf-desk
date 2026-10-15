@@ -56,6 +56,7 @@ class ThreadFlowTest {
     void clean() {
         QuarkusTransaction.requiringNew().run(() -> {
             GitHubAction.deleteAll();
+            JobFile.deleteAll();
             Draft.deleteAll();
             Job.deleteAll();
             Turn.deleteAll();
@@ -344,5 +345,30 @@ class ThreadFlowTest {
         Job job = QuarkusTransaction.requiringNew().call(() -> Job.findById(threads.view(issue).job().id()));
         assertTrue(job.prompt.contains("## Open PRs linked to this issue"));
         assertTrue(job.prompt.contains("quarkusio/quarkus#49901 (says it fixes this issue), by @jdoe"));
+    }
+
+    @Test
+    void theAgentsFilesComeWithItsAnswer() throws Exception {
+        threads.start(KEY, Prompts.REVIEW, null, "phillip-kruger", "gho_t");
+        long job = openJob();
+        threads.jobAccepted(job);
+        String png = java.util.Base64.getEncoder().encodeToString(new byte[] { (byte) 0x89, 'P', 'N', 'G' });
+        threads.jobFile(job, "01-dashboard.png", png);
+        threads.jobFile(job, "notes.md", java.util.Base64.getEncoder().encodeToString("Before and after".getBytes()));
+        threads.jobFile(job, "../../etc/passwd.txt", png); // a path
+        threads.jobFile(job, ".hidden.png", png); // a dot file
+        threads.jobFile(job, "page.html", png); // a type the desk won't serve
+        threads.jobFile(job, "broken.png", "not base64!");
+        threads.jobDone(job, "s", output("Screenshots are attached.", "null"), BigDecimal.ONE, null);
+
+        ThreadView.TurnView answer = threads.view(KEY).turns().get(1);
+        assertEquals(job, answer.job());
+        assertEquals(java.util.List.of("01-dashboard.png", "notes.md"), answer.files().stream().map(JobFile.Info::name).toList());
+        assertEquals("image/png", answer.files().get(0).type());
+        assertEquals("text/plain", answer.files().get(1).type());
+        assertEquals(4, answer.files().get(0).size());
+
+        threads.jobFile(job, "late.png", png); // after the job ended
+        assertEquals(2, threads.view(KEY).turns().get(1).files().size());
     }
 }

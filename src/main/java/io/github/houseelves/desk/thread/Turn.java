@@ -36,6 +36,10 @@ public class Turn extends PanacheEntityBase {
     @Column(nullable = false)
     public Instant created = Instant.now();
 
+    /** The agent's answers: the job that wrote it (its files, see {@link JobFile}). */
+    @Column(name = "job_id")
+    public Long jobId;
+
     public static Turn add(long threadId, String role, String action, String text) {
         Turn t = new Turn();
         t.threadId = threadId;

@@ -65,7 +65,8 @@ public class ThreadService {
             DeskThread t = DeskThread.byKey(itemKey);
             if (t == null) return null;
             List<ThreadView.TurnView> turns = Turn.of(t.id).stream()
-                    .map(x -> new ThreadView.TurnView(x.id, x.role, x.action, x.text, x.created)).toList();
+                    .map(x -> new ThreadView.TurnView(x.id, x.role, x.action, x.text, x.created, x.jobId,
+                            x.jobId == null ? List.of() : JobFile.infos(x.jobId))).toList();
             Job open = Job.openFor(t.id);
             ThreadView.JobView job = open == null ? null
                     : new ThreadView.JobView(open.id, open.action, open.state, open.created, open.started,
@@ -351,6 +352,33 @@ public class ThreadService {
         if (key != null) live.line(key, jobId, text);
     }
 
+    /**
+     * A file the agent left for you, from the runner as the job ends (before job.done). Kept only for an open job,
+     * with a plain name, a known type and within the limits; anything else is dropped.
+     */
+    public void jobFile(long jobId, String name, String base64) {
+        String type = JobFile.typeOf(name);
+        if (type == null || base64 == null || base64.length() > (JobFile.MAX_SIZE / 3 + 1) * 4) return;
+        byte[] data;
+        try {
+            data = java.util.Base64.getDecoder().decode(base64);
+        } catch (IllegalArgumentException e) {
+            return;
+        }
+        QuarkusTransaction.requiringNew().run(() -> {
+            Job j = Job.findById(jobId);
+            if (j == null || !j.open() || JobFile.count("jobId", jobId) >= JobFile.MAX_PER_JOB) return;
+            JobFile.delete("jobId = ?1 and name = ?2", jobId, name);
+            JobFile f = new JobFile();
+            f.jobId = jobId;
+            f.name = name;
+            f.contentType = type;
+            f.size = data.length;
+            f.data = data;
+            f.persist();
+        });
+    }
+
     public void jobDone(long jobId, String session, JsonNode output, BigDecimal cost) {
         jobDone(jobId, session, output, cost, null);
     }
@@ -378,7 +406,7 @@ public class ThreadService {
             DeskThread t = DeskThread.findById(j.threadId);
             if (session != null) t.claudeSession = session;
             t.updated = Instant.now();
-            Turn.add(t.id, Turn.AGENT, j.action, result.reply());
+            Turn.add(t.id, Turn.AGENT, j.action, result.reply()).jobId = j.id;
             // A "pr" draft is the text for the agent's commit: it becomes a PR draft with the commit, below.
             if (result.draft() != null && result.draft().body() != null && !Draft.PR.equals(result.draft().kind())) {
                 Draft.update("state = ?1 where threadId = ?2 and state = ?3", Draft.DISCARDED, t.id, Draft.PENDING);

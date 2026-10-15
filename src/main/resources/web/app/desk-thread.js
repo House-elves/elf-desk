@@ -88,6 +88,17 @@ class DeskThread extends LitElement {
         .runner.on::before { background: var(--ok); }
 
         .turn { display: grid; gap: 6px; }
+        .files { display: grid; gap: 10px; margin-top: 4px; }
+        .files-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+        .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; }
+        .shot { display: grid; gap: 4px; text-decoration: none; color: var(--muted); min-width: 0; }
+        .shot img {
+            width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top left; border-radius: 8px;
+            border: 1px solid var(--line); background: var(--surface-2);
+        }
+        .shot:hover img { border-color: var(--accent); }
+        .shot span { overflow-wrap: anywhere; }
+        .others { margin: 0; padding-left: 18px; }
         .who { font-size: 13px; color: var(--muted); }
         .who b { color: var(--ink); font-weight: 600; margin-right: 6px; }
         .turn.you { justify-items: end; }
@@ -654,8 +665,29 @@ class DeskThread extends LitElement {
                     ? html`<div class="body panel md">${markdown(turn.text)}</div>`
                     : html`<button class="body panel preview" @click=${() => this._toggle(turn, open)}
                             title="Show the whole answer">${this._summary(turn.text)}</button>`}
+                ${turn.files?.length ? this._renderAgentFiles(turn) : ''}
             </div>
         `;
+    }
+
+    /** What the agent left for you with this answer: images as thumbnails (open full size), the rest by name. */
+    _renderAgentFiles(turn) {
+        const size = n => n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+        const images = turn.files.filter(f => f.type.startsWith('image/'));
+        const others = turn.files.filter(f => !f.type.startsWith('image/'));
+        return html`
+            <div class="files" role="group" aria-label="Files from the agent">
+                <div class="files-head">
+                    <span class="muted small">${turn.files.length === 1 ? '1 file' : `${turn.files.length} files`} from the agent</span>
+                    <a class="btn sm" href="/files/job/${turn.job}.zip" download>Download all (zip)</a>
+                </div>
+                ${images.length ? html`<div class="shots">${images.map(f => html`
+                    <a class="shot" href="/files/${f.id}" target="_blank" rel="noopener" title="Open ${f.name} full size">
+                        <img src="/files/${f.id}" alt=${f.name} loading="lazy">
+                        <span class="small">${f.name}</span></a>`)}</div>` : ''}
+                ${others.length ? html`<ul class="others">${others.map(f => html`
+                    <li><a href="/files/${f.id}" download=${f.name}>${f.name}</a> <span class="muted small">${size(f.size)}</span></li>`)}</ul>` : ''}
+            </div>`;
     }
 
     /** The latest agent answer is open by default, older ones collapsed; your own toggles win. */

@@ -18,7 +18,11 @@ public record ThreadView(
         List<PostedView> posted,
         boolean own) {
 
-    public record TurnView(long id, String role, String action, String text, Instant created) {
+    /**
+     * @param job   the job that wrote an agent's answer, or null
+     * @param files what the agent left for you with this answer (see {@link JobFile})
+     */
+    public record TurnView(long id, String role, String action, String text, Instant created, Long job, List<JobFile.Info> files) {
     }
 
     /** The open job (queued or running), with the output lines so far. */
