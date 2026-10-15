@@ -14,6 +14,7 @@ class DeskZulip extends LitElement {
         _run: { state: true },
         _picked: { state: true },
         _doing: { state: true },
+        _all: { state: true },
         _loading: { state: true },
         _error: { state: true },
     };
@@ -43,6 +44,7 @@ class DeskZulip extends LitElement {
         .md :is(p, ul, ol, pre, blockquote) { margin: 4px 0; }
         .empty { color: var(--muted); padding: 18px; margin: 0; }
         .skeleton { height: 92px; }
+        .all { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 14px; }
     `];
 
     constructor() {
@@ -108,6 +110,38 @@ class DeskZulip extends LitElement {
         }
     }
 
+    /** Done all: each open topic in turn, as if you clicked its Done. One that fails is left for you; the rest go on. */
+    async _doneAll(todo) {
+        const failed = [];
+        this._error = null;
+        for (let i = 0; i < todo.length; i++) {
+            const t = todo[i];
+            this._all = { at: i + 1, of: todo.length };
+            this._doing = t.key;
+            try {
+                const desk = await api();
+                this._run = await desk.zulipDone({ server: t.last.server, stream: t.stream, topic: t.topic });
+            } catch (e) {
+                failed.push(`${t.topic || t.stream}: ${errorMessage(e)}`);
+            }
+        }
+        this._doing = null;
+        this._all = null;
+        if (failed.length) this._error = 'Not marked read: ' + failed.join('; ');
+    }
+
+    _allBar(topics) {
+        const n = topics.length;
+        if (this._picked || (!n && !this._all)) return '';
+        if (this._all?.of) return html`<div class="all" role="status">${spinner} Marking ${this._all.at} of ${this._all.of} read…</div>`;
+        if (this._all === 'confirm') return html`<div class="all" role="group" aria-label="Confirm Done all">
+            Mark all ${n} ${n === 1 ? 'topic' : 'topics'} read in Zulip?
+            <button class="sm primary" @click=${() => this._doneAll(topics)}>Mark all read</button>
+            <button class="sm quiet" @click=${() => { this._all = null; }}>Cancel</button></div>`;
+        return html`<div class="all"><button class="sm" ?disabled=${this._doing}
+            @click=${() => { this._all = 'confirm'; }}>Done all (${n})</button></div>`;
+    }
+
     _time(seconds) {
         return new Date(seconds * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
     }
@@ -165,6 +199,7 @@ class DeskZulip extends LitElement {
                 ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : ''}
                 ${this._loading && !run ? html`<div class="topics">${[1, 2, 3].map(() => html`<div class="skeleton"></div>`)}</div>` : ''}
                 ${run ? html`
+                    ${this._allBar(topics)}
                     <div class="topics">
                         ${topics.length ? topics.map(t => this._topic(t)) : html`<p class="panel empty">${done.length
                             ? 'All done.' : 'Nothing happened on Zulip in that time.'}</p>`}

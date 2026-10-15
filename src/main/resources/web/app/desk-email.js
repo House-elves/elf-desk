@@ -14,6 +14,7 @@ class DeskEmail extends LitElement {
         _run: { state: true },
         _picked: { state: true },
         _doing: { state: true },
+        _all: { state: true },
         _loading: { state: true },
         _error: { state: true },
     };
@@ -35,6 +36,7 @@ class DeskEmail extends LitElement {
         details[open] > summary { border-bottom: 1px solid var(--line); }
         .empty { color: var(--muted); padding: 14px 18px; margin: 0; font-size: 14px; }
         .skeleton.big { height: 40vh; }
+        .all { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 14px; }
     `];
 
     constructor() {
@@ -81,6 +83,45 @@ class DeskEmail extends LitElement {
         } finally {
             this._doing = null;
         }
+    }
+
+    /** What still needs you in the newest run, across accounts: what Done all marks. */
+    _open() {
+        return (this._run?.accounts ?? []).flatMap(a => (a.decisions ?? [])
+            .filter(d => d.decision !== 'MARK_READ' && !d.done && d.messageId).map(d => ({ account: a.email, d })));
+    }
+
+    /** Done all: each email in turn, as if you clicked its Done. One that fails is left for you; the rest go on. */
+    async _doneAll() {
+        const todo = this._open();
+        const failed = [];
+        this._error = null;
+        for (let i = 0; i < todo.length; i++) {
+            const { account, d } = todo[i];
+            this._all = { at: i + 1, of: todo.length };
+            this._doing = d.messageId;
+            try {
+                const desk = await api();
+                this._run = await desk.emailDone({ account, messageId: d.messageId });
+            } catch (e) {
+                failed.push(`${d.subject || 'An email'}: ${errorMessage(e)}`);
+            }
+        }
+        this._doing = null;
+        this._all = null;
+        if (failed.length) this._error = 'Not marked read: ' + failed.join('; ');
+    }
+
+    _allBar() {
+        const n = this._open().length;
+        if (this._picked || (!n && !this._all)) return '';
+        if (this._all?.of) return html`<div class="all" role="status">${spinner} Marking ${this._all.at} of ${this._all.of} read…</div>`;
+        if (this._all === 'confirm') return html`<div class="all" role="group" aria-label="Confirm Done all">
+            Mark all ${n} ${n === 1 ? 'email' : 'emails'} read in Gmail?
+            <button class="sm primary" @click=${this._doneAll}>Mark all read</button>
+            <button class="sm quiet" @click=${() => { this._all = null; }}>Cancel</button></div>`;
+        return html`<div class="all"><button class="sm" ?disabled=${this._doing}
+            @click=${() => { this._all = 'confirm'; }}>Done all (${n})</button></div>`;
     }
 
     _email(account, d, done) {
@@ -150,7 +191,7 @@ class DeskEmail extends LitElement {
                             @run-finished=${() => { this._picked = null; this._load(); }}></triage-run>
                 ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : ''}
                 ${this._loading && !r ? html`<div class="skeleton big"></div>` : ''}
-                ${r ? this._triage(r) : ''}
+                ${r ? html`${this._allBar()}${this._triage(r)}` : ''}
             </div>
         `;
     }
