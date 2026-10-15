@@ -77,6 +77,7 @@ public class RunnerHub {
     public static final String STATUS_SINCE = "0.24.0";
     public static final String QUARTERLY_SINCE = "0.26.0";
     public static final String APPROVE_DEPLOYMENT_SINCE = "0.27.0";
+    public static final String ELF_CONFIG_SINCE = "0.28.0";
     static final String PR_SINCE = "0.15.0";
     static final String READY_PR_SINCE = "0.21.0";
 
@@ -162,7 +163,7 @@ public class RunnerHub {
             return;
         }
         if (type.equals("github.result") || type.equals("git.result") || type.equals("mvnpm.result")
-                || type.equals("triage.result")) {
+                || type.equals("triage.result") || type.equals("elf.config.result")) {
             CompletableFuture<JsonNode> answer = pending.get(msg.path("id").asText());
             if (answer != null) answer.complete(msg);
             return;

@@ -2,10 +2,14 @@ import { LitElement, html, css } from 'lit';
 import { shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 
-/** What the board watches (orgs, users, single repos, exclusions) and the refresh interval. */
+/**
+ * What the board watches (orgs, users, single repos, exclusions) and the refresh interval: the GitHub tab's own
+ * settings, shown in its Settings (embedded).
+ */
 class DeskSettings extends LitElement {
 
     static properties = {
+        embedded: { type: Boolean },
         _settings: { state: true },
         _suggestions: { state: true },
         _picked: { state: true },
@@ -15,9 +19,9 @@ class DeskSettings extends LitElement {
     };
 
     static styles = [shared, css`
-        .page { max-width: 760px; display: grid; gap: 34px; }
+        .page { display: grid; gap: 30px; }
         h1 { font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.022em; }
-        .intro { color: var(--muted); margin: 8px 0 0; max-width: 40rem; }
+        .intro { color: var(--muted); margin: 0; max-width: 40rem; }
         section { display: grid; gap: 12px; }
         .head { display: grid; gap: 2px; }
         h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
@@ -129,16 +133,13 @@ class DeskSettings extends LitElement {
         const s = this._settings;
         return html`
             <div class="page">
-                <div>
-                    <h1>Settings</h1>
-                    <p class="intro">Choose which orgs and repos the board watches. Anything else that involves you is collected
-                        at the bottom of the board under "repos you don't watch".</p>
-                </div>
+                ${this.embedded ? '' : html`<div><h1>Settings</h1></div>`}
+                <p class="intro">Choose which orgs and repos the board watches. Anything else that involves you is collected
+                    at the bottom of the board under "repos you don't watch".</p>
                 ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : ''}
                 ${s ? html`
                     ${this._firstRun() ? this._renderFirstRun() : this._renderScope(s)}
                     ${this._firstRun() ? '' : this._renderSuggestions()}
-                    ${this._renderMvnpm(s)}
                     ${this._renderGeneral(s)}
                 ` : (this._error ? '' : html`
                     <div aria-busy="true" style="display:grid;gap:12px">
@@ -256,19 +257,6 @@ class DeskSettings extends LitElement {
                                 @click=${() => this._do(`watch:${x.owner}`, d => d.watch({ name: x.owner }))}>${this._spin(`watch:${x.owner}`)}Watch</button></div>
                         </li>`)}</ul>
                 </div>
-            </section>
-        `;
-    }
-
-    _renderMvnpm(s) {
-        return html`
-            <section aria-labelledby="mvnpm">
-                <div class="head"><h2 id="mvnpm">mvnpm updates</h2>
-                    <p class="hint">mvnpm-dependabot decides which repos it checks. Change them with <code>REPOS</code> in
-                        <code>~/.config/mvnpm-dependabot/config</code>.</p></div>
-                ${s.mvnpmInstalled
-                    ? html`<div class="chips">${s.mvnpmRepos.map(r => html`<span class="chip">${r}</span>`)}</div>`
-                    : html`<p class="hint">mvnpm-dependabot isn't set up on this machine.</p>`}
             </section>
         `;
     }

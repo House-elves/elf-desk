@@ -1,8 +1,9 @@
 import { LitElement, html, css } from 'lit';
-import { shared, spinner, ago, copyText } from './shared.js';
+import { shared, spinner, ago, copyText, settingsToggle } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { runTime } from './triage-run.js';
 import './triage-run.js';
+import './elf-settings.js';
 
 /** Monday 00:00 of this week, local time: a status is "this week's" from then on. */
 export function weekStart(now = new Date()) {
@@ -54,6 +55,7 @@ class DeskStatus extends LitElement {
         _sending: { state: true },
         _copied: { state: true },
         _error: { state: true },
+        _settingsOpen: { state: true },
     };
 
     static styles = [shared, css`
@@ -213,7 +215,7 @@ class DeskStatus extends LitElement {
         const state = statusState(s);
         return html`
             <div class="page">
-                <div>
+                <div class="page-top"><div>
                     <h1>Weekly status</h1>
                     <p class="sub">
                         ${s ? html`${s.weekStart} to ${s.weekEnd}, drafted ${runTime(s.at)}${this._picked ? ''
@@ -222,7 +224,10 @@ class DeskStatus extends LitElement {
                             : '. Nothing drafted this week yet.'}`
                             : this._loading ? '' : 'No status drafted yet.'}
                     </p>
-                </div>
+                </div>${settingsToggle(this._settingsOpen, () => { this._settingsOpen = !this._settingsOpen; })}</div>
+                ${this._settingsOpen ? html`<div class="settings-area">
+                    <elf-settings elf="weekly-status" heading="Weekly status settings" note="The weekly-status elf drafts and sends with these."></elf-settings>
+                </div>` : ''}
                 <triage-run mode="status" label="Draft it now" .picked=${this._picked}
                             note="Gathers your GitHub work of the last 7 days and drafts the status with Claude. Sends nothing. It also runs every Monday at 08:00 and pops up a desktop reminder."
                             @run-picked=${e => { this._picked = e.detail; this._load(); }}

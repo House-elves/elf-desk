@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { linkedPrChips, rememberLinks, shared, ago, itemChips, ciFailing, hasConflicts, mergeableAnyway, kindIcon, spinner, threadHref, rememberItem } from './shared.js';
+import { linkedPrChips, rememberLinks, shared, ago, itemChips, ciFailing, hasConflicts, mergeableAnyway, kindIcon, spinner, threadHref, rememberItem, settingsToggle } from './shared.js';
 import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
 import './merge-control.js';
 import './ci-menu.js';
@@ -7,6 +7,8 @@ import './conflict-menu.js';
 import './pr-activity.js';
 import './pr-review.js';
 import './desk-thread.js';
+import './desk-settings.js';
+import './elf-settings.js';
 
 const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -91,6 +93,8 @@ export function boardHeadline(b, link) {
 class DeskBoard extends LitElement {
 
     static properties = {
+        /** The board's settings are open (what to watch, mvnpm, the runner). */
+        settingsOpen: { type: Boolean },
         _board: { state: true },
         _loading: { state: true },
         _refreshing: { state: true },
@@ -468,13 +472,21 @@ class DeskBoard extends LitElement {
                         : html`<button class="sm quiet" ?disabled=${this._mvnpmStarting != null || !b.runnerConnected}
                             title="Run mvnpm-dependabot over ${b.mvnpm.repos.join(', ')} now" @click=${() => this._mvnpmRun(null)}>
                             ${this._mvnpmStarting === 'all' ? spinner : ''}Run mvnpm checks</button>`) : ''}
+                    ${settingsToggle(this.settingsOpen, () => { this.settingsOpen = !this.settingsOpen; })}
                 </div>
             </div>
+            ${this.settingsOpen ? html`<div class="settings-area">
+                <desk-settings embedded></desk-settings>
+                <elf-settings elf="mvnpm-dependabot" heading="mvnpm updates"
+                    note="mvnpm-dependabot checks web-jar bumps in these repos."></elf-settings>
+                <elf-settings elf="elf-runner" heading="Agents"
+                    note="The runner runs the agents on this machine."></elf-settings>
+            </div>` : ''}
 
             ${b.scopeEmpty ? html`
                 <div class="panel notice">
                     <p>The board shows open PRs and issues from the orgs and repos you choose.</p>
-                    <p><a class="btn primary" href="#settings">Choose what to watch</a></p>
+                    <p><button class="primary" @click=${() => { this.settingsOpen = true; }}>Choose what to watch</button></p>
                 </div>` : ''}
             ${b.truncated ? html`
                 <div class="panel notice"><p>GitHub returned its limit of 1000 results, so some older items are missing.</p></div>` : ''}

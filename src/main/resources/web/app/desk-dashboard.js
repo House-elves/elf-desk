@@ -175,7 +175,7 @@ class DeskDashboard extends LitElement {
     _github() {
         const b = this._board;
         let say = null, attention = false;
-        if (b?.scopeEmpty) say = html`Pick what to watch in <a href="#settings">Settings</a>, and your work shows up here.`;
+        if (b?.scopeEmpty) say = html`Pick what to watch in <a href="#settings">GitHub's settings</a>, and your work shows up here.`;
         else if (b) {
             say = boardHeadline(b, (_, text) => html`<a href="#github">${text}</a>`);
             attention = typeof say !== 'string';

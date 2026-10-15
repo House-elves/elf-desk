@@ -1,8 +1,9 @@
 import { LitElement, html, css } from 'lit';
-import { shared, spinner } from './shared.js';
+import { shared, spinner, settingsToggle } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { runTime, took } from './triage-run.js';
 import './triage-run.js';
+import './elf-settings.js';
 
 /**
  * daily-triage's email triage, run from here instead of its 8 AM email: per Gmail account, what needs you and what it
@@ -17,6 +18,7 @@ class DeskEmail extends LitElement {
         _all: { state: true },
         _loading: { state: true },
         _error: { state: true },
+        _settingsOpen: { state: true },
     };
 
     static styles = [shared, css`
@@ -178,13 +180,16 @@ class DeskEmail extends LitElement {
         const r = this._run;
         return html`
             <div class="page">
-                <div>
+                <div class="page-top"><div>
                     <h1>Email</h1>
                     <p class="sub">
                         ${r ? html`Triaged ${runTime(r.run.at)}${r.durationMs ? `, took ${took(r.durationMs)}` : ''}${r.emailed ? ', also emailed' : ''}`
                             : this._loading ? '' : 'Not triaged yet.'}
                     </p>
-                </div>
+                </div>${settingsToggle(this._settingsOpen, () => { this._settingsOpen = !this._settingsOpen; })}</div>
+                ${this._settingsOpen ? html`<div class="settings-area">
+                    <elf-settings elf="daily-triage" .keys=${['GMAIL_ADDRESS', 'GMAIL_APP_PASSWORD', 'MAX_EMAILS', 'TRIAGE_LABEL']} heading="Email triage settings" note="daily-triage reads this inbox."></elf-settings>
+                </div>` : ''}
                 <triage-run mode="email" label="Triage email now" .picked=${this._picked}
                             note="Goes through your unread Gmail: noise is marked read and labelled, the rest stays unread and is listed here with the reason. Nothing is emailed."
                             @run-picked=${e => { this._picked = e.detail; this._load(); }}

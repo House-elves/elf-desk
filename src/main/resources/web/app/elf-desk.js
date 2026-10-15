@@ -117,7 +117,8 @@ class ElfDesk extends LitElement {
     }
 
     _viewFromHash() {
-        if (['#github', '#settings', '#email', '#zulip', '#status', '#quarterly'].includes(location.hash)) return location.hash.slice(1);
+        if (location.hash === '#settings') return 'github'; // the board's settings now live under GitHub
+        if (['#github', '#email', '#zulip', '#status', '#quarterly'].includes(location.hash)) return location.hash.slice(1);
         return itemKeyFromHash(location.hash) ? 'thread' : 'dashboard';
     }
 
@@ -145,7 +146,6 @@ class ElfDesk extends LitElement {
                         <a href="#zulip" aria-current=${this._view === 'zulip' ? 'page' : 'false'}>Zulip</a>
                         <a href="#status" aria-current=${this._view === 'status' ? 'page' : 'false'}>Status</a>
                         <a href="#quarterly" aria-current=${this._view === 'quarterly' ? 'page' : 'false'}>Quarterly</a>
-                        <a href="#settings" aria-current=${this._view === 'settings' ? 'page' : 'false'}>Settings</a>
                     </nav>
                     <div class="right">
                         ${this._conn !== 'open' ? html`
@@ -169,13 +169,12 @@ class ElfDesk extends LitElement {
                     </div>` : ''}
             </header>
             <main>
-                ${this._view === 'settings' ? html`<desk-settings></desk-settings>`
-                    : this._view === 'email' ? html`<desk-email></desk-email>`
+                ${this._view === 'email' ? html`<desk-email></desk-email>`
                     : this._view === 'zulip' ? html`<desk-zulip></desk-zulip>`
                     : this._view === 'status' ? html`<desk-status></desk-status>`
                     : this._view === 'quarterly' ? html`<desk-quarterly></desk-quarterly>`
                     : this._view === 'thread' ? html`<desk-thread .itemKey=${itemKeyFromHash(location.hash)}></desk-thread>`
-                    : this._view === 'github' ? html`<desk-board></desk-board>`
+                    : this._view === 'github' ? html`<desk-board ?settingsOpen=${location.hash === '#settings'}></desk-board>`
                     : html`<desk-dashboard></desk-dashboard>`}
             </main>
         `;

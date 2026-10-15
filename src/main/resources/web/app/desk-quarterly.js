@@ -1,8 +1,9 @@
 import { LitElement, html, css } from 'lit';
-import { shared, markdown, markdownHtml, markdownStyles, copyText, copyHtml } from './shared.js';
+import { shared, markdown, markdownHtml, markdownStyles, copyText, copyHtml, settingsToggle } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { runTime } from './triage-run.js';
 import './triage-run.js';
+import './elf-settings.js';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
     'November', 'December'];
@@ -51,6 +52,7 @@ class DeskQuarterly extends LitElement {
         _loading: { state: true },
         _copied: { state: true },
         _error: { state: true },
+        _settingsOpen: { state: true },
     };
 
     static styles = [shared, markdownStyles, css`
@@ -153,7 +155,7 @@ class DeskQuarterly extends LitElement {
         const r = this._review;
         return html`
             <div class="page">
-                <div>
+                <div class="page-top"><div>
                     <h1>Quarterly review</h1>
                     <p class="sub">
                         ${r ? html`${quarterName(r.quarter)}${r.until < r.end ? ` (up to ${r.until})` : ''}. Written
@@ -161,7 +163,10 @@ class DeskQuarterly extends LitElement {
                                     ? `, and ${r.weeklyStatuses} weekly statuses` : ''}.`
                             : this._loading ? '' : 'No review written yet.'}
                     </p>
-                </div>
+                </div>${settingsToggle(this._settingsOpen, () => { this._settingsOpen = !this._settingsOpen; })}</div>
+                ${this._settingsOpen ? html`<div class="settings-area">
+                    <elf-settings elf="quarterly-review" heading="Quarterly review settings" note="The quarterly-review elf writes with these."></elf-settings>
+                </div>` : ''}
                 <div class="write">
                     <label>Quarter
                         <select aria-label="Quarter to review" @change=${e => { this._quarter = e.target.value; }}>

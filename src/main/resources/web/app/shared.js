@@ -79,12 +79,29 @@ export const shared = css`
     .icon.run { color: var(--accent); }
     .icon.idle { color: var(--muted); }
 
+    /* A tab's title row: the heading, and its Settings toggle on the right. */
+    .page-top { display: flex; flex-wrap: wrap; gap: 12px 20px; justify-content: space-between; align-items: flex-start; }
+    .page-top > :first-child { min-width: 0; flex: 1 1 20rem; }
+    button.settings-toggle { display: inline-flex; gap: 7px; align-items: center; }
+    button.settings-toggle svg { width: 16px; height: 16px; }
+    button.settings-toggle[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent); }
+    .settings-area { display: grid; gap: 30px; padding: 22px 0 8px; border-bottom: 1px solid var(--line); }
+
     @media (prefers-reduced-motion: reduce) {
         .spinner { animation-duration: 2.4s; }
         .skeleton { animation: none; }
         button, .btn { transition: none; }
     }
 `;
+
+/** The Settings button in a tab's title row: opens that tab's settings above its content. */
+export function settingsToggle(open, onClick) {
+    return html`<button class="quiet settings-toggle" aria-expanded=${open ? 'true' : 'false'} @click=${onClick}>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+            <path d="M2 4h7M12.5 4H14M2 8h2.5M8 8h6M2 12h7M12.5 12H14"/>
+            <circle cx="10.75" cy="4" r="1.6"/><circle cx="6.25" cy="8" r="1.6"/><circle cx="10.75" cy="12" r="1.6"/>
+        </svg>Settings</button>`;
+}
 
 /** A spinner, for buttons doing work. */
 export const spinner = html`<span class="spinner" aria-hidden="true"></span>`;

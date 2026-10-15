@@ -14,6 +14,7 @@ import io.github.houseelves.desk.ignore.IgnoreService;
 import io.github.houseelves.desk.runner.Live;
 import io.github.houseelves.desk.merge.MergeService;
 import io.github.houseelves.desk.quarterly.QuarterlyElf;
+import io.github.houseelves.desk.settings.ElfSettings;
 import io.github.houseelves.desk.status.StatusElf;
 import io.github.houseelves.desk.triage.EmailDoneService;
 import io.github.houseelves.desk.triage.TriageElf;
@@ -102,6 +103,9 @@ public class DeskApi {
 
     @Inject
     QuarterlyElf quarterly;
+
+    @Inject
+    ElfSettings elfSettings;
 
     @Inject
     TriageRuns triageRuns;
@@ -228,6 +232,18 @@ public class DeskApi {
         if (kind.equals(TriageRuns.STATUS)) return status.runs();
         if (kind.equals(TriageRuns.QUARTERLY)) return quarterly.runs();
         return triage.runs(TriageElf.Kind.valueOf(kind.toUpperCase(Locale.ROOT)));
+    }
+
+    // ---- the elves' settings ----
+
+    /** An elf's settings ("daily-triage", "weekly-status", "quarterly-review", "mvnpm-dependabot", "elf-runner"). */
+    public com.fasterxml.jackson.databind.JsonNode elfSettings(String elf) {
+        return elfSettings.get(elf);
+    }
+
+    /** Change some of an elf's settings; a wrong value changes nothing and comes back as {wrong: {key: why}}. */
+    public com.fasterxml.jackson.databind.JsonNode saveElfSettings(String elf, java.util.Map<String, String> values) {
+        return elfSettings.set(elf, values);
     }
 
     // ---- quarterly-review ----

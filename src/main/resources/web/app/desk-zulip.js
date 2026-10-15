@@ -1,8 +1,9 @@
 import { LitElement, html, css } from 'lit';
-import { shared, spinner, markdown, markdownStyles } from './shared.js';
+import { shared, spinner, markdown, markdownStyles, settingsToggle } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { runTime, took } from './triage-run.js';
 import './triage-run.js';
+import './elf-settings.js';
 
 /**
  * The last day of Zulip, by topic, with a digest of each: daily-triage's Zulip run. Topics that involve you come
@@ -17,6 +18,7 @@ class DeskZulip extends LitElement {
         _all: { state: true },
         _loading: { state: true },
         _error: { state: true },
+        _settingsOpen: { state: true },
     };
 
     static styles = [shared, markdownStyles, css`
@@ -184,14 +186,17 @@ class DeskZulip extends LitElement {
         const done = all.filter(t => t.done);
         return html`
             <div class="page">
-                <div>
+                <div class="page-top"><div>
                     <h1>Zulip</h1>
                     <p class="sub">
                         ${run ? html`The ${run.hours} hours up to ${runTime(run.run.at)}: ${all.length}
                                 ${all.length === 1 ? 'topic' : 'topics'}, ${run.messages?.length ?? 0} messages${run.durationMs ? `, took ${took(run.durationMs)}` : ''}`
                             : this._loading ? '' : 'Not checked yet.'}
                     </p>
-                </div>
+                </div>${settingsToggle(this._settingsOpen, () => { this._settingsOpen = !this._settingsOpen; })}</div>
+                ${this._settingsOpen ? html`<div class="settings-area">
+                    <elf-settings elf="daily-triage" .keys=${['ZULIP_SERVER_1', 'ZULIP_EMAIL_1', 'ZULIP_API_KEY_1', 'ZULIP_WATCH_1']} heading="Zulip settings" note="daily-triage reads Zulip with these."></elf-settings>
+                </div>` : ''}
                 <triage-run mode="zulip" label="Check Zulip now" .picked=${this._picked}
                             note="Reads the last 24 hours of your streams and DMs, plus any older unread mentions, and digests each topic. Marks nothing read."
                             @run-picked=${e => { this._picked = e.detail; this._load(); }}
