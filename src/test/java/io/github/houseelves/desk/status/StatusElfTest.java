@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +41,7 @@ class StatusElfTest {
         elf.mapper = mapper;
         elf.hub = mock(RunnerHub.class);
         elf.live = mock(Live.class);
+        elf.yourself = mock(SentYourselfService.class);
         when(elf.hub.message(any())).thenAnswer(i -> mapper.createObjectNode().put("type", (String) i.getArgument(0)));
         Files.writeString(dir.resolve("2026-10-12_08-00-31.json"), """
                 {"id": "2026-10-12_08-00-31", "generatedAt": "2026-10-11T21:00:31Z", "weekStart": "October 05",
@@ -90,5 +92,37 @@ class StatusElfTest {
         assertThrows(IllegalArgumentException.class, () -> elf.send("2026-10-19_08-00-12", "  ", StatusElf.TEAM));
         assertThrows(IllegalArgumentException.class, () -> elf.send("2026-10-19_08-00-12", "Hi", "everyone"));
         verify(elf.hub, never()).request(any(), any());
+    }
+
+    @Test
+    void sentYourselfCountsAsSentToTheTeamAndSendsNothing() {
+        String id = "2026-10-19_08-00-12";
+        Instant at = Instant.parse("2026-10-19T01:00:00Z");
+        elf.sentYourself(id, true);
+        verify(elf.yourself).mark(id);
+        when(elf.yourself.at(id)).thenReturn(at);
+        StatusElf.Status s = elf.status(id);
+        assertEquals(true, s.sentTo(StatusElf.TEAM));
+        StatusElf.Send team = s.sends().get(1);
+        assertEquals(true, team.yourself());
+        assertEquals("team@work", team.to());
+        assertNull(team.body());
+        assertEquals("sent to the team", elf.runs().get(0).status());
+        assertThrows(IllegalStateException.class, () -> elf.send(id, "Hi team,", StatusElf.TEAM));
+        assertThrows(IllegalStateException.class, () -> elf.sentYourself(id, true));
+        elf.sentYourself(id, false);
+        verify(elf.yourself).unmark(id);
+        verify(elf.hub, never()).request(any(), any());
+    }
+
+    @Test
+    void anElfSendToTheTeamCannotBeUndone() throws Exception {
+        String id = "2026-10-19_08-00-12";
+        Path file = dir.resolve(id + ".json");
+        ObjectNode d = (ObjectNode) mapper.readTree(file.toFile());
+        d.withArray("sends").addObject().put("target", "team").put("to", "team@work").put("at", "2026-10-19T02:00:00Z").put("body", "Hi,");
+        mapper.writeValue(file.toFile(), d);
+        assertThrows(IllegalStateException.class, () -> elf.sentYourself(id, false));
+        verify(elf.yourself, never()).unmark(any());
     }
 }

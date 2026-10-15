@@ -118,9 +118,10 @@ class DeskStatus extends LitElement {
         return (this._status?.sends ?? []).some(s => s.target === target);
     }
 
-    /** Whether a send is still to come: the draft stays editable until it has gone to everyone. */
+    /** Whether a send is still to come: the draft stays editable until it has gone to everyone (the team is enough). */
     _open(s) {
-        return !this._sent('me') || (s.teamTo && !this._sent('team'));
+        if (this._sent('team')) return false;
+        return !this._sent('me') || !!s.teamTo;
     }
 
     async _send(target) {
@@ -131,6 +132,21 @@ class DeskStatus extends LitElement {
             this._status = await desk.sendWeeklyStatus({ runId: this._status.id, body: this._body, target });
             if (!this._open(this._status)) saveEdit(this._status.id, null);
             this._confirm = null;
+        } catch (e) {
+            this._error = errorMessage(e);
+        } finally {
+            this._sending = false;
+        }
+    }
+
+    /** "I sent it myself" (or Undo): you emailed the team yourself, so this week is done. The elf sends nothing. */
+    async _yourself(sent) {
+        this._sending = 'yourself';
+        this._error = null;
+        try {
+            const desk = await api();
+            this._status = await desk.statusSentYourself({ runId: this._status.id, sent });
+            if (!this._open(this._status)) saveEdit(this._status.id, null);
         } catch (e) {
             this._error = errorMessage(e);
         } finally {
@@ -161,7 +177,10 @@ class DeskStatus extends LitElement {
             <section class="panel draft" aria-label="The status">
                 <div class="head">
                     <span class="subject">${s.subject}</span>
-                    ${(s.sends ?? []).length ? (s.sends ?? []).map(x => html`<span class="to">Sent ${ago(x.at)} to ${x.to}</span>`)
+                    ${(s.sends ?? []).length ? (s.sends ?? []).map(x => x.yourself
+                            ? html`<span class="to">You sent it to the team yourself (marked ${ago(x.at)})
+                                <button class="sm quiet" ?disabled=${!!this._sending} @click=${() => this._yourself(false)}>Undo</button></span>`
+                            : html`<span class="to">Sent ${ago(x.at)} to ${x.to}</span>`)
                         : html`<span class="to">Not sent yet</span>`}
                 </div>
                 ${open ? html`<textarea aria-label="Status text" .value=${this._body ?? ''} @input=${this._edit}
@@ -178,6 +197,9 @@ class DeskStatus extends LitElement {
                         ${sendButton('team', 'Send to team', 'primary')}
                         ${sendButton('me', 'Send to me', '')}
                         <button @click=${this._copy}>${this._copied ? 'Copied' : 'Copy'}</button>
+                        ${s.teamTo && !this._sent('team') ? html`<button class="quiet" ?disabled=${!!this._sending}
+                            title="You emailed the team yourself: mark this week done. Sends nothing."
+                            @click=${() => this._yourself(true)}>${this._sending === 'yourself' ? spinner : ''}I sent it myself</button>` : ''}
                         ${edited ? html`<button class="quiet" @click=${this._discard}>Discard my edits</button>` : ''}
                     </div>`}
                 ${open ? html`<p class="note">${edited ? 'Your edits are kept in this browser until you send. ' : ''}Sending

@@ -57,8 +57,12 @@ public class StatusElf {
         }
     }
 
-    /** One send: to me or the team, the address, when, and the text that went out. */
-    public record Send(String target, String to, Instant at, String body) {
+    /**
+     * One send: to me or the team, the address, when, and the text that went out.
+     *
+     * @param yourself you sent it yourself and marked it here: the elf emailed nothing, and body is null
+     */
+    public record Send(String target, String to, Instant at, String body, boolean yourself) {
     }
 
     @ConfigProperty(name = "elfdesk.status.runs-dir")
@@ -72,6 +76,9 @@ public class StatusElf {
 
     @Inject
     Live live;
+
+    @Inject
+    SentYourselfService yourself;
 
     /** Drafts, newest first, as run infos (status "sent" or "draft") for the run picker. */
     public List<TriageElf.RunInfo> runs() {
@@ -99,11 +106,16 @@ public class StatusElf {
             JsonNode d = mapper.readTree(file.toFile());
             List<Send> sends = new ArrayList<>();
             for (JsonNode s : d.path("sends")) {
-                sends.add(new Send(s.path("target").asText(), s.path("to").asText(), instant(s, "at"), s.path("body").asText()));
+                sends.add(new Send(s.path("target").asText(), s.path("to").asText(), instant(s, "at"), s.path("body").asText(), false));
             }
             // Sent before "sends" existed: that went to you.
             if (sends.isEmpty() && instant(d, "sentAt") != null) {
-                sends.add(new Send(ME, d.path("sentTo").asText(d.path("to").asText()), instant(d, "sentAt"), d.path("sentBody").asText()));
+                sends.add(new Send(ME, d.path("sentTo").asText(d.path("to").asText()), instant(d, "sentAt"), d.path("sentBody").asText(), false));
+            }
+            Instant marked = yourself.at(id);
+            if (marked != null && sends.stream().noneMatch(s -> s.target().equals(TEAM))) {
+                sends.add(new Send(TEAM, d.path("teamTo").asText(""), marked, null, true));
+                sends.sort(Comparator.comparing(Send::at, Comparator.nullsFirst(Comparator.naturalOrder())));
             }
             return new Status(id, LocalDateTime.parse(id.replace('_', 'T').replaceFirst("T(\\d+)-(\\d+)-", "T$1:$2:")),
                     instant(d, "generatedAt"), d.path("weekStart").asText(), d.path("weekEnd").asText(),
@@ -140,6 +152,26 @@ public class StatusElf {
         }
         live.triage(TriageRuns.STATUS);
         return status(id);
+    }
+
+    /**
+     * "I sent it myself": you emailed the team yourself, so the draft counts as sent to the team. The elf sends
+     * nothing. Undo takes it back, only for a mark (an email the elf sent stays sent).
+     */
+    public Status sentYourself(String id, boolean sent) {
+        Status s = status(id);
+        if (s == null) throw new IllegalArgumentException("No such draft");
+        if (sent) {
+            if (s.sentTo(TEAM)) throw new IllegalStateException("It's already marked sent to the team");
+            yourself.mark(s.id());
+        } else {
+            if (s.sends().stream().anyMatch(x -> x.target().equals(TEAM) && !x.yourself())) {
+                throw new IllegalStateException("The elf sent this one to the team; that can't be undone");
+            }
+            yourself.unmark(s.id());
+        }
+        live.triage(TriageRuns.STATUS);
+        return status(s.id());
     }
 
     private static Instant instant(JsonNode d, String field) {

@@ -237,6 +237,11 @@ public class DeskApi {
         return status.send(runId, body, target);
     }
 
+    /** "I sent it myself" (sent true) or Undo (false): the draft counts as sent to the team. Emails nothing. */
+    public StatusElf.Status statusSentYourself(String runId, boolean sent) {
+        return status.sentYourself(runId, sent);
+    }
+
     /** An email triage run (the newest when runId is null), or null when there is none. */
     public TriageElf.Email email(String runId) {
         return emailDone.withDone(triage.email(runId));
