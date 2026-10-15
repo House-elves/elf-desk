@@ -13,6 +13,7 @@ import io.github.houseelves.desk.github.Item;
 import io.github.houseelves.desk.ignore.IgnoreService;
 import io.github.houseelves.desk.runner.Live;
 import io.github.houseelves.desk.merge.MergeService;
+import io.github.houseelves.desk.quarterly.QuarterlyElf;
 import io.github.houseelves.desk.status.StatusElf;
 import io.github.houseelves.desk.triage.EmailDoneService;
 import io.github.houseelves.desk.triage.TriageElf;
@@ -98,6 +99,9 @@ public class DeskApi {
 
     @Inject
     StatusElf status;
+
+    @Inject
+    QuarterlyElf quarterly;
 
     @Inject
     TriageRuns triageRuns;
@@ -222,7 +226,21 @@ public class DeskApi {
     /** Saved runs of one kind ("email" or "zulip"), newest first. */
     public List<TriageElf.RunInfo> triageRuns(String kind) {
         if (kind.equals(TriageRuns.STATUS)) return status.runs();
+        if (kind.equals(TriageRuns.QUARTERLY)) return quarterly.runs();
         return triage.runs(TriageElf.Kind.valueOf(kind.toUpperCase(Locale.ROOT)));
+    }
+
+    // ---- quarterly-review ----
+
+    /** A quarterly review (the newest when runId is null), or null when there is none. */
+    public QuarterlyElf.Review quarterlyReview(String runId) {
+        return quarterly.review(runId);
+    }
+
+    /** Write the review for a quarter (2026-Q3) now. Reads GitHub and writes with Claude; sends nothing. */
+    public TriageRuns.State quarterlyRun(String quarter) {
+        triageRuns.run(TriageRuns.QUARTERLY, quarter);
+        return triageRuns.state();
     }
 
     // ---- weekly-status ----

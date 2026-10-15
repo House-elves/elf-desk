@@ -196,7 +196,12 @@ export function itemChips(item, { ciMenu = false, conflictMenu = false, approval
 
 /** Markdown from the agent, sanitised, as a Lit template. */
 export function markdown(text) {
-    return unsafeHTML(DOMPurify.sanitize(marked.parse(text ?? '', { gfm: true, breaks: false })));
+    return unsafeHTML(markdownHtml(text));
+}
+
+/** Markdown as sanitized HTML, as a string. */
+export function markdownHtml(text) {
+    return DOMPurify.sanitize(marked.parse(text ?? '', { gfm: true, breaks: false }));
 }
 
 export const markdownStyles = css`
@@ -289,5 +294,36 @@ export async function copyText(text) {
         if (!document.execCommand('copy')) throw new Error('the browser refused to copy');
     } finally {
         area.remove();
+    }
+}
+
+/**
+ * Copies formatted text (headings, lists) that pastes as such into Google Docs or an email, with the plain text for
+ * places that take only text. Over plain http there is no async clipboard, so it selects a hidden copy and copies that.
+ */
+export async function copyHtml(html, text) {
+    if (navigator.clipboard?.write && window.ClipboardItem) {
+        try {
+            await navigator.clipboard.write([new ClipboardItem({
+                'text/html': new Blob([html], { type: 'text/html' }),
+                'text/plain': new Blob([text], { type: 'text/plain' }),
+            })]);
+            return;
+        } catch { /* refused: try the fallback */ }
+    }
+    const box = document.createElement('div');
+    box.innerHTML = html;
+    box.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;white-space:normal';
+    document.body.append(box);
+    const range = document.createRange();
+    range.selectNodeContents(box);
+    const selection = getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    try {
+        if (!document.execCommand('copy')) throw new Error('the browser refused to copy');
+    } finally {
+        selection.removeAllRanges();
+        box.remove();
     }
 }

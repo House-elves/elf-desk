@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import io.github.houseelves.desk.quarterly.QuarterlyElf;
 import io.github.houseelves.desk.runner.Live;
 import io.github.houseelves.desk.runner.RunnerHub;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -22,9 +23,9 @@ import jakarta.inject.Inject;
 @ApplicationScoped
 public class TriageRuns {
 
-    /** The email triage, the Zulip digest, and the weekly-status elf's draft (it runs the same way). */
-    public static final String EMAIL = "email", ZULIP = "zulip", STATUS = "status";
-    static final Set<String> MODES = Set.of(EMAIL, ZULIP, STATUS);
+    /** The email triage, the Zulip digest, and the weekly-status and quarterly-review elves (they run the same way). */
+    public static final String EMAIL = "email", ZULIP = "zulip", STATUS = "status", QUARTERLY = "quarterly";
+    static final Set<String> MODES = Set.of(EMAIL, ZULIP, STATUS, QUARTERLY);
 
     @Inject
     RunnerHub hub;
@@ -47,13 +48,26 @@ public class TriageRuns {
     }
 
     public void run(String mode) {
+        run(mode, null);
+    }
+
+    /** @param quarter for a quarterly review, which quarter (2026-Q3); null for the elf's default */
+    public void run(String mode, String quarter) {
         if (!MODES.contains(mode)) throw new IllegalArgumentException("Bad mode: " + mode);
+        var message = hub.message("triage.run").put("mode", mode);
+        if (quarter != null) {
+            if (!mode.equals(QUARTERLY) || !QuarterlyElf.QUARTER.matcher(quarter).matches()) {
+                throw new IllegalArgumentException("Bad quarter: " + quarter);
+            }
+            message.put("quarter", quarter);
+        }
         JsonNode result;
         try {
-            result = hub.request(hub.message("triage.run").put("mode", mode),
+            result = hub.request(message,
                     switch (mode) {
                         case EMAIL -> RunnerHub.EMAIL_TRIAGE_SINCE;
                         case STATUS -> RunnerHub.STATUS_SINCE;
+                        case QUARTERLY -> RunnerHub.QUARTERLY_SINCE;
                         default -> RunnerHub.TRIAGE_SINCE;
                     })
                     .get(60, TimeUnit.SECONDS);

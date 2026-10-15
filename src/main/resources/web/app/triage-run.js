@@ -33,6 +33,7 @@ class TriageRun extends LitElement {
         label: {},         // the run button's text
         note: {},          // what a run does, under the button
         picked: {},        // the run on show (id), null for the newest
+        start: { attribute: false }, // optional: (desk) => the new state, instead of a plain triageRun of the mode
         _state: { state: true },
         _runs: { state: true },
         _starting: { state: true },
@@ -95,7 +96,7 @@ class TriageRun extends LitElement {
         this._error = null;
         try {
             const desk = await api();
-            this._state = await desk.triageRun({ mode: this.mode });
+            this._state = this.start ? await this.start(desk) : await desk.triageRun({ mode: this.mode });
         } catch (e) {
             this._error = errorMessage(e);
         } finally {
