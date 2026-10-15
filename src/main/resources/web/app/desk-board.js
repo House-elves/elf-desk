@@ -459,10 +459,8 @@ class DeskBoard extends LitElement {
                 <h1>${b.scopeEmpty ? 'Pick what to watch, and your work shows up here.'
                     : boardHeadline(b, (id, text) => html`<button @click=${() => this._jump(id)}>${text}</button>`)}</h1>
                 <div class="status">
-                    <span class="runner ${b.runnerConnected ? 'on' : ''}">Runner ${b.runnerConnected ? 'online' : 'offline'}</span>
-                    <span class="muted updated">${b.refreshing
-                        ? html`${spinner}Updating, showing data from ${ago(b.fetchedAt)}`
-                        : html`Updated ${ago(b.fetchedAt)}`}</span>
+                    ${b.runnerConnected ? '' : html`<span class="runner">Runner offline</span>`}
+                    <span class="muted updated">Updated ${ago(b.fetchedAt)}</span>
                     <button class="sm" @click=${() => this._load(true)} ?disabled=${this._refreshing}>
                         ${this._refreshing ? spinner : ''}${this._refreshing ? 'Refreshing' : 'Refresh'}</button>
                     ${b.mvnpm?.installed ? (checks?.running?.length
