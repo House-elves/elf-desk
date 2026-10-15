@@ -114,7 +114,9 @@ class DeskBoard extends LitElement {
     };
 
     static styles = [shared, css`
-        .hero { display: grid; gap: 10px; margin-bottom: 34px; max-width: 46rem; }
+        .hero { display: grid; gap: 10px; max-width: 46rem; }
+        .board-top { margin-bottom: 34px; }
+        .board-top + .settings-area { margin: -12px 0 34px; }
         .date { color: var(--muted); font-size: 15px; }
         .hero h1 { font-size: 34px; line-height: 1.18; font-weight: 600; letter-spacing: -0.022em; text-wrap: balance; }
         .hero h1 button {
@@ -458,7 +460,7 @@ class DeskBoard extends LitElement {
         Object.values(by).forEach(list => list.sort((x, y) => (y.flow.since ?? '').localeCompare(x.flow.since ?? '')));
         const checks = b.mvnpmChecks;
         return html`
-            <div class="hero">
+            <div class="page-top board-top"><div class="hero">
                 <span class="date">${DATE.format(new Date())}</span>
                 <h1>${b.scopeEmpty ? 'Pick what to watch, and your work shows up here.'
                     : boardHeadline(b, (id, text) => html`<button @click=${() => this._jump(id)}>${text}</button>`)}</h1>
@@ -472,9 +474,8 @@ class DeskBoard extends LitElement {
                         : html`<button class="sm quiet" ?disabled=${this._mvnpmStarting != null || !b.runnerConnected}
                             title="Run mvnpm-dependabot over ${b.mvnpm.repos.join(', ')} now" @click=${() => this._mvnpmRun(null)}>
                             ${this._mvnpmStarting === 'all' ? spinner : ''}Run mvnpm checks</button>`) : ''}
-                    ${settingsToggle(this.settingsOpen, () => { this.settingsOpen = !this.settingsOpen; })}
                 </div>
-            </div>
+            </div>${settingsToggle(this.settingsOpen, () => { this.settingsOpen = !this.settingsOpen; })}</div>
             ${this.settingsOpen ? html`<div class="settings-area">
                 <desk-settings embedded></desk-settings>
                 <elf-settings elf="mvnpm-dependabot" heading="mvnpm updates"
