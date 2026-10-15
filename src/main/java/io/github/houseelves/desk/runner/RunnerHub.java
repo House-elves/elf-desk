@@ -172,7 +172,8 @@ public class RunnerHub {
         switch (type) {
             case "job.accepted" -> threads.jobAccepted(job);
             case "job.event" -> threads.jobLine(job, msg.path("text").asText(""));
-            case "job.file" -> threads.jobFile(job, msg.path("name").asText(null), msg.path("data").asText(null));
+            case "job.file" -> threads.jobFile(job, msg.path("name").asText(null), msg.path("part").asInt(-1),
+                    msg.path("parts").asInt(0), msg.path("data").asText(null));
             case "job.done" -> threads.jobDone(job, msg.path("session").asText(null), msg.path("output"),
                     msg.path("cost").isNumber() ? msg.path("cost").decimalValue() : null,
                     msg.path("git").isObject() ? msg.path("git") : null);

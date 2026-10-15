@@ -352,19 +352,30 @@ public class ThreadService {
         if (key != null) live.line(key, jobId, text);
     }
 
+    /** Files arriving in chunks, by job and name: dropped when a chunk is out of order or the job ends. */
+    private final Map<String, java.io.ByteArrayOutputStream> arriving = new ConcurrentHashMap<>();
+
     /**
-     * A file the agent left for you, from the runner as the job ends (before job.done). Kept only for an open job,
-     * with a plain name, a known type and within the limits; anything else is dropped.
+     * A chunk of a file the agent left for you, from the runner as the job ends (before job.done), in order. The
+     * file is kept when its last chunk arrives: only for an open job, with a plain name, a known type and within the
+     * limits; anything else is dropped.
      */
-    public void jobFile(long jobId, String name, String base64) {
+    public void jobFile(long jobId, String name, int part, int parts, String base64) {
+        String key = jobId + "/" + name;
         String type = JobFile.typeOf(name);
-        if (type == null || base64 == null || base64.length() > (JobFile.MAX_SIZE / 3 + 1) * 4) return;
-        byte[] data;
+        java.io.ByteArrayOutputStream so = part == 0 ? new java.io.ByteArrayOutputStream() : arriving.remove(key);
+        if (type == null || base64 == null || parts < 1 || part < 0 || part >= parts || so == null) return;
         try {
-            data = java.util.Base64.getDecoder().decode(base64);
-        } catch (IllegalArgumentException e) {
+            so.write(java.util.Base64.getDecoder().decode(base64));
+        } catch (IllegalArgumentException | java.io.IOException e) {
             return;
         }
+        if (so.size() > JobFile.MAX_SIZE) return;
+        if (part < parts - 1) {
+            arriving.put(key, so);
+            return;
+        }
+        byte[] data = so.toByteArray();
         QuarkusTransaction.requiringNew().run(() -> {
             Job j = Job.findById(jobId);
             if (j == null || !j.open() || JobFile.count("jobId", jobId) >= JobFile.MAX_PER_JOB) return;
@@ -379,12 +390,18 @@ public class ThreadService {
         });
     }
 
+    /** A job ended: any file still arriving for it never will. */
+    private void dropArriving(long jobId) {
+        arriving.keySet().removeIf(k -> k.startsWith(jobId + "/"));
+    }
+
     public void jobDone(long jobId, String session, JsonNode output, BigDecimal cost) {
         jobDone(jobId, session, output, cost, null);
     }
 
     /** @param git what the runner saw in the worktree: {from, to, commits: [{sha, subject}], diffstat} */
     public void jobDone(long jobId, String session, JsonNode output, BigDecimal cost, JsonNode git) {
+        dropArriving(jobId);
         AgentOutput out;
         try {
             out = mapper.treeToValue(output, AgentOutput.class);
@@ -539,6 +556,7 @@ public class ThreadService {
     }
 
     public void jobFailed(long jobId, String error) {
+        dropArriving(jobId);
         String key = QuarkusTransaction.requiringNew().call(() -> {
             Job j = Job.findById(jobId);
             if (j == null || !j.open()) return null;
