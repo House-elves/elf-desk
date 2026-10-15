@@ -168,6 +168,16 @@ class FlowClassifierTest {
                 bump, NOW));
     }
 
+    @Test
+    void aSafeBumpWhoseCiWaitsForYouAsksYouToApproveIt() {
+        // quarkusio/quarkus#57185: Quarkus CI held at the "dependabot" environment, which you review.
+        Item bump = pr2("dependabot[bot]", "PENDING", "BLOCKED", "MERGEABLE", false, false, null).withDetails("BLOCKED", true);
+        Board.MvnpmRow row = new Board.MvnpmRow(bump, new io.github.houseelves.desk.mvnpm.MvnpmElf.Check(bump.headSha(), "SAFE", true,
+                null, NOW), true);
+        is(FlowClassifier.flow("mvnpm", bump, new FlowClassifier.Ctx(ME, null, null, null, null, List.of(), row, false, NOW)),
+                Flow.YOU, 1, "ci-approve");
+    }
+
     // ---- PRs to review ----
 
     @Test

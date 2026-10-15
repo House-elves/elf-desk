@@ -339,6 +339,10 @@ public final class FlowClassifier {
         }
         return switch (r.check().verdict()) {
             case "SAFE" -> {
+                if (GitHub.AWAITING_APPROVAL.equals(i.ci())) {
+                    yield flow("mvnpm", MVNPM_STEPS, 1, Flow.YOU, i.updatedAt(), "Safe. CI waits for you to approve the run.",
+                            new Flow.Next("ci-approve", "Approve CI run"), List.of());
+                }
                 if (pending(i)) yield flow("mvnpm", MVNPM_STEPS, 1, Flow.CI, i.updatedAt(), "Safe. CI is running.", null, List.of());
                 if (ciFailing(i)) {
                     // A web-jar bump rarely breaks the build: usually CI broke on the base and was fixed there since.
