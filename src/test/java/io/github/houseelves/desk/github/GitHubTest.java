@@ -112,9 +112,18 @@ class GitHubTest {
     @Test
     void ciWaitingForApprovalIsNeverGreen() throws Exception {
         // quarkusio/quarkus#56264: two bot checks passed, Quarkus CI waits for a maintainer.
-        assertEquals(List.of(37703109423L), GitHub.awaitingApproval(json("""
+        assertEquals(List.of(new GitHub.Approval(37703109423L)), GitHub.awaitingApproval(json("""
                 {"checkSuites": {"nodes": [{"conclusion": "SUCCESS", "workflowRun": null},
                   {"conclusion": "ACTION_REQUIRED", "workflowRun": {"databaseId": 37703109423}}]}}""")));
+        // quarkusio/quarkus#57185: a Dependabot PR's Quarkus CI held at the "dependabot" environment you review;
+        // one you can't approve doesn't count.
+        assertEquals(List.of(new GitHub.Approval(38490864478L, List.of(12056103218L))), GitHub.awaitingApproval(json("""
+                {"checkSuites": {"nodes": [{"conclusion": "SUCCESS", "workflowRun": {"databaseId": 1,
+                    "pendingDeploymentRequests": {"nodes": []}}},
+                  {"conclusion": null, "workflowRun": {"databaseId": 38490864478, "pendingDeploymentRequests": {"nodes": [
+                    {"currentUserCanApprove": true, "environment": {"databaseId": 12056103218}}]}}},
+                  {"conclusion": null, "workflowRun": {"databaseId": 2, "pendingDeploymentRequests": {"nodes": [
+                    {"currentUserCanApprove": false, "environment": {"databaseId": 3}}]}}}]}}""")));
         Item green = GitHub.toItem(json(PR_NODE.replace("{\"state\": \"FAILURE\"}", "{\"state\": \"SUCCESS\"}")));
         assertEquals("SUCCESS", green.ci());
         Item waiting = green.withDetails("BLOCKED", true);

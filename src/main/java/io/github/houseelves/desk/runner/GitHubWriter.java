@@ -120,6 +120,12 @@ public class GitHubWriter {
         return write("POST", "/repos/" + repo + "/actions/runs/" + runId + "/approve", Map.of(), RunnerHub.APPROVE_SINCE);
     }
 
+    /** Approves a run held at deployment environments you review: GitHub's "Review deployments", approved. */
+    public JsonNode approveDeployment(String repo, long runId, List<Long> environments) {
+        return write("POST", "/repos/" + repo + "/actions/runs/" + runId + "/pending_deployments",
+                Map.of("environment_ids", environments, "state", "approved", "comment", ""), RunnerHub.APPROVE_DEPLOYMENT_SINCE);
+    }
+
     /**
      * Pushes the agent's commits from the PR's worktree on the runner to the PR's branch, only if the branch is
      * still at {@code from}. Fast-forward, or with {@code squashBase}: {@code to} is one commit on that base and

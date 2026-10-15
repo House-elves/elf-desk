@@ -126,9 +126,10 @@ public class CiService {
     public int approve(String itemKey, String login, String token) {
         GitHub.CiReport ci = report(itemKey, token);
         if (ci.awaitingApproval().isEmpty()) throw new IllegalStateException("No workflow runs are waiting for approval.");
-        for (Long run : ci.awaitingApproval()) {
+        for (GitHub.Approval run : ci.awaitingApproval()) {
             try {
-                writer.approveRun(repo(itemKey), run);
+                if (run.environments().isEmpty()) writer.approveRun(repo(itemKey), run.run());
+                else writer.approveDeployment(repo(itemKey), run.run(), run.environments());
             } catch (GitHubWriter.WriteFailed e) {
                 throw new IllegalStateException("GitHub refused the approval: " + gitHubMessage(e));
             }

@@ -114,7 +114,7 @@ public class GitHub {
                 mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerDefaultMergeMethod
                 pullRequest(number: $number) {
                   title url state isDraft headRefOid mergeable mergeStateStatus reviewDecision
-                  commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 1) { checkRunCountsByState { state count } statusContextCountsByState { state count } } } checkSuites(first: 30) { nodes { conclusion workflowRun { databaseId } } } } } }
+                  commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 1) { checkRunCountsByState { state count } statusContextCountsByState { state count } } } checkSuites(first: 30) { nodes { conclusion workflowRun { databaseId pendingDeploymentRequests(first: 3) { nodes { currentUserCanApprove environment { databaseId } } } } } } } } }
                   latestOpinionatedReviews(first: 20, writersOnly: true) { nodes { state } }
                 }
               }
@@ -135,7 +135,7 @@ public class GitHub {
                     checkSuites(first: 50) { nodes {
                       app { slug }
                       conclusion
-                      workflowRun { databaseId }
+                      workflowRun { databaseId pendingDeploymentRequests(first: 3) { nodes { currentUserCanApprove environment { databaseId } } } }
                       checkRuns(first: 50, filterBy: { checkType: LATEST,
                           conclusions: [FAILURE, TIMED_OUT, CANCELLED, STARTUP_FAILURE, ACTION_REQUIRED] }) {
                         nodes { name conclusion databaseId detailsUrl }
@@ -338,7 +338,7 @@ public class GitHub {
      * @param own      it's your PR: you can close and reopen it, which runs PR workflows again
      */
     public record CiReport(String headSha, String ci, List<FailedCheck> failed, List<Long> rerunnableRuns,
-            String headRepo, String headRef, boolean canPush, List<Long> awaitingApproval, boolean canRerun,
+            String headRepo, String headRef, boolean canPush, List<Approval> awaitingApproval, boolean canRerun,
             boolean own) {
 
         public CiReport(String headSha, String ci, List<FailedCheck> failed, List<Long> rerunnableRuns,
@@ -347,7 +347,7 @@ public class GitHub {
         }
 
         public CiReport(String headSha, String ci, List<FailedCheck> failed, List<Long> rerunnableRuns,
-                String headRepo, String headRef, boolean canPush, List<Long> awaitingApproval) {
+                String headRepo, String headRef, boolean canPush, List<Approval> awaitingApproval) {
             this(headSha, ci, failed, rerunnableRuns, headRepo, headRef, canPush, awaitingApproval, true, false);
         }
     }
@@ -391,7 +391,7 @@ public class GitHub {
         boolean canPush = pr.path("isCrossRepository").asBoolean()
                 ? ownFork || pr.path("maintainerCanModify").asBoolean()
                 : write;
-        List<Long> waiting = awaitingApproval(commit);
+        List<Approval> waiting = awaitingApproval(commit);
         return new CiReport(pr.path("headRefOid").asText(),
                 waiting.isEmpty() ? ciState(commit.path("statusCheckRollup")) : AWAITING_APPROVAL,
                 List.copyOf(failed), List.copyOf(runs),
@@ -623,7 +623,7 @@ public class GitHub {
                 q.append("  p").append(i).append(": repository(owner: \"").append(repo[0]).append("\", name: \"")
                         .append(repo[1]).append("\") { pullRequest(number: ").append(key.substring(key.indexOf('#') + 1))
                         .append(") { mergeStateStatus commits(last: 1) { nodes { commit { "
-                                + "checkSuites(first: 30) { nodes { conclusion workflowRun { databaseId } } } } } } ")
+                                + "checkSuites(first: 30) { nodes { conclusion " + WORKFLOW_RUN + " } } } } } ")
                         .append(mine ? "reviews(author: \"" + login + "\", last: 1) { nodes { submittedAt commit { oid } } } "
                                 + "author { login } " + FEEDBACK : "")
                         .append("} }\n");
@@ -992,15 +992,44 @@ public class GitHub {
         return rollup.path("state").asText(null);
     }
 
-    /** CI state for a commit whose GitHub Actions runs wait for a maintainer to approve them (fork PRs). */
+    /**
+     * CI state for a commit whose GitHub Actions runs wait for you to approve them: a fork PR's runs ("Approve and
+     * run"), or a run held at a deployment environment you review (quarkusio/quarkus holds Dependabot PRs' CI at the
+     * "dependabot" environment).
+     */
     public static final String AWAITING_APPROVAL = "AWAITING_APPROVAL";
 
-    /** Workflow runs on this commit waiting for approval ("Approve and run" on GitHub). */
-    static List<Long> awaitingApproval(JsonNode commit) {
-        List<Long> runs = new ArrayList<>();
+    /** A workflow run's databaseId and the deployment requests on it (for {@link #awaitingApproval}). */
+    static final String WORKFLOW_RUN = "workflowRun { databaseId pendingDeploymentRequests(first: 3) { nodes { "
+            + "currentUserCanApprove environment { databaseId } } } }";
+
+    /**
+     * A run waiting for approval.
+     *
+     * @param environments the deployment environments it waits at, which you can approve; empty for a fork PR's run
+     */
+    public record Approval(long run, List<Long> environments) {
+        public Approval(long run) {
+            this(run, List.of());
+        }
+    }
+
+    /** Workflow runs on this commit waiting for you to approve them. */
+    static List<Approval> awaitingApproval(JsonNode commit) {
+        List<Approval> runs = new ArrayList<>();
         for (JsonNode suite : commit.path("checkSuites").path("nodes")) {
             JsonNode run = suite.path("workflowRun").path("databaseId");
-            if (suite.path("conclusion").asText().equals("ACTION_REQUIRED") && run.isNumber()) runs.add(run.asLong());
+            if (!run.isNumber()) continue;
+            if (suite.path("conclusion").asText().equals("ACTION_REQUIRED")) {
+                runs.add(new Approval(run.asLong()));
+                continue;
+            }
+            List<Long> environments = new ArrayList<>();
+            for (JsonNode d : suite.path("workflowRun").path("pendingDeploymentRequests").path("nodes")) {
+                JsonNode env = d.path("environment").path("databaseId");
+                if (d.path("currentUserCanApprove").asBoolean() && env.isNumber()) environments.add(env.asLong());
+            }
+            if (!environments.isEmpty()) runs.add(new Approval(run.asLong(), List.copyOf(environments)));
         }
         return runs;
     }

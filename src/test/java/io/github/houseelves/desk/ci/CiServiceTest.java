@@ -153,10 +153,12 @@ class CiServiceTest {
     @Test
     void approveAndRunApprovesEachWaitingRun() {
         when(github.ci(anyString(), eq("quarkusio/quarkus"), eq(56953))).thenReturn(new GitHub.CiReport(HEAD,
-                GitHub.AWAITING_APPROVAL, List.of(), List.of(), "arnabnandy7/quarkus", "fix", true, List.of(1L, 2L)));
-        assertEquals(2, ci.approve(KEY, "phillip-kruger", "t"));
+                GitHub.AWAITING_APPROVAL, List.of(), List.of(), "arnabnandy7/quarkus", "fix", true,
+                List.of(new GitHub.Approval(1L), new GitHub.Approval(2L), new GitHub.Approval(3L, List.of(9L)))));
+        assertEquals(3, ci.approve(KEY, "phillip-kruger", "t"));
         verify(writer).approveRun("quarkusio/quarkus", 1L);
         verify(writer).approveRun("quarkusio/quarkus", 2L);
+        verify(writer).approveDeployment("quarkusio/quarkus", 3L, List.of(9L));
         GitHubAction a = QuarkusTransaction.requiringNew().call(() -> GitHubAction.<GitHubAction>findAll().firstResult());
         assertEquals("approve-run", a.kind);
 
