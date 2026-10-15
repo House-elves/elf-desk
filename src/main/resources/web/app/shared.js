@@ -267,3 +267,27 @@ export function linkedPrChips(issueKey) {
 export function prRef(fromKey, prKey) {
     return fromKey.split('#')[0] === prKey.split('#')[0] ? '#' + prKey.split('#')[1] : prKey;
 }
+
+/**
+ * Copies text. The Clipboard API only exists on secure pages (https, localhost); the desk is often opened over
+ * plain http on the LAN, so fall back to a hidden textarea and execCommand('copy'), which still works there.
+ */
+export async function copyText(text) {
+    if (navigator.clipboard?.writeText) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return;
+        } catch { /* refused: try the fallback */ }
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+    document.body.append(area);
+    area.select();
+    try {
+        if (!document.execCommand('copy')) throw new Error('the browser refused to copy');
+    } finally {
+        area.remove();
+    }
+}

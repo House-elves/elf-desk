@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared, spinner, ago } from './shared.js';
+import { shared, spinner, ago, copyText } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { runTime } from './triage-run.js';
 import './triage-run.js';
@@ -142,7 +142,7 @@ class DeskStatus extends LitElement {
         const s = this._status;
         const text = this._open(s) ? this._body : s.sentBody ?? s.body;
         try {
-            await navigator.clipboard.writeText(`${s.subject}\n\n${text}`);
+            await copyText(`${s.subject}\n\n${text}`);
             this._copied = true;
             setTimeout(() => { this._copied = false; }, 2000);
         } catch (e) {
