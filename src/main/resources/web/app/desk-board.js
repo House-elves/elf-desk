@@ -25,6 +25,28 @@ const SECTIONS = [
 
 const ROLES = { mine: 'My PR', review: 'Review', issue: 'Issue', mvnpm: 'mvnpm', involved: 'Involved' };
 
+/** The board's filter, kept for this browser tab: the text, and the tags picked. */
+const FILTER = 'elf-desk.board-filter';
+
+function loadFilter() {
+    try {
+        const f = JSON.parse(sessionStorage.getItem(FILTER) ?? 'null');
+        return { text: f?.text ?? '', tags: new Set(f?.tags ?? []) };
+    } catch { return { text: '', tags: new Set() }; }
+}
+
+/**
+ * Whether an item passes the filter: every word of the text is in its title, repo, number, tag or author, and
+ * its tag is one of those picked (when any are). Items with no tag (not watched, ignored) pass only without tags.
+ */
+export function matches(item, role, filter) {
+    if (filter.tags.size && !filter.tags.has(role)) return false;
+    const words = filter.text.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    const hay = [item.title, item.repo, `#${item.number}`, ROLES[role] ?? role ?? '', item.author ?? ''].join(' ').toLowerCase();
+    return words.every(w => hay.includes(w));
+}
+
 /** Agent actions started straight from a row: the row then shows the agent working. */
 const CALLS = {
     review: (d, key) => d.start({ itemKey: key, action: 'review', question: null }),
@@ -111,6 +133,7 @@ class DeskBoard extends LitElement {
         _mvnpmStarting: { state: true },
         _ignoring: { state: true },
         _unfolded: { state: true },
+        _filter: { state: true },
     };
 
     static styles = [shared, css`
@@ -146,6 +169,13 @@ class DeskBoard extends LitElement {
         aside button.zero .n { color: var(--muted); font-weight: 500; }
         aside button.you:not(.zero) { color: var(--ink); }
         aside hr { border: 0; border-top: 1px solid var(--line); margin: 10px 12px; }
+        .filter { display: grid; gap: 10px; }
+        .filter input[type="search"] { width: 100%; box-sizing: border-box; max-width: 34rem; }
+        .filter .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+        .filter .tag .n { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 2px; }
+        .filter .tag[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+        .filter .tag[aria-pressed="true"] .n { color: var(--accent); }
+        .filter .shown { margin: 0; font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
         .keys { font-size: 12px; color: var(--muted); padding: 10px 12px 0; line-height: 1.6; }
         kbd { font: 11px var(--font-code); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 
@@ -229,6 +259,7 @@ class DeskBoard extends LitElement {
         this._mvnpmStarting = null;
         this._ignoring = null;
         this._unfolded = new Set();
+        this._filter = loadFilter();
         this._onKey = e => this._key(e);
     }
 
@@ -400,6 +431,11 @@ class DeskBoard extends LitElement {
         const origin = e.composedPath()[0];
         if (e.ctrlKey || e.metaKey || e.altKey || origin?.closest?.('input, textarea, select, [contenteditable]')
                 || ['INPUT', 'TEXTAREA', 'SELECT'].includes(origin?.tagName)) return;
+        if (e.key === '/') {
+            e.preventDefault();
+            this.renderRoot.querySelector('#board-filter')?.focus();
+            return;
+        }
         const rows = [...this.renderRoot.querySelectorAll('li.row')].filter(r => r.offsetParent !== null);
         if (!rows.length) return;
         const at = rows.indexOf(this.renderRoot.activeElement?.closest?.('li.row') ?? null);
@@ -452,8 +488,42 @@ class DeskBoard extends LitElement {
         return items.map(item => ({ item, flow: b.flows?.[item.key] })).filter(r => r.flow);
     }
 
+    _setFilter(f) {
+        this._filter = f;
+        try { sessionStorage.setItem(FILTER, JSON.stringify({ text: f.text, tags: [...f.tags] })); } catch { /* not kept */ }
+    }
+
+    get _filtering() {
+        return !!this._filter.text.trim() || this._filter.tags.size > 0;
+    }
+
+    /** The filter bar over the sections: words to look for, and the tags to show. */
+    _renderFilter(all, shown) {
+        const f = this._filter;
+        const tags = Object.keys(ROLES).map(id => ({ id, n: all.filter(r => r.flow.role === id).length })).filter(t => t.n);
+        const toggle = id => {
+            const next = new Set(f.tags);
+            next.has(id) ? next.delete(id) : next.add(id);
+            this._setFilter({ ...f, tags: next });
+        };
+        return html`
+            <div class="filter" role="search">
+                <input type="search" id="board-filter" aria-label="Filter by title, repo or tag" .value=${f.text}
+                    placeholder="Filter by title, repo or tag" spellcheck="false"
+                    @input=${e => this._setFilter({ ...f, text: e.target.value })}
+                    @keydown=${e => { if (e.key === 'Escape') { e.preventDefault(); this._setFilter({ text: '', tags: new Set() }); } }}>
+                <div class="tags" role="group" aria-label="Show only">
+                    ${tags.map(t => html`<button class="sm tag" aria-pressed=${f.tags.has(t.id) ? 'true' : 'false'}
+                        @click=${() => toggle(t.id)}>${ROLES[t.id]} <span class="n">${t.n}</span></button>`)}
+                </div>
+                ${this._filtering ? html`<p class="shown" role="status">${shown} of ${all.length} shown.
+                    <button class="sm quiet" @click=${() => this._setFilter({ text: '', tags: new Set() })}>Clear filter</button></p>` : ''}
+            </div>`;
+    }
+
     _renderBoard(b) {
-        const rows = this._rows(b);
+        const all = this._rows(b);
+        const rows = all.filter(r => matches(r.item, r.flow.role, this._filter));
         const by = Object.fromEntries(SECTIONS.map(s => [s.id, []]));
         rows.forEach(r => (by[r.flow.waiting] ?? by.watching).push(r));
         // Most recent first: what just changed is what you're likely to act on.
@@ -504,28 +574,31 @@ class DeskBoard extends LitElement {
                     ${b.ignored.length ? html`
                         <button class="zero" @click=${() => this._jump('ignored')}>
                             <span>Ignored</span><span class="n">${b.ignored.length}</span></button>` : ''}
-                    <p class="keys"><kbd>j</kbd> <kbd>k</kbd> move, <kbd>Enter</kbd> next step, <kbd>o</kbd> open</p>
+                    <p class="keys"><kbd>j</kbd> <kbd>k</kbd> move, <kbd>Enter</kbd> next step, <kbd>o</kbd> open, <kbd>/</kbd> filter</p>
                 </aside>
                 <div class="sections">
+                    ${b.scopeEmpty ? '' : this._renderFilter(all, rows.length)}
                     ${SECTIONS.map(s => this._renderSection(s, by[s.id]))}
-                    ${this._renderHidden(b.hidden)}
-                    ${this._renderIgnored(b.ignored)}
+                    ${this._renderHidden(b.hidden.filter(i => matches(i, null, this._filter)))}
+                    ${this._renderIgnored(b.ignored.filter(i => matches(i, null, this._filter)))}
                 </div>
             </div>
         `;
     }
 
     _renderSection(s, rows) {
-        if (!rows.length && s.id !== 'you') return '';
+        if (!rows.length && (s.id !== 'you' || this._filtering)) return '';
         const list = html`<div class="panel">${rows.length
             ? html`<ul>${rows.map(r => this._renderRow(r.item, r.flow))}</ul>`
             : html`<p class="empty">${s.empty}</p>`}</div>`;
         if (s.fold) {
+            // While filtering, what matched shows: folded sections open.
+            const open = this._unfolded.has(s.id) || this._filtering;
             return html`
                 <section id="sec-${s.id}" class=${s.id} aria-label=${s.title}>
-                    <details ?open=${this._unfolded.has(s.id)} @toggle=${e => this._fold(s.id, e.target.open)}>
+                    <details ?open=${open} @toggle=${e => { if (!this._filtering) this._fold(s.id, e.target.open); }}>
                         <summary>${s.title} <span class="n">${rows.length}</span></summary>
-                        ${this._unfolded.has(s.id) ? list : ''}
+                        ${open ? list : ''}
                     </details>
                 </section>`;
         }
