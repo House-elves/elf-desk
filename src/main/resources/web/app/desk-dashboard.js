@@ -4,6 +4,7 @@ import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
 import { boardHeadline, count, joinParts, lastBoard } from './desk-board.js';
 import { runTime } from './triage-run.js';
 import { statusState } from './desk-status.js';
+import { tabShown, onTabsChange } from './tabs.js';
 
 const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -39,6 +40,7 @@ class DeskDashboard extends LitElement {
         .date { color: var(--muted); font-size: 15px; }
         h1 { font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.022em; margin-top: 8px; }
         .tabs { display: grid; gap: 14px; }
+        .tabs > .hint { margin: 0; color: var(--muted); font-size: 15px; }
         section { padding: 20px 22px; display: grid; gap: 8px; min-width: 0; }
         section.attention { box-shadow: inset 3px 0 0 var(--accent); }
         .head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; }
@@ -77,6 +79,7 @@ class DeskDashboard extends LitElement {
             onPush('desk.runner', () => { this._softBoard(); this._loadTriage(); }),
             onPush('desk.triage', () => this._loadTriage()),
             onConnectionChange(s => { if (s === 'open') { this._loadBoard(); this._loadTriage(); } }),
+            onTabsChange(() => this.requestUpdate()),
         ];
     }
 
@@ -131,11 +134,11 @@ class DeskDashboard extends LitElement {
         const desk = await api().catch(e => { this._refreshError = errorMessage(e); return null; });
         if (!desk) return;
         const problems = [];
-        const triage = mode => this._triage?.running?.[mode] ? null
+        const triage = mode => this._triage?.running?.[mode] || !tabShown(mode) ? null
             : desk.triageRun({ mode }).then(state => { this._triage = state; })
                 .catch(e => problems.push(`${mode === 'email' ? 'Email' : 'Zulip'}: ${errorMessage(e)}`));
-        this._fetching = true;
-        const github = desk.board({ refresh: true })
+        this._fetching = tabShown('github');
+        const github = !tabShown('github') ? null : desk.board({ refresh: true })
             .then(b => { this._board = b; this._errors = { ...this._errors, github: null }; })
             .catch(e => problems.push(`GitHub: ${errorMessage(e)}`))
             .finally(() => { this._fetching = false; });
@@ -144,7 +147,8 @@ class DeskDashboard extends LitElement {
     }
 
     _busy() {
-        return this._fetching || !!this._triage?.running?.email || !!this._triage?.running?.zulip;
+        return this._fetching || (tabShown('email') && !!this._triage?.running?.email)
+            || (tabShown('zulip') && !!this._triage?.running?.zulip);
     }
 
     _running(mode) {
@@ -255,6 +259,15 @@ class DeskDashboard extends LitElement {
             say, meta, attention: this._loaded.status && state !== 'sent' });
     }
 
+    /** What Refresh everything does, for the tabs that show. */
+    _refreshHint() {
+        const parts = [tabShown('github') && 'fetches GitHub', tabShown('email') && 'triages new email',
+            tabShown('zulip') && 'catches up on Zulip'].filter(Boolean);
+        if (!parts.length) return 'Nothing to refresh with GitHub, Email and Zulip hidden.';
+        const text = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+        return `${text[0].toUpperCase()}${text.slice(1)}.`;
+    }
+
     render() {
         return html`
             <div class="page">
@@ -264,17 +277,20 @@ class DeskDashboard extends LitElement {
                         <h1>Your desk</h1>
                     </div>
                     <div class="refresh">
-                        <button class="primary" ?disabled=${this._busy()} @click=${this._refreshAll}>
+                        <button class="primary" ?disabled=${this._busy() || !['github', 'email', 'zulip'].some(tabShown)}
+                                @click=${this._refreshAll}>
                             ${this._busy() ? spinner : ''}${this._busy() ? 'Refreshing' : 'Refresh everything'}</button>
-                        <p class="hint">Fetches GitHub, triages new email and catches up on Zulip.</p>
+                        <p class="hint">${this._refreshHint()}</p>
                     </div>
                 </div>
                 ${this._refreshError ? html`<p class="error" role="alert">${this._refreshError}</p>` : ''}
                 <div class="tabs">
-                    ${this._github()}
-                    ${this._emailCard()}
-                    ${this._zulipCard()}
-                    ${this._statusCard()}
+                    ${tabShown('github') ? this._github() : ''}
+                    ${tabShown('email') ? this._emailCard() : ''}
+                    ${tabShown('zulip') ? this._zulipCard() : ''}
+                    ${tabShown('status') ? this._statusCard() : ''}
+                    ${!['github', 'email', 'zulip', 'status'].some(tabShown)
+                        ? html`<p class="hint">Every tab with a card here is hidden. Turn tabs back on with the gear at the top right.</p>` : ''}
                 </div>
             </div>
         `;

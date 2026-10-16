@@ -2,6 +2,7 @@ import { LitElement, html, css, svg } from 'lit';
 import { shared, itemKeyFromHash } from './shared.js';
 import { connectionState, onConnectionChange, onBusyChange } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
+import { TABS, tabShown, showTab, onTabsChange } from './tabs.js';
 import './desk-board.js';
 import './desk-settings.js';
 import './desk-thread.js';
@@ -25,6 +26,8 @@ class ElfDesk extends LitElement {
         _conn: { state: true },
         _busy: { state: true },
         _theme: { state: true },
+        _tabsOpen: { state: true },
+        _tabsChanged: { state: true },
     };
 
     static styles = [shared, css`
@@ -60,6 +63,23 @@ class ElfDesk extends LitElement {
         }
         .themes button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
         .themes svg { width: 16px; height: 16px; display: block; }
+        .tabs-pick { position: relative; }
+        .gear {
+            border: 1px solid var(--line); background: var(--surface-2); color: var(--muted);
+            padding: 6px; border-radius: 999px; display: inline-flex;
+        }
+        .gear:hover, .gear[aria-expanded="true"] { color: var(--ink); }
+        .gear svg { width: 16px; height: 16px; display: block; }
+        .tabs-panel {
+            position: absolute; right: 0; top: calc(100% + 8px); z-index: 6; min-width: 13rem;
+            background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card, 10px);
+            box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 14%, transparent);
+            padding: 12px 14px; display: grid; gap: 8px;
+        }
+        .tabs-panel h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 2px; }
+        .tabs-panel label { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+        .tabs-panel input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+        .tabs-panel p { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
 
         /* The loader: a thin bar along the header's bottom edge while any call is in flight. */
         .progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; pointer-events: none; }
@@ -91,6 +111,10 @@ class ElfDesk extends LitElement {
         this._conn = connectionState();
         this._busy = false;
         this._theme = currentTheme();
+        this._onDocClick = e => {
+            if (this._tabsOpen && !e.composedPath().includes(this.renderRoot.querySelector('.tabs-pick'))) this._tabsOpen = false;
+        };
+        this._onKey = e => { if (e.key === 'Escape' && this._tabsOpen) this._tabsOpen = false; };
         this._onHash = () => {
             this._view = this._viewFromHash();
             window.scrollTo({ top: 0 });
@@ -100,6 +124,9 @@ class ElfDesk extends LitElement {
     connectedCallback() {
         super.connectedCallback();
         window.addEventListener('hashchange', this._onHash);
+        document.addEventListener('click', this._onDocClick);
+        document.addEventListener('keydown', this._onKey);
+        this._offTabs = onTabsChange(() => { this._tabsChanged = (this._tabsChanged ?? 0) + 1; });
         this._offConn = onConnectionChange(s => { this._conn = s; });
         // Show the bar only for calls that take a moment, so quick ones don't flicker.
         this._offBusy = onBusyChange(busy => {
@@ -111,6 +138,9 @@ class ElfDesk extends LitElement {
 
     disconnectedCallback() {
         window.removeEventListener('hashchange', this._onHash);
+        document.removeEventListener('click', this._onDocClick);
+        document.removeEventListener('keydown', this._onKey);
+        this._offTabs?.();
         this._offConn?.();
         this._offBusy?.();
         super.disconnectedCallback();
@@ -120,6 +150,31 @@ class ElfDesk extends LitElement {
         if (location.hash === '#settings') return 'github'; // the board's settings now live under GitHub
         if (['#github', '#email', '#zulip', '#status', '#quarterly'].includes(location.hash)) return location.hash.slice(1);
         return itemKeyFromHash(location.hash) ? 'thread' : 'dashboard';
+    }
+
+    _current(tab) {
+        return tab === 'github' ? ['github', 'thread'].includes(this._view) : this._view === tab;
+    }
+
+    /** The gear next to the theme switch: which tabs show. Dashboard always does. */
+    _tabsPicker() {
+        const shown = TABS.filter(t => tabShown(t.id)).length;
+        return html`<div class="tabs-pick">
+            <button class="gear" title="Tabs" aria-label="Choose which tabs show" aria-expanded=${this._tabsOpen ? 'true' : 'false'}
+                    aria-controls="tabs-panel" @click=${() => { this._tabsOpen = !this._tabsOpen; }}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"
+                     stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/>
+                    <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/>
+                    <circle cx="8" cy="8" r="4.6"/></svg>
+            </button>
+            ${this._tabsOpen ? html`<div class="tabs-panel" id="tabs-panel" role="group" aria-labelledby="tabs-h">
+                <h2 id="tabs-h">Tabs</h2>
+                ${TABS.map(t => html`<label><input type="checkbox" .checked=${tabShown(t.id)}
+                        ?disabled=${tabShown(t.id) && shown === 1}
+                        @change=${e => showTab(t.id, e.target.checked)}>${t.label}</label>`)}
+                <p>Hidden tabs leave the header and the dashboard, in this browser.</p>
+            </div>` : ''}
+        </div>`;
     }
 
     _pickTheme(id) {
@@ -141,11 +196,8 @@ class ElfDesk extends LitElement {
                     </a>
                     <nav aria-label="Views">
                         <a href="#" aria-current=${this._view === 'dashboard' ? 'page' : 'false'}>Dashboard</a>
-                        <a href="#github" aria-current=${['github', 'thread'].includes(this._view) ? 'page' : 'false'}>GitHub</a>
-                        <a href="#email" aria-current=${this._view === 'email' ? 'page' : 'false'}>Email</a>
-                        <a href="#zulip" aria-current=${this._view === 'zulip' ? 'page' : 'false'}>Zulip</a>
-                        <a href="#status" aria-current=${this._view === 'status' ? 'page' : 'false'}>Status</a>
-                        <a href="#quarterly" aria-current=${this._view === 'quarterly' ? 'page' : 'false'}>Quarterly</a>
+                        ${TABS.filter(t => tabShown(t.id) || this._current(t.id)).map(t => html`
+                            <a href="#${t.id}" aria-current=${this._current(t.id) ? 'page' : 'false'}>${t.label}</a>`)}
                     </nav>
                     <div class="right">
                         ${this._conn !== 'open' ? html`
@@ -158,6 +210,7 @@ class ElfDesk extends LitElement {
                                          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${t.icon}</svg>
                                 </button>`)}
                         </div>
+                        ${this._tabsPicker()}
                     </div>
                 </div>
                 <div class="progress ${this._busy ? 'on' : ''}" role="progressbar" aria-label="Loading"
