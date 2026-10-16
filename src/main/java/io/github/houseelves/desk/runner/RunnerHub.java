@@ -61,6 +61,15 @@ public class RunnerHub {
     private volatile WebSocketConnection runner;
     private volatile String runnerVersion = "";
 
+    /**
+     * A message too big for one WebSocket message (a job's answer with a large patch) comes as parts, each a piece
+     * of its JSON text. The socket keeps its default size limit because it takes connections before their hello;
+     * parts are only put together for the runner once it has said hello, and up to MAX_PARTS.
+     */
+    static final int MAX_PARTS = 128, MAX_CHARS = 4 * 1024 * 1024;
+    private StringBuilder parts;
+    private int partsNext, partsOf;
+
     /** The first runner versions that carry out GitHub writes (github.write), and merges in particular. */
     static final String WRITES_SINCE = "0.2.0";
     static final String MERGE_SINCE = "0.3.0";
@@ -130,6 +139,10 @@ public class RunnerHub {
     }
 
     void onMessage(WebSocketConnection c, String text) {
+        onMessage(c, text, false);
+    }
+
+    private void onMessage(WebSocketConnection c, String text, boolean assembled) {
         JsonNode msg;
         try {
             msg = mapper.readTree(text);
@@ -139,13 +152,18 @@ public class RunnerHub {
             return;
         }
         String type = msg.path("type").asText();
-        if (type.equals("hello")) {
+        if (type.equals("hello") && !assembled) {
             hello(c, msg);
             return;
         }
         if (c != runner) {
             LOG.warn("Runner message before hello; closing the connection");
             c.closeAndAwait();
+            return;
+        }
+        if (type.equals("part") || (assembled && type.equals("hello"))) {
+            String whole = assembled ? null : part(msg);
+            if (whole != null) onMessage(c, whole, true);
             return;
         }
         if (type.equals("mvnpm.state")) {
@@ -182,6 +200,36 @@ public class RunnerHub {
         }
     }
 
+    /** Adds a part; the whole message once its last part is in, else null. Parts out of order drop the message. */
+    private synchronized String part(JsonNode msg) {
+        int part = msg.path("part").asInt(-1), of = msg.path("parts").asInt(0);
+        String data = msg.path("data").asText(null);
+        if (part == 0) {
+            parts = new StringBuilder();
+            partsNext = 0;
+            partsOf = of;
+        }
+        if (data == null || parts == null || part != partsNext || of != partsOf || of < 2 || of > MAX_PARTS) {
+            LOG.warnf("Runner message part %d of %d out of order; dropping the message", part, of);
+            parts = null;
+            return null;
+        }
+        if (parts.length() + data.length() > MAX_CHARS) {
+            LOG.warnf("Runner message over %d characters; dropping it", MAX_CHARS);
+            parts = null;
+            return null;
+        }
+        parts.append(data);
+        if (++partsNext < partsOf) return null;
+        String whole = parts.toString();
+        parts = null;
+        return whole;
+    }
+
+    private synchronized void dropParts() {
+        parts = null;
+    }
+
     private void hello(WebSocketConnection c, JsonNode msg) {
         if (!tokenMatches(msg.path("token").asText(""))) {
             LOG.warn("Runner hello with a wrong token; closing the connection");
@@ -189,6 +237,7 @@ public class RunnerHub {
             return;
         }
         WebSocketConnection previous = runner;
+        dropParts();
         runner = c;
         runnerVersion = msg.path("version").asText("");
         if (previous != null && previous != c && previous.isOpen()) previous.closeAndAwait();
@@ -202,6 +251,7 @@ public class RunnerHub {
     void onClose(WebSocketConnection c) {
         if (c == runner) {
             runner = null;
+            dropParts();
             LOG.info("Runner disconnected");
             mvnpmRuns.get().onRunnerGone();
             triageRuns.get().onRunnerGone();
