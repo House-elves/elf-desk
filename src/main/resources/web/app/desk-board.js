@@ -337,7 +337,11 @@ class DeskBoard extends LitElement {
     async _run(item, next) {
         if (next.id === 'mvnpm-check') return this._mvnpmRun(item);
         const call = CALLS[next.id];
-        if (!call) return;
+        if (!call) {
+            // The board came from a newer desk than this page: its steps include one this page doesn't know.
+            this._rowError = { key: item.key, text: `${next.label}: the desk was updated since this page loaded. Reload the page, then try again.` };
+            return;
+        }
         this._doing = `${item.key} ${next.id}`;
         this._error = null;
         this._rowError = null;
