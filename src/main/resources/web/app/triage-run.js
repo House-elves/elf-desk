@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared, spinner, ago } from './shared.js';
+import { shared, spinner, ago, Ticking } from './shared.js';
 import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
 
 /** "Today 08:03", "Yesterday 08:00", "Mon 12 Oct 08:00": when a saved run happened (the elf's local time). */
@@ -54,6 +54,7 @@ class TriageRun extends LitElement {
 
     constructor() {
         super();
+        new Ticking(this);
         this.picked = null;
         this._runs = [];
     }

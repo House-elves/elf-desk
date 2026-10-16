@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared, spinner, ago, markdown, markdownStyles } from './shared.js';
+import { shared, spinner, ago, markdown, markdownStyles, Ticking } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 
 /** Code lines shown above a thread: the end of GitHub's hunk, where the comment sits. */
@@ -53,6 +53,11 @@ class PrReview extends LitElement {
         .md { font-size: 14px; }
         .md pre { max-height: 16rem; overflow: auto; }
     `];
+
+    constructor() {
+        super();
+        new Ticking(this);
+    }
 
     connectedCallback() {
         super.connectedCallback();

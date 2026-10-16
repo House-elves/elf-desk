@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { isDependabot, linksFor, prRef, threadHref, rememberItem, shared, ago, markdown, markdownStyles, knownItem, kindIcon, spinner, ciFailing, ciNeedsApproval, hasConflicts, behind, mergeable, mergeableAnyway } from './shared.js';
+import { isDependabot, linksFor, prRef, threadHref, rememberItem, shared, ago, markdown, markdownStyles, knownItem, kindIcon, spinner, ciFailing, ciNeedsApproval, hasConflicts, behind, mergeable, mergeableAnyway, Ticking } from './shared.js';
 import { api, errorMessage, onPush } from './rpc.js';
 import './merge-control.js';
 import './ci-menu.js';
@@ -180,6 +180,7 @@ class DeskThread extends LitElement {
 
     constructor() {
         super();
+        new Ticking(this);
         this._lines = [];
         this._loaded = false;
     }

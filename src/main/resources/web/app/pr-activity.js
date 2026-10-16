@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared, spinner, ago, threadHref } from './shared.js';
+import { shared, spinner, ago, threadHref, Ticking } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 
 const KINDS = {
@@ -54,6 +54,7 @@ class PrActivity extends LitElement {
 
     constructor() {
         super();
+        new Ticking(this);
         this._open = false;
         this._busy = null;
     }

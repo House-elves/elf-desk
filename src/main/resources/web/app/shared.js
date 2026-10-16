@@ -130,6 +130,36 @@ function ciLabel(ci) {
 const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 
 /** "3 days ago", "yesterday", "just now". */
+/**
+ * Redraws its element every 30 seconds while the page is in view, so "just now" and "5 minutes ago" keep moving.
+ * One shared timer for every element showing such a time: `new Ticking(this)` in the constructor.
+ */
+const ticking = new Set();
+let tickTimer = null;
+
+function tickAll() {
+    if (!document.hidden) ticking.forEach(host => host.requestUpdate());
+}
+
+document.addEventListener('visibilitychange', tickAll);
+
+export class Ticking {
+    constructor(host) {
+        this.host = host;
+        host.addController(this);
+    }
+
+    hostConnected() {
+        ticking.add(this.host);
+        tickTimer ??= setInterval(tickAll, 30_000);
+    }
+
+    hostDisconnected() {
+        ticking.delete(this.host);
+        if (!ticking.size) { clearInterval(tickTimer); tickTimer = null; }
+    }
+}
+
 export function ago(iso) {
     if (!iso) return '';
     const seconds = (new Date(iso).getTime() - Date.now()) / 1000;

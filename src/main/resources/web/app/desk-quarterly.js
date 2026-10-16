@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared, markdown, markdownHtml, markdownStyles, copyText, copyHtml, settingsToggle } from './shared.js';
+import { shared, markdown, markdownHtml, markdownStyles, copyText, copyHtml, settingsToggle, Ticking } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { runTime } from './triage-run.js';
 import './triage-run.js';
@@ -80,6 +80,7 @@ class DeskQuarterly extends LitElement {
 
     constructor() {
         super();
+        new Ticking(this);
         this._picked = null;
         this._quarter = quarterOf(new Date(), 1);
         this._loading = true;

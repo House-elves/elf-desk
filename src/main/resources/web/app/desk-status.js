@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared, spinner, ago, copyText, settingsToggle } from './shared.js';
+import { shared, spinner, ago, copyText, settingsToggle, Ticking } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { runTime } from './triage-run.js';
 import './triage-run.js';
@@ -81,6 +81,7 @@ class DeskStatus extends LitElement {
 
     constructor() {
         super();
+        new Ticking(this);
         this._picked = null;
         this._loading = true;
     }

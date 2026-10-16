@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { linkedPrChips, rememberLinks, shared, ago, itemChips, ciFailing, hasConflicts, mergeableAnyway, kindIcon, spinner, threadHref, rememberItem, settingsToggle, isDependabot } from './shared.js';
+import { linkedPrChips, rememberLinks, shared, ago, itemChips, ciFailing, hasConflicts, mergeableAnyway, kindIcon, spinner, threadHref, rememberItem, settingsToggle, isDependabot, Ticking } from './shared.js';
 import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
 import './merge-control.js';
 import './ci-menu.js';
@@ -278,6 +278,7 @@ class DeskBoard extends LitElement {
 
     constructor() {
         super();
+        new Ticking(this);
         this._board = lastBoard;
         this._loading = !lastBoard;
         this._open = null;

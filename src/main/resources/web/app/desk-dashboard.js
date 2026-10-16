@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared, ago, spinner } from './shared.js';
+import { shared, ago, spinner, Ticking } from './shared.js';
 import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
 import { boardHeadline, count, joinParts, lastBoard } from './desk-board.js';
 import { runTime } from './triage-run.js';
@@ -64,6 +64,7 @@ class DeskDashboard extends LitElement {
 
     constructor() {
         super();
+        new Ticking(this);
         this._board = lastBoard;
         this._loaded = {};
         this._errors = {};
