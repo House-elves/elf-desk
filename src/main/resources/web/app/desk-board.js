@@ -171,13 +171,39 @@ class DeskBoard extends LitElement {
         aside button.zero .n { color: var(--muted); font-weight: 500; }
         aside button.you:not(.zero) { color: var(--ink); }
         aside hr { border: 0; border-top: 1px solid var(--line); margin: 10px 12px; }
-        .filter { display: grid; gap: 10px; }
-        .filter input[type="search"] { width: 100%; box-sizing: border-box; max-width: 34rem; }
-        .filter .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+        .filter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+        .filter .field { position: relative; flex: 1 1 20rem; max-width: 36rem; min-width: 0; }
+        .filter .field > svg {
+            position: absolute; left: 13px; top: 50%; translate: 0 -50%; width: 16px; height: 16px;
+            color: var(--muted); pointer-events: none;
+        }
+        .filter input[type="search"] {
+            width: 100%; box-sizing: border-box; height: 40px; padding: 0 112px 0 38px;
+            font: 15px/1 var(--font); color: var(--ink); background: var(--surface);
+            border: 1px solid var(--line); border-radius: 999px; appearance: none;
+            transition: border-color 120ms, box-shadow 120ms;
+        }
+        .filter input[type="search"]::-webkit-search-cancel-button { appearance: none; }
+        .filter input[type="search"]::placeholder { color: var(--muted); }
+        .filter input[type="search"]:hover { border-color: color-mix(in srgb, var(--muted) 45%, var(--line)); }
+        .filter input[type="search"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .filter .field:focus-within > svg { color: var(--accent); }
+        .filter .end { position: absolute; right: 8px; top: 50%; translate: 0 -50%; display: flex; align-items: center; gap: 6px; }
+        .filter .end kbd {
+            font: 12px/1 var(--font-code); color: var(--muted); padding: 3px 7px; border-radius: 6px;
+            border: 1px solid var(--line); background: var(--surface-2);
+        }
+        .filter .count { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .filter .clear {
+            width: 26px; height: 26px; padding: 0; border: 0; border-radius: 999px; background: var(--surface-2); color: var(--muted);
+        }
+        .filter .clear:hover:not(:disabled) { color: var(--ink); background: var(--line); }
+        .filter .clear svg { width: 12px; height: 12px; }
+        .filter .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+        .filter .tag { border-radius: 999px; }
         .filter .tag .n { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 2px; }
         .filter .tag[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
         .filter .tag[aria-pressed="true"] .n { color: var(--accent); }
-        .filter .shown { margin: 0; font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
         .keys { font-size: 12px; color: var(--muted); padding: 10px 12px 0; line-height: 1.6; }
         kbd { font: 11px var(--font-code); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 
@@ -520,16 +546,27 @@ class DeskBoard extends LitElement {
         };
         return html`
             <div class="filter" role="search">
-                <input type="search" id="board-filter" aria-label="Filter by title, repo or tag" .value=${f.text}
-                    placeholder="Filter by title, repo or tag" spellcheck="false"
-                    @input=${e => this._setFilter({ ...f, text: e.target.value })}
-                    @keydown=${e => { if (e.key === 'Escape') { e.preventDefault(); this._setFilter({ text: '', tags: new Set() }); } }}>
+                <div class="field">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+                        <circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5 14 14"/></svg>
+                    <input type="search" id="board-filter" aria-label="Filter by title, repo, number, tag or author" .value=${f.text}
+                        placeholder="Filter by title, repo, #number or author" spellcheck="false" autocomplete="off"
+                        @input=${e => this._setFilter({ ...f, text: e.target.value })}
+                        @keydown=${e => { if (e.key === 'Escape') { e.preventDefault(); this._setFilter({ text: '', tags: new Set() }); } }}>
+                    <span class="end">
+                        ${this._filtering ? html`<span class="count" role="status">${shown} of ${all.length}</span>` : ''}
+                        ${f.text ? html`<button class="clear" aria-label="Clear the filter text"
+                                @click=${() => { this._setFilter({ ...f, text: '' }); this.renderRoot.querySelector('#board-filter')?.focus(); }}>
+                                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+                                    <path d="M3 3l6 6M9 3l-6 6"/></svg></button>`
+                            : this._filtering ? '' : html`<kbd aria-hidden="true">/</kbd>`}
+                    </span>
+                </div>
                 <div class="tags" role="group" aria-label="Show only">
                     ${tags.map(t => html`<button class="sm tag" aria-pressed=${f.tags.has(t.id) ? 'true' : 'false'}
                         @click=${() => toggle(t.id)}>${ROLES[t.id]} <span class="n">${t.n}</span></button>`)}
+                    ${f.tags.size ? html`<button class="sm quiet" @click=${() => this._setFilter({ ...f, tags: new Set() })}>All tags</button>` : ''}
                 </div>
-                ${this._filtering ? html`<p class="shown" role="status">${shown} of ${all.length} shown.
-                    <button class="sm quiet" @click=${() => this._setFilter({ text: '', tags: new Set() })}>Clear filter</button></p>` : ''}
             </div>`;
     }
 
