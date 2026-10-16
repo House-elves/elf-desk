@@ -26,7 +26,7 @@ public record Flow(String role, List<String> steps, int step, String waiting, In
     /**
      * An action the page knows how to run.
      *
-     * @param id     open (the item's agent panel), review, investigate, fix, ci-why, ci-fix, ci-rerun, ci-approve,
+     * @param id     open (the item's agent panel), review, investigate, fix, ci-why, ci-fix, ci-rerun, ci-reopen, ci-approve,
      *               conflicts, update-branch, read-review, address, dependabot-rebase, merge, merge-anyway, ready, mvnpm-check, close,
      *               whats-new, go (another item's page: {@code target})
      * @param label  the button text

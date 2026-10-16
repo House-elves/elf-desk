@@ -3,6 +3,8 @@ package io.github.houseelves.desk.board;
 import static io.github.houseelves.desk.Items.issue;
 import static io.github.houseelves.desk.Items.pr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.time.Instant;
@@ -47,6 +49,31 @@ class FlowClassifierTest {
         assertEquals(step, f.step(), f.say());
         if (next == null) assertNull(f.next(), f.say());
         else assertEquals(next, f.next().id(), f.say());
+    }
+
+    static Item withoutWrite(Item p) {
+        return new Item(p.key(), p.repo(), p.number(), p.kind(), p.title(), p.url(), p.author(), p.assignees(),
+                p.createdAt(), p.updatedAt(), p.comments(), p.draft(), p.headRef(), p.headSha(), p.ci(), p.reviewDecision(),
+                p.mergeable(), p.mergeState(), p.approved(), false);
+    }
+
+    static List<String> ids(List<Flow.Next> next) {
+        return next.stream().map(Flow.Next::id).toList();
+    }
+
+    @Test
+    void withoutWriteAccessFailedJobsCantBeReRun() {
+        // Your own PR: closing and reopening it runs CI again.
+        Flow mine = FlowClassifier.flow("mine", withoutWrite(pr2(ME, "FAILURE", "UNSTABLE", "MERGEABLE", false, false, null)), ctx());
+        assertTrue(ids(mine.more()).contains("ci-reopen"));
+        assertFalse(ids(mine.more()).contains("ci-rerun"));
+        // Someone else's: nothing to re-run with.
+        Flow theirs = FlowClassifier.flow("review", withoutWrite(pr2("someone", "FAILURE", "UNSTABLE", "MERGEABLE", true, false,
+                "APPROVED")), ctx());
+        assertFalse(ids(theirs.more()).contains("ci-rerun") || ids(theirs.more()).contains("ci-reopen"));
+        // Write access, or not known: re-run as before.
+        Flow known = FlowClassifier.flow("mine", pr2(ME, "FAILURE", "UNSTABLE", "MERGEABLE", false, false, null), ctx());
+        assertTrue(ids(known.more()).contains("ci-rerun"));
     }
 
     // ---- my PRs ----

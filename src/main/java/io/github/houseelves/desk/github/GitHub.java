@@ -52,7 +52,7 @@ public class GitHub {
             }
             ... on PullRequest {
               number title url createdAt updatedAt state isDraft headRefName headRefOid reviewDecision mergeable
-              repository { nameWithOwner }
+              repository { nameWithOwner viewerPermission }
               author { login }
               assignees(first: 10) { nodes { login } }
               comments { totalCount }
@@ -486,6 +486,12 @@ public class GitHub {
         }
     }
 
+    /** WRITE, MAINTAIN or ADMIN; null when GitHub didn't say (issues don't ask). */
+    static Boolean canWrite(JsonNode permission) {
+        if (!permission.isTextual()) return null;
+        return List.of("WRITE", "MAINTAIN", "ADMIN").contains(permission.asText());
+    }
+
     static Item toItem(JsonNode n) {
         String type = n.path("__typename").asText();
         if (!type.equals("Issue") && !type.equals("PullRequest")) return null;
@@ -512,7 +518,8 @@ public class GitHub {
                 pr ? textOrNull(n.path("reviewDecision")) : null,
                 pr ? textOrNull(n.path("mergeable")) : null,
                 null, // mergeStateStatus: too heavy for search, filled in by prDetails()
-                pr ? Item.isApproved(textOrNull(n.path("reviewDecision")), writerReviews(n)) : null);
+                pr ? Item.isApproved(textOrNull(n.path("reviewDecision")), writerReviews(n)) : null,
+                canWrite(n.path("repository").path("viewerPermission")));
     }
 
     /**

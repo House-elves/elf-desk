@@ -350,8 +350,7 @@ public final class FlowClassifier {
                     yield flow("mvnpm", MVNPM_STEPS, 1, Flow.YOU, i.updatedAt(),
                             "Safe, but CI is failing. Rebasing picks up any CI fixes on its base.",
                             new Flow.Next("dependabot-rebase", "Ask Dependabot to rebase"),
-                            List.of(new Flow.Next("ci-why", "Why did CI fail?"), new Flow.Next("ci-rerun", "Re-run failed jobs"),
-                                    new Flow.Next("close", "Close")));
+                            present(new Flow.Next("ci-why", "Why did CI fail?"), rerun(i, false), new Flow.Next("close", "Close")));
                 }
                 if (mergeable(i)) yield flow("mvnpm", MVNPM_STEPS, 1, Flow.YOU, i.updatedAt(), "Safe and green.", new Flow.Next("merge", "Merge"), List.of());
                 if (green(i)) yield flow("mvnpm", MVNPM_STEPS, 1, Flow.YOU, i.updatedAt(), "Safe and green.",
@@ -372,6 +371,19 @@ public final class FlowClassifier {
     }
 
     /**
+     * Re-running failed jobs needs write access to the repo. Without it, your own PR's CI runs again when you close
+     * and reopen it; on someone else's there's nothing to offer.
+     */
+    static Flow.Next rerun(Item i, boolean own) {
+        if (!Boolean.FALSE.equals(i.canWrite())) return new Flow.Next("ci-rerun", "Re-run failed jobs");
+        return own ? new Flow.Next("ci-reopen", "Re-run CI (close and reopen)") : null;
+    }
+
+    private static List<Flow.Next> present(Flow.Next... next) {
+        return java.util.Arrays.stream(next).filter(java.util.Objects::nonNull).toList();
+    }
+
+    /**
      * Failing CI, CI waiting for approval, conflicts, or behind its base: what to do about it, or null. On your own
      * PR the agent can fix it; on others' PRs it explains (for a comment) and the author fixes it.
      */
@@ -380,10 +392,10 @@ public final class FlowClassifier {
             boolean explained = "ci-why".equals(last);
             Flow.Next why = new Flow.Next("ci-why", "Why did CI fail?");
             Flow.Next fix = new Flow.Next("ci-fix", "Fix CI");
-            Flow.Next rerun = new Flow.Next("ci-rerun", "Re-run failed jobs");
+            Flow.Next rerun = rerun(i, own);
             if (own) return flow(role, steps, step, Flow.YOU, i.updatedAt(), "CI is failing.", explained ? fix : why,
-                    explained ? List.of(rerun, why) : List.of(fix, rerun));
-            return flow(role, steps, step, Flow.YOU, i.updatedAt(), "Approved, but CI is failing.", why, List.of(rerun));
+                    explained ? present(rerun, why) : present(fix, rerun));
+            return flow(role, steps, step, Flow.YOU, i.updatedAt(), "Approved, but CI is failing.", why, present(rerun));
         }
         if (GitHub.AWAITING_APPROVAL.equals(i.ci())) {
             return flow(role, steps, step, Flow.YOU, i.updatedAt(), "CI waits for a maintainer to approve the run.",

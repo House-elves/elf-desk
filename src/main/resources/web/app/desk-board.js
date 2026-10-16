@@ -55,6 +55,7 @@ const CALLS = {
     'ci-why': (d, key) => d.ciWhy({ itemKey: key }),
     'ci-fix': (d, key) => d.ciFix({ itemKey: key }),
     'ci-rerun': (d, key) => d.ciRerun({ itemKey: key }),
+    'ci-reopen': (d, key) => d.ciReopen({ itemKey: key }),
     'ci-approve': (d, key) => d.ciApprove({ itemKey: key }),
     conflicts: (d, key) => d.resolveConflicts({ itemKey: key }),
     'dependabot-rebase': (d, key) => d.askDependabotToRebase({ itemKey: key }),
@@ -65,7 +66,7 @@ const CALLS = {
 };
 
 /** Steps that start the agent or CI, which an open row's panel offers next to the agent's answer. */
-const PANEL_STEPS = new Set(['self-fix', 'ci-fix', 'ci-why', 'ci-rerun', 'conflicts', 'address', 'fix', 'investigate', 'review']);
+const PANEL_STEPS = new Set(['self-fix', 'ci-fix', 'ci-why', 'ci-rerun', 'ci-reopen', 'conflicts', 'address', 'fix', 'investigate', 'review']);
 
 /** The last board this page saw: going back to the board shows it at once while it updates. */
 export let lastBoard = null;
@@ -121,6 +122,7 @@ class DeskBoard extends LitElement {
         _loading: { state: true },
         _refreshing: { state: true },
         _error: { state: true },
+        _rowError: { state: true },   // {key, text}: a step that failed, shown on its row
         _open: { state: true },
         _doing: { state: true },
         _watching: { state: true },
@@ -205,6 +207,7 @@ class DeskBoard extends LitElement {
         .title { color: var(--ink); font-weight: 500; text-decoration: none; overflow-wrap: anywhere; }
         .title:hover { text-decoration: underline; }
         .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+        .row-error { margin: 8px 0 0; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
         .say { color: var(--ink); }
         .steps { display: inline-flex; align-items: center; gap: 6px; }
         .seg { display: inline-flex; gap: 3px; }
@@ -337,6 +340,7 @@ class DeskBoard extends LitElement {
         if (!call) return;
         this._doing = `${item.key} ${next.id}`;
         this._error = null;
+        this._rowError = null;
         try {
             const desk = await api();
             const r = await call(desk, item.key);
@@ -344,7 +348,8 @@ class DeskBoard extends LitElement {
             this._moreFor = null;
             await this._reloadNow();
         } catch (e) {
-            this._error = `${item.key}: ${errorMessage(e)}`;
+            // On the row, where you clicked: the top of the board may be far out of view.
+            this._rowError = { key: item.key, text: `${next.label}: ${errorMessage(e)}` };
         } finally {
             this._doing = null;
         }
@@ -635,6 +640,8 @@ class DeskBoard extends LitElement {
                         ${back ? html`<span class="chip run" title="It was ignored; this brought it back">Back: ${back.toLowerCase()}</span>` : ''}
                         ${item.kind === 'ISSUE' && f.role !== 'issue' ? linkedPrChips(item.key) : ''}
                     </div>
+                    ${this._rowError?.key === item.key ? html`<p class="error row-error" role="alert">${this._rowError.text}
+                        <button class="quiet sm" @click=${() => { this._rowError = null; }}>Dismiss</button></p>` : ''}
                 </div>
                 <div class="acts">${this._actions(item, f)}</div>
                 ${open ? html`<div class="inline">${this._inline(item)}</div>` : ''}
