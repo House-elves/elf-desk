@@ -16,6 +16,7 @@ import java.util.List;
  *                       (see {@link #isApproved})
  * @param canWrite       you have write access to the repo (which GitHub needs to re-run its workflows), or null when
  *                       not known
+ * @param commitCount    PRs only: how many commits it has, or null when not known
  */
 public record Item(
         String key,
@@ -37,7 +38,8 @@ public record Item(
         String mergeable,
         String mergeState,
         Boolean approved,
-        Boolean canWrite) {
+        Boolean canWrite,
+        Integer commitCount) {
 
     public enum Kind { PR, ISSUE }
 
@@ -45,7 +47,7 @@ public record Item(
             List<String> assignees, Instant createdAt, Instant updatedAt, int comments, Boolean draft, String headRef,
             String headSha, String ci, String reviewDecision, String mergeable, String mergeState, Boolean approved) {
         this(key, repo, number, kind, title, url, author, assignees, createdAt, updatedAt, comments, draft, headRef,
-                headSha, ci, reviewDecision, mergeable, mergeState, approved, null);
+                headSha, ci, reviewDecision, mergeable, mergeState, approved, null, null);
     }
 
     public static String key(String repo, int number) {
@@ -74,14 +76,14 @@ public record Item(
      */
     public Item withCi(String newCi) {
         return new Item(key, repo, number, kind, title, url, author, assignees, createdAt, updatedAt, comments, draft,
-                headRef, headSha, newCi, reviewDecision, mergeable, isPr() ? "UNKNOWN" : mergeState, approved, canWrite);
+                headRef, headSha, newCi, reviewDecision, mergeable, isPr() ? "UNKNOWN" : mergeState, approved, canWrite, commitCount);
     }
 
     /** The same PR with the details search can't afford: merge state, and CI waiting for approval. */
     public Item withDetails(String newMergeState, boolean awaitingApproval) {
         return new Item(key, repo, number, kind, title, url, author, assignees, createdAt, updatedAt, comments, draft,
                 headRef, headSha, awaitingApproval ? GitHub.AWAITING_APPROVAL : ci, reviewDecision, mergeable, newMergeState,
-                approved, canWrite);
+                approved, canWrite, commitCount);
     }
 
     /** The same item with {@code login} added to its assignees (right after you assign yourself). */
@@ -90,7 +92,7 @@ public record Item(
         List<String> more = new java.util.ArrayList<>(assignees);
         more.add(login);
         return new Item(key, repo, number, kind, title, url, author, List.copyOf(more), createdAt, updatedAt, comments,
-                draft, headRef, headSha, ci, reviewDecision, mergeable, mergeState, approved, canWrite);
+                draft, headRef, headSha, ci, reviewDecision, mergeable, mergeState, approved, canWrite, commitCount);
     }
 
     /** GitHub says every required check passed and nothing else blocks merging. */

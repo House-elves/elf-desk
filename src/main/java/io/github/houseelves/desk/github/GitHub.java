@@ -53,6 +53,7 @@ public class GitHub {
             ... on PullRequest {
               number title url createdAt updatedAt state isDraft headRefName headRefOid reviewDecision mergeable
               repository { nameWithOwner viewerPermission }
+              commitCount: commits { totalCount }
               author { login }
               assignees(first: 10) { nodes { login } }
               comments { totalCount }
@@ -519,7 +520,8 @@ public class GitHub {
                 pr ? textOrNull(n.path("mergeable")) : null,
                 null, // mergeStateStatus: too heavy for search, filled in by prDetails()
                 pr ? Item.isApproved(textOrNull(n.path("reviewDecision")), writerReviews(n)) : null,
-                canWrite(n.path("repository").path("viewerPermission")));
+                canWrite(n.path("repository").path("viewerPermission")),
+                pr && n.path("commitCount").path("totalCount").isInt() ? n.path("commitCount").path("totalCount").asInt() : null);
     }
 
     /**

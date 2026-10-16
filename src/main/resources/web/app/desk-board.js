@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { linkedPrChips, rememberLinks, shared, ago, itemChips, ciFailing, hasConflicts, mergeableAnyway, kindIcon, spinner, threadHref, rememberItem, settingsToggle } from './shared.js';
+import { linkedPrChips, rememberLinks, shared, ago, itemChips, ciFailing, hasConflicts, mergeableAnyway, kindIcon, spinner, threadHref, rememberItem, settingsToggle, isDependabot } from './shared.js';
 import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
 import './merge-control.js';
 import './ci-menu.js';
@@ -207,6 +207,9 @@ class DeskBoard extends LitElement {
         .title { color: var(--ink); font-weight: 500; text-decoration: none; overflow-wrap: anywhere; }
         .title:hover { text-decoration: underline; }
         .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+        button.chip.squash { border: 0; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 500; line-height: 1; gap: 8px; }
+        button.chip.squash span { color: var(--accent); }
+        button.chip.squash:hover { background: var(--accent-soft); color: var(--accent); }
         .row-error { margin: 8px 0 0; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
         .say { color: var(--ink); }
         .steps { display: inline-flex; align-items: center; gap: 6px; }
@@ -643,6 +646,7 @@ class DeskBoard extends LitElement {
                         ${f.since ? html`<span>${ago(f.since)}</span>` : ''}
                         ${back ? html`<span class="chip run" title="It was ignored; this brought it back">Back: ${back.toLowerCase()}</span>` : ''}
                         ${item.kind === 'ISSUE' && f.role !== 'issue' ? linkedPrChips(item.key) : ''}
+                        ${this._commitsChip(item, f)}
                     </div>
                     ${this._rowError?.key === item.key ? html`<p class="error row-error" role="alert">${this._rowError.text}
                         <button class="quiet sm" @click=${() => { this._rowError = null; }}>Dismiss</button></p>` : ''}
@@ -744,6 +748,40 @@ class DeskBoard extends LitElement {
             default:
                 return html`<button class=${cls} ?disabled=${this._doing !== null || this._mvnpmStarting != null}
                     @click=${() => this._run(item, n)}>${busy ? spinner : ''}${n.label}</button>`;
+        }
+    }
+
+    /**
+     * How many commits a PR has. With more than one, on your PR or where you can write, a click squashes it into one
+     * on its base (the runner does it; nothing reaches GitHub) and opens the row on the push to confirm.
+     */
+    _commitsChip(item, f) {
+        const n = item.commitCount;
+        if (item.kind !== 'PR' || n == null || f.waiting === 'done') return '';
+        const label = `${n} commit${n === 1 ? '' : 's'}`;
+        const squashable = n > 1 && !isDependabot(item) && f.waiting !== 'agent' && (f.role === 'mine' || item.canWrite);
+        if (!squashable) return html`<span class="chip commits">${label}</span>`;
+        const busy = this._doing === `${item.key} squash`;
+        return html`<button class="chip commits squash" ?disabled=${this._doing !== null}
+                title="Squash into one commit on its base. You confirm the push." @click=${() => this._squash(item)}>
+            ${busy ? spinner : ''}${label}<span aria-hidden="true">Squash to 1</span></button>`;
+    }
+
+    async _squash(item) {
+        this._doing = `${item.key} squash`;
+        this._rowError = null;
+        try {
+            const desk = await api();
+            await desk.squash({ itemKey: item.key });
+            // The squashed commit waits in the row's thread as a push for you to read and confirm.
+            this._open = item.key;
+            this._panel = 'thread';
+            this._moreFor = null;
+            await this._reloadNow();
+        } catch (e) {
+            this._rowError = { key: item.key, text: `Squash: ${errorMessage(e)}` };
+        } finally {
+            this._doing = null;
         }
     }
 

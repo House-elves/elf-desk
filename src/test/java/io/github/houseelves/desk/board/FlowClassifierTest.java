@@ -54,7 +54,7 @@ class FlowClassifierTest {
     static Item withoutWrite(Item p) {
         return new Item(p.key(), p.repo(), p.number(), p.kind(), p.title(), p.url(), p.author(), p.assignees(),
                 p.createdAt(), p.updatedAt(), p.comments(), p.draft(), p.headRef(), p.headSha(), p.ci(), p.reviewDecision(),
-                p.mergeable(), p.mergeState(), p.approved(), false);
+                p.mergeable(), p.mergeState(), p.approved(), false, null);
     }
 
     static List<String> ids(List<Flow.Next> next) {
