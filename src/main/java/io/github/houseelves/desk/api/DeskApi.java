@@ -210,6 +210,7 @@ public class DeskApi {
 
     /** Run mvnpm-dependabot now: every repo (repo and pr null), or one PR (re-checked even if already checked). */
     public MvnpmRuns.State mvnpmRun(String repo, Integer pr) {
+        if (!settings.mvnpmEnabled()) throw new IllegalStateException("mvnpm is turned off in the GitHub settings.");
         mvnpmRuns.run(repo, pr);
         return mvnpmRuns.state();
     }
@@ -445,14 +446,15 @@ public class DeskApi {
     }
 
     public record SettingsView(String login, List<ScopeRow> scope, boolean mvnpmInstalled, List<String> mvnpmRepos,
-            int refreshMinutes) {
+            int refreshMinutes, boolean mvnpmEnabled) {
     }
 
     public SettingsView settings() {
         List<ScopeRow> rows = scopes.rows().stream()
                 .map(w -> new ScopeRow(w.id, w.kind.name(), w.name, w.mode.name()))
                 .toList();
-        return new SettingsView(user.login(), rows, mvnpm.installed(), mvnpm.repos(), settings.refreshMinutes());
+        return new SettingsView(user.login(), rows, mvnpm.installed(), mvnpm.repos(), settings.refreshMinutes(),
+                settings.mvnpmEnabled());
     }
 
     public List<BoardService.Suggestion> suggestions() {
@@ -479,6 +481,12 @@ public class DeskApi {
 
     public SettingsView remove(long id) {
         scopes.remove(id);
+        return settings();
+    }
+
+    /** The mvnpm lane and checks on or off for this desk (for desks without mvnpm-dependabot work). */
+    public SettingsView setMvnpmEnabled(boolean on) {
+        settings.setMvnpmEnabled(on);
         return settings();
     }
 

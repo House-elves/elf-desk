@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -32,6 +33,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.houseelves.desk.github.GitHub;
 import io.github.houseelves.desk.github.Item;
 import io.github.houseelves.desk.ignore.IgnoreService;
+import io.github.houseelves.desk.Items;
 import io.github.houseelves.desk.mvnpm.MvnpmElf;
 import io.github.houseelves.desk.runner.Live;
 import io.github.houseelves.desk.scope.Scope;
@@ -60,6 +62,7 @@ class BoardServiceTest {
         when(mvnpm.repos()).thenReturn(List.of());
         when(mvnpm.state()).thenReturn(new ObjectMapper().createObjectNode());
         when(settings.refreshMinutes()).thenReturn(5);
+        when(settings.mvnpmEnabled()).thenReturn(true);
         when(github.search(anyString(), contains("review-requested"), anyInt()))
                 .thenReturn(new GitHub.SearchResult(List.of(), 0));
         when(github.search(anyString(), contains("reviewed-by"), anyInt()))
@@ -111,6 +114,19 @@ class BoardServiceTest {
         verify(live, timeout(5000).times(2)).boardUpdated(); // the first load, then the background refresh
         verify(github, after(200).times(2)).search(eq("t"), contains("involves:@me"), anyInt());
         assertEquals(List.of("quarkusio/quarkus#2"), keys(service.board("me", "t", false)));
+    }
+
+    @Test
+    void mvnpmTurnedOffHasNoLaneAndNoSearchOfItsOwn() {
+        when(mvnpm.repos()).thenReturn(List.of("quarkusio/quarkus"));
+        when(mvnpm.installed()).thenReturn(true);
+        when(settings.mvnpmEnabled()).thenReturn(false);
+        involvedReturns(Items.mvnpmBump("quarkusio/quarkus", 9, "abc"));
+        Board b = service.board("me", "t", false);
+        assertFalse(b.mvnpm().installed());
+        assertTrue(b.mvnpm().rows().isEmpty());
+        assertEquals(List.of("quarkusio/quarkus#9"), keys(b)); // the bump shows like any other PR
+        verify(github, after(200).never()).search(anyString(), contains("author:app/dependabot"), anyInt());
     }
 
     @Test

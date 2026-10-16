@@ -9,6 +9,7 @@ public class Settings {
 
     static final String REFRESH_MINUTES = "board.refresh-minutes";
     static final int DEFAULT_REFRESH_MINUTES = 5;
+    static final String MVNPM_ENABLED = "mvnpm.enabled";
 
     @Transactional
     public int refreshMinutes() {
@@ -19,6 +20,24 @@ public class Settings {
         } catch (NumberFormatException e) {
             return DEFAULT_REFRESH_MINUTES;
         }
+    }
+
+    /** The mvnpm lane and checks on the desk (on unless turned off; they also need mvnpm-dependabot set up). */
+    @Transactional
+    public boolean mvnpmEnabled() {
+        Setting s = Setting.findById(MVNPM_ENABLED);
+        return s == null || !s.value.equals("false");
+    }
+
+    @Transactional
+    public void setMvnpmEnabled(boolean on) {
+        Setting s = Setting.findById(MVNPM_ENABLED);
+        if (s == null) {
+            s = new Setting();
+            s.key = MVNPM_ENABLED;
+        }
+        s.value = Boolean.toString(on);
+        s.persist();
     }
 
     @Transactional

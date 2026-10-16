@@ -45,6 +45,10 @@ class DeskSettings extends LitElement {
         .chip button:focus-visible { outline: 2px solid var(--accent); }
         .first { padding: 16px 18px; display: flex; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--line); }
         .general { padding: 14px 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .mvnpm-toggle { display: grid; gap: 6px; margin-top: 10px; }
+        .mvnpm-toggle .switch { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+        .mvnpm-toggle input { width: 17px; height: 17px; accent-color: var(--accent); margin: 0; }
+        .mvnpm-toggle .note { margin: 0; font-size: 13.5px; color: var(--muted); }
         code { font: 13px var(--font-code); background: var(--surface-2); padding: 2px 6px; border-radius: 5px; }
         .sk { height: 52px; }
         @media (max-width: 600px) {
@@ -83,6 +87,13 @@ class DeskSettings extends LitElement {
     }
 
     /** Runs one DeskApi call that returns the new settings, then refreshes suggestions. `what` names the busy control. */
+    async _setMvnpm(on) {
+        if (await this._do('mvnpm', d => d.setMvnpmEnabled({ on }))) {
+            // The board fetches again: turning it on brings back the bumps' own search.
+            this.dispatchEvent(new CustomEvent('mvnpm-changed', { bubbles: true, composed: true }));
+        }
+    }
+
     async _do(what, call) {
         this._busy = what;
         this._error = null;
@@ -276,6 +287,16 @@ class DeskSettings extends LitElement {
                         ${[2, 5, 10, 15, 30, 60].map(m => html`<option value=${m} ?selected=${m === s.refreshMinutes}>${m} minutes</option>`)}
                     </select>
                     ${this._spin('refresh')}
+                </div>
+                <div class="panel general mvnpm-toggle">
+                    <label class="switch"><input type="checkbox" role="switch" .checked=${s.mvnpmEnabled} ?disabled=${this._busy !== null}
+                            @change=${e => this._setMvnpm(e.target.checked)}>
+                        <span><b>mvnpm updates</b> ${this._spin('mvnpm')}</span></label>
+                    <p class="note">${s.mvnpmEnabled
+                        ? s.mvnpmInstalled
+                            ? html`A lane for Dependabot's web-jar bumps in ${s.mvnpmRepos.join(', ')}, which mvnpm-dependabot checks.`
+                            : 'On, but mvnpm-dependabot isn\'t set up on this machine, so there\'s no lane.'
+                        : 'Off: no mvnpm lane, tag or checks, and Dependabot\'s bumps show like any other PR.'}</p>
                 </div>
             </section>
         `;

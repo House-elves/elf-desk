@@ -117,7 +117,9 @@ public class BoardService {
                 refreshing = true;
             }
         }
-        return BoardClassifier.classify(fetched, scopes.scope(), mvnpm.repos(), mvnpm.installed(), mvnpm.state(),
+        boolean mvnpmOn = settings.mvnpmEnabled();
+        return BoardClassifier.classify(fetched, scopes.scope(), mvnpmOn ? mvnpm.repos() : List.of(),
+                mvnpmOn && mvnpm.installed(), mvnpm.state(),
                 settings.refreshMinutes(), ignores.keys()).refreshing(refreshing).returned(ignores.recentlyReturned())
                 .sinceReview(sinceReview.getOrDefault(login, Map.of()))
                 .reviewedAt(reviewedAt.getOrDefault(login, Map.of()))
@@ -286,7 +288,8 @@ public class BoardService {
     /** The three searches, in parallel. */
     private BoardClassifier.Fetched fetchNow(String login, String token) {
         Instant now = clock.instant();
-        List<String> elfRepos = mvnpm.repos();
+        // Turned off in the settings, the mvnpm lane goes: its bumps show like any other PR.
+        List<String> elfRepos = settings.mvnpmEnabled() ? mvnpm.repos() : List.of();
         var involved = async(() -> github.search(token, "is:open involves:@me archived:false sort:updated-desc",
                 MAX_INVOLVED));
         var review = async(() -> github.search(token,
