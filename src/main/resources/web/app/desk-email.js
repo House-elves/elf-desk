@@ -15,6 +15,7 @@ class DeskEmail extends LitElement {
         _run: { state: true },
         _picked: { state: true },
         _doing: { state: true },
+        _hiding: { state: true },
         _all: { state: true },
         _loading: { state: true },
         _error: { state: true },
@@ -46,6 +47,8 @@ class DeskEmail extends LitElement {
         new Ticking(this);
         this._picked = null;
         this._loading = true;
+        this._hiding = new Set();
+        this._queue = Promise.resolve();
     }
 
     connectedCallback() {
@@ -72,26 +75,40 @@ class DeskEmail extends LitElement {
         return `https://mail.google.com/mail/?authuser=${encodeURIComponent(account)}#search/rfc822msgid:${encodeURIComponent(id)}`;
     }
 
-    /** Done: Gmail marks the thread read, and it moves to the done list. */
-    async _done(account, d) {
-        this._doing = d.messageId;
+    /** Done, or on its way there: clicked, and Gmail hasn't answered yet. */
+    _isDone(d) {
+        return d.done || this._hiding.has(d.messageId);
+    }
+
+    /**
+     * Done: the email moves to the done list straight away, so the next one can be read, and Gmail marks the thread
+     * read in the background. The clicks go one at a time, so each answer has the ones before it in. One Gmail
+     * refuses comes back, with the error.
+     */
+    _done(account, d) {
+        const id = d.messageId;
+        this._hiding = new Set(this._hiding).add(id);
         this._error = null;
-        try {
-            const desk = await api();
-            const r = await desk.emailDone({ account, messageId: d.messageId });
-            if (!this._picked) this._run = r;
-            else await this._load();
-        } catch (e) {
-            this._error = `${d.subject || 'That email'}: ${errorMessage(e)}`;
-        } finally {
-            this._doing = null;
-        }
+        this._queue = this._queue.then(async () => {
+            try {
+                const desk = await api();
+                const r = await desk.emailDone({ account, messageId: id });
+                if (!this._picked) this._run = r;
+                else await this._load();
+            } catch (e) {
+                this._error = `${d.subject || 'That email'}: ${errorMessage(e)}`;
+            } finally {
+                const hiding = new Set(this._hiding);
+                hiding.delete(id);
+                this._hiding = hiding;
+            }
+        });
     }
 
     /** What still needs you in the newest run, across accounts: what Done all marks. */
     _open() {
         return (this._run?.accounts ?? []).flatMap(a => (a.decisions ?? [])
-            .filter(d => d.decision !== 'MARK_READ' && !d.done && d.messageId).map(d => ({ account: a.email, d })));
+            .filter(d => d.decision !== 'MARK_READ' && !this._isDone(d) && d.messageId).map(d => ({ account: a.email, d })));
     }
 
     /** Done all: each email in turn, as if you clicked its Done. One that fails is left for you; the rest go on. */
@@ -123,7 +140,7 @@ class DeskEmail extends LitElement {
             Mark all ${n} ${n === 1 ? 'email' : 'emails'} read in Gmail?
             <button class="sm primary" @click=${this._doneAll}>Mark all read</button>
             <button class="sm quiet" @click=${() => { this._all = null; }}>Cancel</button></div>`;
-        return html`<div class="all"><button class="sm" ?disabled=${this._doing}
+        return html`<div class="all"><button class="sm" ?disabled=${this._doing || this._hiding.size}
             @click=${() => { this._all = 'confirm'; }}>Done all (${n})</button></div>`;
     }
 
@@ -137,7 +154,7 @@ class DeskEmail extends LitElement {
                 <span class="from">${d.from}</span>
                 <span class="why">${d.reason}</span>
             </span>
-            ${done && d.messageId ? html`<button class="sm" ?disabled=${this._doing}
+            ${done && d.messageId ? html`<button class="sm" ?disabled=${this._all?.of}
                 title="Marks the thread read in Gmail" @click=${() => this._done(account, d)}>
                 ${this._doing === d.messageId ? spinner : ''}Done</button>` : ''}
         </li>`;
@@ -149,8 +166,8 @@ class DeskEmail extends LitElement {
         return html`
             <section aria-label="Email triage">
                 ${accounts.map(a => {
-                    const kept = (a.decisions ?? []).filter(d => d.decision !== 'MARK_READ' && !d.done);
-                    const done = (a.decisions ?? []).filter(d => d.decision !== 'MARK_READ' && d.done);
+                    const kept = (a.decisions ?? []).filter(d => d.decision !== 'MARK_READ' && !this._isDone(d));
+                    const done = (a.decisions ?? []).filter(d => d.decision !== 'MARK_READ' && this._isDone(d));
                     const read = (a.decisions ?? []).filter(d => d.decision === 'MARK_READ');
                     return html`
                         <div class="account">

@@ -15,6 +15,7 @@ class DeskZulip extends LitElement {
         _run: { state: true },
         _picked: { state: true },
         _doing: { state: true },
+        _hiding: { state: true },
         _all: { state: true },
         _loading: { state: true },
         _error: { state: true },
@@ -54,6 +55,8 @@ class DeskZulip extends LitElement {
         new Ticking(this);
         this._picked = null;
         this._loading = true;
+        this._hiding = new Set();
+        this._queue = Promise.resolve();
     }
 
     connectedCallback() {
@@ -89,28 +92,37 @@ class DeskZulip extends LitElement {
             t.you = t.mention || t.messages.some(m => m.involvesMe);
             t.unread = t.messages.filter(m => m.unread).length;
             t.digest = run.digests?.[t.key];
-            // Done until a newer message arrives.
-            t.done = !!run.done?.[t.key] && Date.parse(run.done[t.key]) >= t.last.time * 1000;
+            // Done until a newer message arrives; or clicked, and Zulip hasn't answered yet.
+            t.done = (!!run.done?.[t.key] && Date.parse(run.done[t.key]) >= t.last.time * 1000) || this._hiding.has(t.key);
             return t;
         });
         const rank = t => (t.you ? 2 : 0) + (t.unread ? 1 : 0);
         return topics.sort((a, b) => rank(b) - rank(a) || b.last.time - a.last.time);
     }
 
-    /** Done: Zulip marks the topic read, and it folds away until it has newer messages. */
-    async _done(t) {
-        this._doing = t.key;
+    /**
+     * Done: the topic folds away straight away, so the next one can be read, and Zulip marks it read in the
+     * background; it comes back when it has newer messages. The clicks go one at a time, so each answer has the ones
+     * before it in. One Zulip refuses comes back, with the error.
+     */
+    _done(t) {
+        const key = t.key;
+        this._hiding = new Set(this._hiding).add(key);
         this._error = null;
-        try {
-            const desk = await api();
-            const r = await desk.zulipDone({ server: t.last.server, stream: t.stream, topic: t.topic });
-            if (!this._picked) this._run = r;
-            else await this._load();
-        } catch (e) {
-            this._error = `${t.topic || t.stream}: ${errorMessage(e)}`;
-        } finally {
-            this._doing = null;
-        }
+        this._queue = this._queue.then(async () => {
+            try {
+                const desk = await api();
+                const r = await desk.zulipDone({ server: t.last.server, stream: t.stream, topic: t.topic });
+                if (!this._picked) this._run = r;
+                else await this._load();
+            } catch (e) {
+                this._error = `${t.topic || t.stream}: ${errorMessage(e)}`;
+            } finally {
+                const hiding = new Set(this._hiding);
+                hiding.delete(key);
+                this._hiding = hiding;
+            }
+        });
     }
 
     /** Done all: each open topic in turn, as if you clicked its Done. One that fails is left for you; the rest go on. */
@@ -141,7 +153,7 @@ class DeskZulip extends LitElement {
             Mark all ${n} ${n === 1 ? 'topic' : 'topics'} read in Zulip?
             <button class="sm primary" @click=${() => this._doneAll(topics)}>Mark all read</button>
             <button class="sm quiet" @click=${() => { this._all = null; }}>Cancel</button></div>`;
-        return html`<div class="all"><button class="sm" ?disabled=${this._doing}
+        return html`<div class="all"><button class="sm" ?disabled=${this._doing || this._hiding.size}
             @click=${() => { this._all = 'confirm'; }}>Done all (${n})</button></div>`;
     }
 
@@ -155,7 +167,7 @@ class DeskZulip extends LitElement {
                 <div class="where">
                     <span class="stream">${t.stream === 'DM' ? 'Direct message' : `#${t.stream}`}</span>
                     <a class="topic" href=${t.last.url} target="_blank" rel="noopener">${t.topic || '(no topic)'}</a>
-                    ${t.done ? '' : html`<button class="sm" ?disabled=${this._doing}
+                    ${t.done ? '' : html`<button class="sm" ?disabled=${this._all?.of}
                         title=${t.stream === 'DM' ? 'Marks these direct messages read in Zulip' : 'Marks the topic read in Zulip'}
                         @click=${() => this._done(t)}>${this._doing === t.key ? spinner : ''}Done</button>`}
                 </div>
