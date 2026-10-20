@@ -157,6 +157,7 @@ public class CiService {
      */
     public ThreadView why(String itemKey, String login, String token, boolean again) {
         GitHub.CiReport ci = report(itemKey, token);
+        if (!failing(ci)) throw new NotFailing(ci.ci());
         ThreadView existing = again ? null : threads.existing(itemKey, Prompts.CI_WHY, ci.headSha());
         if (existing != null) return existing;
         return threads.start(itemKey, Prompts.CI_WHY, null, login, token, failures(itemKey, ci, token),
@@ -165,6 +166,22 @@ public class CiService {
 
     public ThreadView why(String itemKey, String login, String token) {
         return why(itemKey, login, token, false);
+    }
+
+    public static boolean failing(GitHub.CiReport ci) {
+        return "FAILURE".equals(ci.ci()) || "ERROR".equals(ci.ci());
+    }
+
+    /** CI isn't failing any more (the board had an old state): nothing for the agent to explain. */
+    public static class NotFailing extends IllegalStateException {
+        public NotFailing(String ci) {
+            super("CI isn't failing on this PR any more" + switch (ci == null ? "" : ci) {
+                case "SUCCESS" -> ": it passes now";
+                case "PENDING", "EXPECTED" -> ": it's running";
+                case GitHub.AWAITING_APPROVAL -> ": it's waiting for a run to be approved";
+                default -> "";
+            } + ". The board shows that now.");
+        }
     }
 
     /** "Fix this": the agent commits a fix in its worktree; its commits become a push draft you confirm. */

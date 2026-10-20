@@ -1,6 +1,7 @@
 package io.github.houseelves.desk.github;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -289,5 +290,40 @@ class GitHubTest {
         assertEquals(List.of("b/B.java", "a/A.java", "a/A.java"), r.threads().stream().map(GitHub.ReviewThread::path).toList());
         assertEquals(40, r.threads().get(0).line()); // outdated: the original line
         assertTrue(r.threads().get(0).isNew() && !r.threads().get(1).isNew() && r.threads().get(2).resolved());
+    }
+
+    @Test
+    void aFailedRunThatANewerRunOfTheSameWorkflowReplacedDoesntCount() throws Exception {
+        // quarkusio/search.quarkus.io#636: Build run 1554 failed, a close and reopen started 1555, which passed.
+        String suites = """
+                "checkSuites": {"nodes": [
+                  {"conclusion": "FAILURE", "workflowRun": {"databaseId": 39177557036, "workflow": {"databaseId": 7}}},
+                  {"conclusion": "SUCCESS", "workflowRun": {"databaseId": 39181508545, "workflow": {"databaseId": 7}}},
+                  {"conclusion": "NEUTRAL", "workflowRun": null},
+                  {"conclusion": null, "workflowRun": null}]}""";
+        String rollup = """
+                "statusCheckRollup": {"state": "FAILURE", "contexts": {"checkRunCountsByState":
+                  [{"state": "FAILURE", "count": 1}, {"state": "SUCCESS", "count": 1}], "statusContextCountsByState": []}}""";
+        JsonNode commit = json("{" + rollup + ", \"status\": null, " + suites + "}");
+        assertEquals(java.util.Set.of(39177557036L), GitHub.replacedRuns(commit));
+        assertTrue(GitHub.passedOnRerun(commit));
+        assertEquals("SUCCESS", GitHub.commitCi(commit));
+
+        // The newer run failed too: still failing.
+        JsonNode bothFailed = json("{" + rollup + ", " + suites.replace("\"SUCCESS\"", "\"FAILURE\"") + "}");
+        assertFalse(GitHub.passedOnRerun(bothFailed));
+        assertEquals("FAILURE", GitHub.commitCi(bothFailed));
+
+        // Another workflow failed: still failing.
+        JsonNode other = json("{" + rollup + ", " + suites.replace("{\"conclusion\": null, \"workflowRun\": null}",
+                "{\"conclusion\": \"FAILURE\", \"workflowRun\": {\"databaseId\": 1, \"workflow\": {\"databaseId\": 8}}}") + "}");
+        assertFalse(GitHub.passedOnRerun(other));
+
+        // A failed commit status: still failing.
+        assertFalse(GitHub.passedOnRerun(json("{" + rollup + ", \"status\": {\"state\": \"FAILURE\"}, " + suites + "}")));
+
+        // Only one run: GitHub's rollup stands.
+        assertFalse(GitHub.passedOnRerun(json("""
+                {"checkSuites": {"nodes": [{"conclusion": "FAILURE", "workflowRun": {"databaseId": 1, "workflow": {"databaseId": 7}}}]}}""")));
     }
 }

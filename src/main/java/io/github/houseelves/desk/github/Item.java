@@ -81,9 +81,18 @@ public record Item(
 
     /** The same PR with the details search can't afford: merge state, and CI waiting for approval. */
     public Item withDetails(String newMergeState, boolean awaitingApproval) {
+        return withDetails(newMergeState, awaitingApproval, false);
+    }
+
+    /**
+     * @param passedOnRerun CI only fails on workflow runs that a newer run of the same workflow replaced, and that
+     *                      one passed (GitHub's rollup still says FAILURE): it shows as SUCCESS
+     */
+    public Item withDetails(String newMergeState, boolean awaitingApproval, boolean passedOnRerun) {
+        String newCi = awaitingApproval ? GitHub.AWAITING_APPROVAL
+                : passedOnRerun && ("FAILURE".equals(ci) || "ERROR".equals(ci)) ? "SUCCESS" : ci;
         return new Item(key, repo, number, kind, title, url, author, assignees, createdAt, updatedAt, comments, draft,
-                headRef, headSha, awaitingApproval ? GitHub.AWAITING_APPROVAL : ci, reviewDecision, mergeable, newMergeState,
-                approved, canWrite, commitCount);
+                headRef, headSha, newCi, reviewDecision, mergeable, newMergeState, approved, canWrite, commitCount);
     }
 
     /** The same item with {@code login} added to its assignees (right after you assign yourself). */

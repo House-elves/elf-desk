@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -115,7 +116,7 @@ public class GitHub {
                 mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerDefaultMergeMethod
                 pullRequest(number: $number) {
                   title url state isDraft headRefOid mergeable mergeStateStatus reviewDecision
-                  commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 1) { checkRunCountsByState { state count } statusContextCountsByState { state count } } } checkSuites(first: 30) { nodes { conclusion workflowRun { databaseId pendingDeploymentRequests(first: 3) { nodes { currentUserCanApprove environment { databaseId } } } } } } } } }
+                  commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 1) { checkRunCountsByState { state count } statusContextCountsByState { state count } } } status { state } checkSuites(first: 30) { nodes { conclusion workflowRun { databaseId workflow { databaseId } pendingDeploymentRequests(first: 3) { nodes { currentUserCanApprove environment { databaseId } } } } } } } } }
                   latestOpinionatedReviews(first: 20, writersOnly: true) { nodes { state } }
                 }
               }
@@ -132,11 +133,11 @@ public class GitHub {
                   headRepository { nameWithOwner owner { login } }
                   commits(last: 1) { nodes { commit {
                     statusCheckRollup { state contexts(first: 1) { checkRunCountsByState { state count } statusContextCountsByState { state count } } }
-                    status { contexts { context state targetUrl } }
+                    status { state contexts { context state targetUrl } }
                     checkSuites(first: 50) { nodes {
                       app { slug }
                       conclusion
-                      workflowRun { databaseId pendingDeploymentRequests(first: 3) { nodes { currentUserCanApprove environment { databaseId } } } }
+                      workflowRun { databaseId workflow { databaseId } pendingDeploymentRequests(first: 3) { nodes { currentUserCanApprove environment { databaseId } } } }
                       checkRuns(first: 50, filterBy: { checkType: LATEST,
                           conclusions: [FAILURE, TIMED_OUT, CANCELLED, STARTUP_FAILURE, ACTION_REQUIRED] }) {
                         nodes { name conclusion databaseId detailsUrl }
@@ -309,10 +310,9 @@ public class GitHub {
         if (r.path("rebaseMergeAllowed").asBoolean()) methods.add("rebase");
         String preferred = r.path("viewerDefaultMergeMethod").asText("MERGE").toLowerCase(java.util.Locale.ROOT);
         JsonNode prCommit = pr.path("commits").path("nodes").path(0).path("commit");
-        JsonNode rollup = prCommit.path("statusCheckRollup");
         return new PullState(pr.path("title").asText(), pr.path("url").asText(), pr.path("state").asText(),
                 pr.path("isDraft").asBoolean(), pr.path("headRefOid").asText(),
-                awaitingApproval(prCommit).isEmpty() ? ciState(rollup) : AWAITING_APPROVAL,
+                awaitingApproval(prCommit).isEmpty() ? commitCi(prCommit) : AWAITING_APPROVAL,
                 pr.path("mergeable").asText("UNKNOWN"), pr.path("mergeStateStatus").asText("UNKNOWN"),
                 textOrNull(pr.path("reviewDecision")), List.copyOf(methods),
                 methods.contains(preferred) ? preferred : methods.isEmpty() ? "merge" : methods.get(0),
@@ -366,10 +366,12 @@ public class GitHub {
         JsonNode commit = pr.path("commits").path("nodes").path(0).path("commit");
         List<FailedCheck> failed = new ArrayList<>();
         LinkedHashSet<Long> runs = new LinkedHashSet<>();
+        Set<Long> replaced = replacedRuns(commit);
         for (JsonNode suite : commit.path("checkSuites").path("nodes")) {
             boolean actions = suite.path("app").path("slug").asText().equals("github-actions");
             Long runId = suite.path("workflowRun").path("databaseId").isNumber()
                     ? suite.path("workflowRun").path("databaseId").asLong() : null;
+            if (runId != null && replaced.contains(runId)) continue;
             for (JsonNode run : suite.path("checkRuns").path("nodes")) {
                 failed.add(new FailedCheck(run.path("name").asText(), run.path("conclusion").asText(),
                         run.path("detailsUrl").asText(null), actions ? run.path("databaseId").asLong() : null,
@@ -394,7 +396,7 @@ public class GitHub {
                 : write;
         List<Approval> waiting = awaitingApproval(commit);
         return new CiReport(pr.path("headRefOid").asText(),
-                waiting.isEmpty() ? ciState(commit.path("statusCheckRollup")) : AWAITING_APPROVAL,
+                waiting.isEmpty() ? commitCi(commit) : AWAITING_APPROVAL,
                 List.copyOf(failed), List.copyOf(runs),
                 pr.path("headRepository").path("nameWithOwner").asText(repo), pr.path("headRefName").asText(),
                 canPush && pr.path("headRepository").isObject(), waiting, write,
@@ -533,15 +535,24 @@ public class GitHub {
      * @param myReviewedSha  the head commit you reviewed, or null
      * @param feedback       on your own PRs: what reviewers said last, or null
      */
+    /**
+     * @param passedOnRerun every check passes once failed workflow runs that a newer run of the same workflow
+     *                      replaced are left out (see {@link #passedOnRerun}), which GitHub's rollup doesn't do
+     */
     public record PrDetails(String mergeState, boolean awaitingApproval, Instant myReviewAt, String myReviewedSha,
-            Feedback feedback) {
+            Feedback feedback, boolean passedOnRerun) {
 
         public PrDetails(String mergeState, boolean awaitingApproval) {
-            this(mergeState, awaitingApproval, null, null, null);
+            this(mergeState, awaitingApproval, null, null, null, false);
         }
 
         public PrDetails(String mergeState, boolean awaitingApproval, Instant myReviewAt, String myReviewedSha) {
-            this(mergeState, awaitingApproval, myReviewAt, myReviewedSha, null);
+            this(mergeState, awaitingApproval, myReviewAt, myReviewedSha, null, false);
+        }
+
+        public PrDetails(String mergeState, boolean awaitingApproval, Instant myReviewAt, String myReviewedSha,
+                Feedback feedback) {
+            this(mergeState, awaitingApproval, myReviewAt, myReviewedSha, feedback, false);
         }
     }
 
@@ -632,7 +643,7 @@ public class GitHub {
                 q.append("  p").append(i).append(": repository(owner: \"").append(repo[0]).append("\", name: \"")
                         .append(repo[1]).append("\") { pullRequest(number: ").append(key.substring(key.indexOf('#') + 1))
                         .append(") { mergeStateStatus commits(last: 1) { nodes { commit { "
-                                + "checkSuites(first: 30) { nodes { conclusion " + WORKFLOW_RUN + " } } } } } ")
+                                + "status { state } checkSuites(first: 30) { nodes { conclusion " + WORKFLOW_RUN + " } } } } } ")
                         .append(mine ? "reviews(author: \"" + login + "\", last: 1) { nodes { submittedAt commit { oid } } } "
                                 + "author { login } " + FEEDBACK : "")
                         .append("} }\n");
@@ -644,10 +655,11 @@ public class GitHub {
                 if (!pr.isObject()) continue;
                 JsonNode review = pr.path("reviews").path("nodes").path(0);
                 boolean myPr = mine && login.equalsIgnoreCase(pr.path("author").path("login").asText());
+                JsonNode commit = pr.path("commits").path("nodes").path(0).path("commit");
                 out.put(chunk.get(i), new PrDetails(textOrNull(pr.path("mergeStateStatus")),
-                        !awaitingApproval(pr.path("commits").path("nodes").path(0).path("commit")).isEmpty(),
+                        !awaitingApproval(commit).isEmpty(),
                         instant(review.path("submittedAt")), textOrNull(review.path("commit").path("oid")),
-                        myPr ? feedback(pr, login) : null));
+                        myPr ? feedback(pr, login) : null, passedOnRerun(commit)));
             }
         }
         return out;
@@ -1001,6 +1013,55 @@ public class GitHub {
         return rollup.path("state").asText(null);
     }
 
+    /** {@link #ciState} of a commit, SUCCESS when it only fails on runs a newer run replaced ({@link #passedOnRerun}). */
+    static String commitCi(JsonNode commit) {
+        String state = ciState(commit.path("statusCheckRollup"));
+        return ("FAILURE".equals(state) || "ERROR".equals(state)) && passedOnRerun(commit) ? "SUCCESS" : state;
+    }
+
+    static final Set<String> PASSED = Set.of("SUCCESS", "NEUTRAL", "SKIPPED");
+
+    /**
+     * The workflow runs on a commit that a newer run of the same workflow replaced. Closing and reopening a PR (or a
+     * new trigger) starts a second run beside the failed one, and GitHub keeps counting the failed one in its rollup.
+     */
+    static Set<Long> replacedRuns(JsonNode commit) {
+        Map<Long, Long> newest = new HashMap<>();
+        for (JsonNode suite : commit.path("checkSuites").path("nodes")) {
+            JsonNode run = suite.path("workflowRun");
+            if (!run.path("databaseId").isNumber() || !run.path("workflow").path("databaseId").isNumber()) continue;
+            newest.merge(run.path("workflow").path("databaseId").asLong(), run.path("databaseId").asLong(), Math::max);
+        }
+        Set<Long> replaced = new HashSet<>();
+        for (JsonNode suite : commit.path("checkSuites").path("nodes")) {
+            JsonNode run = suite.path("workflowRun");
+            if (!run.path("databaseId").isNumber() || !run.path("workflow").path("databaseId").isNumber()) continue;
+            long id = run.path("databaseId").asLong();
+            if (id != newest.get(run.path("workflow").path("databaseId").asLong())) replaced.add(id);
+        }
+        return replaced;
+    }
+
+    /**
+     * Every check on the commit passed, once the runs a newer run replaced ({@link #replacedRuns}) are left out:
+     * at least one was, every other check suite passed, and no commit status failed.
+     */
+    static boolean passedOnRerun(JsonNode commit) {
+        Set<Long> replaced = replacedRuns(commit);
+        if (replaced.isEmpty()) return false;
+        String status = commit.path("status").path("state").asText("SUCCESS");
+        if (!status.equals("SUCCESS")) return false;
+        for (JsonNode suite : commit.path("checkSuites").path("nodes")) {
+            JsonNode run = suite.path("workflowRun").path("databaseId");
+            if (run.isNumber() && replaced.contains(run.asLong())) continue;
+            String conclusion = suite.path("conclusion").asText("");
+            // A suite of an app that never ran a check has no conclusion and no runs: it doesn't count.
+            if (conclusion.isEmpty() && !run.isNumber()) continue;
+            if (!PASSED.contains(conclusion)) return false;
+        }
+        return true;
+    }
+
     /**
      * CI state for a commit whose GitHub Actions runs wait for you to approve them: a fork PR's runs ("Approve and
      * run"), or a run held at a deployment environment you review (quarkusio/quarkus holds Dependabot PRs' CI at the
@@ -1009,7 +1070,7 @@ public class GitHub {
     public static final String AWAITING_APPROVAL = "AWAITING_APPROVAL";
 
     /** A workflow run's databaseId and the deployment requests on it (for {@link #awaitingApproval}). */
-    static final String WORKFLOW_RUN = "workflowRun { databaseId pendingDeploymentRequests(first: 3) { nodes { "
+    static final String WORKFLOW_RUN = "workflowRun { databaseId workflow { databaseId } pendingDeploymentRequests(first: 3) { nodes { "
             + "currentUserCanApprove environment { databaseId } } } }";
 
     /**

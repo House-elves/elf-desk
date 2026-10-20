@@ -214,7 +214,7 @@ public class BoardService {
         Item fresh = github.item(token, repo, number);
         if (fresh != null && fresh.isPr()) {
             GitHub.PrDetails d = github.prDetails(token, List.of(itemKey)).get(itemKey);
-            if (d != null) fresh = fresh.withDetails(d.mergeState(), d.awaitingApproval());
+            if (d != null) fresh = fresh.withDetails(d.mergeState(), d.awaitingApproval(), d.passedOnRerun());
         }
         Item item = fresh;
         BoardClassifier.Fetched before = cache.get(login);
@@ -385,7 +385,7 @@ public class BoardService {
     private static List<Item> enrich(List<Item> items, Map<String, GitHub.PrDetails> details) {
         return items.stream().map(i -> {
             GitHub.PrDetails d = details.get(i.key());
-            return d == null ? i : i.withDetails(d.mergeState(), d.awaitingApproval());
+            return d == null ? i : i.withDetails(d.mergeState(), d.awaitingApproval(), d.passedOnRerun());
         }).toList();
     }
 

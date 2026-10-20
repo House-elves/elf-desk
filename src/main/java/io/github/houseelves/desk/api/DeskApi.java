@@ -336,7 +336,9 @@ public class DeskApi {
 
     /** What failed on a PR's head, whether there are Actions runs to re-run, and whether a fix could be pushed. */
     public GitHub.CiReport ciReport(String itemKey) {
-        return ci.report(itemKey, user.githubToken());
+        GitHub.CiReport report = ci.report(itemKey, user.githubToken());
+        if (!CiService.failing(report)) boards.refreshItem(user.login(), user.githubToken(), itemKey);
+        return report;
     }
 
     /** Re-run the failed GitHub Actions jobs (through the runner). Returns how many workflow runs. */
@@ -361,12 +363,22 @@ public class DeskApi {
 
     /** The agent on why CI is failing: opens the existing answer if there is one for this commit (or it's working). */
     public ThreadView ciWhy(String itemKey) {
-        return ci.why(itemKey, user.login(), user.githubToken(), false);
+        return why(itemKey, false);
     }
 
     /** Ask why CI is failing again, even if it already answered for this commit. */
     public ThreadView ciWhyAgain(String itemKey) {
-        return ci.why(itemKey, user.login(), user.githubToken(), true);
+        return why(itemKey, true);
+    }
+
+    /** When CI passes by now, the board's copy of the PR is read again so the old failure goes. */
+    private ThreadView why(String itemKey, boolean again) {
+        try {
+            return ci.why(itemKey, user.login(), user.githubToken(), again);
+        } catch (CiService.NotFailing e) {
+            boards.refreshItem(user.login(), user.githubToken(), itemKey);
+            throw e;
+        }
     }
 
     /** Start the agent on fixing CI; its commits come back as a push draft for you to confirm. */
