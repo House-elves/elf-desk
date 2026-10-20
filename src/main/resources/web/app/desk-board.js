@@ -231,6 +231,12 @@ class DeskBoard extends LitElement {
             border-radius: 999px; padding: 0 7px; line-height: 18px;
         }
         .title { color: var(--ink); font-weight: 500; text-decoration: none; overflow-wrap: anywhere; }
+        .author {
+            flex: none; font-size: 12px; color: var(--muted); text-decoration: none;
+            background: var(--surface-2); border-radius: 999px; padding: 0 8px; line-height: 19px;
+            max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .author:hover { color: var(--accent); background: var(--accent-soft); }
         .title:hover { text-decoration: underline; }
         .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13px; color: var(--muted); }
         button.chip.squash { border: 0; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 500; line-height: 1; gap: 8px; }
@@ -665,6 +671,14 @@ class DeskBoard extends LitElement {
         this._unfolded = s;
     }
 
+    /** Who opened it, when that isn't you. */
+    _authorTag(item) {
+        const me = this._board?.login?.toLowerCase();
+        if (!item.author || item.author.toLowerCase() === me) return '';
+        return html`<a class="author" href="https://github.com/${item.author.replace(/\[bot\]$/, '')}" target="_blank"
+            rel="noopener" title="Opened by ${item.author}">@${item.author}</a>`;
+    }
+
     _renderRow(item, f) {
         rememberItem(item);
         const open = this._open === item.key;
@@ -676,6 +690,7 @@ class DeskBoard extends LitElement {
                     <div class="line1">
                         <span class="role">${ROLES[f.role] ?? f.role}</span>
                         <a class="title" href=${item.url} target="_blank" rel="noopener">${item.title}</a>
+                        ${this._authorTag(item)}
                     </div>
                     <div class="meta">
                         <span>${item.repo} #${item.number}</span>
