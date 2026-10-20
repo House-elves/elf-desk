@@ -473,6 +473,10 @@ public class DeskApi {
     /** A repo you maintain: its open PRs come to "Needs my review" and its issues to the board, involved or not. */
     public SettingsView addAlwaysInvolved(String repo) {
         String name = ScopeService.repoName(repo);
+        // GitHub refuses a whole search that names a repo it can't find, so only real ones go in.
+        if (!github.isPublic(user.githubToken(), name)) {
+            throw new IllegalArgumentException("There's no public repo " + name + " on GitHub. Check the name.");
+        }
         // Outside what the board watches it would be hidden, so it's watched too.
         if (!scopes.scope().covers(name)) scopes.watch(name);
         List<String> repos = new java.util.ArrayList<>(settings.alwaysInvolved());

@@ -363,9 +363,14 @@ public class BoardService {
         List<Item> items = new ArrayList<>();
         boolean truncated = false;
         for (String q : maintainedQueries(repos)) {
-            GitHub.SearchResult r = github.search(token, q, MAX_REVIEW);
-            items.addAll(r.items());
-            truncated |= r.truncated();
+            try {
+                GitHub.SearchResult r = github.search(token, q, MAX_REVIEW);
+                items.addAll(r.items());
+                truncated |= r.truncated();
+            } catch (Exception e) {
+                // A repo renamed or deleted since you added it: the rest of the board still shows.
+                LOG.warnf("Searching the repos you maintain failed (%s): %s", q, e.getMessage());
+            }
         }
         return new GitHub.SearchResult(List.copyOf(items), truncated ? Integer.MAX_VALUE : items.size());
     }

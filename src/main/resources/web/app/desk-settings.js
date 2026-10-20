@@ -259,7 +259,7 @@ class DeskSettings extends LitElement {
                                 ${this._spin(`unmaintain:${r}`)}Remove</button></div>
                         </li>`)}</ul>`}
                     <form class="add" @submit=${this._addMaintained}>
-                        <input type="text" id="add-maintained" aria-label="owner/repo you maintain" placeholder="quarkiverse/quarkus-agent-mcp">
+                        <input type="text" id="add-maintained" aria-label="owner/repo you maintain" placeholder="quarkusio/quarkus-agent-mcp">
                         <button type="submit" ?disabled=${this._busy !== null}>${this._spin('maintain')}Add</button>
                     </form>
                 </div>
