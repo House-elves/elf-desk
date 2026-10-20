@@ -98,6 +98,13 @@ public class ScopeService {
         return repo.substring(0, repo.indexOf('/'));
     }
 
+    /** An owner/repo as typed or pasted (a GitHub URL works too), lower case; refuses anything else. */
+    public static String repoName(String raw) {
+        String name = normalise(raw);
+        if (!REPO.matcher(name).matches()) throw new IllegalArgumentException("'" + raw + "' is not an owner/repo");
+        return name;
+    }
+
     private static String normalise(String raw) {
         if (raw == null) throw new IllegalArgumentException("Enter an org, a user, or an owner/repo");
         String s = raw.trim().toLowerCase(Locale.ROOT);

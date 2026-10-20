@@ -239,7 +239,47 @@ class DeskSettings extends LitElement {
                     ${this._renderAddForm()}
                 </div>
             </section>
+            ${this._renderMaintained(s)}
         `;
+    }
+
+    /** Repos you maintain: the board shows all their open PRs and issues, so none is missed. */
+    _renderMaintained(s) {
+        const repos = s.alwaysInvolved ?? [];
+        return html`
+            <section aria-labelledby="maintained">
+                <div class="head"><h2 id="maintained">Repos I maintain</h2>
+                    <p class="hint">Every open PR in these comes to Needs my review, and every open issue to the board,
+                        even when GitHub doesn't count you as involved.</p></div>
+                <div class="panel">
+                    ${repos.length === 0 ? html`<p class="empty">None yet.</p>` : html`<ul>${repos.map(r => html`
+                        <li><span class="name">${r}</span>
+                            <div class="acts"><button class="sm" ?disabled=${this._busy !== null}
+                                @click=${() => this._maintained(`unmaintain:${r}`, d => d.removeAlwaysInvolved({ repo: r }))}>
+                                ${this._spin(`unmaintain:${r}`)}Remove</button></div>
+                        </li>`)}</ul>`}
+                    <form class="add" @submit=${this._addMaintained}>
+                        <input type="text" id="add-maintained" aria-label="owner/repo you maintain" placeholder="quarkiverse/quarkus-agent-mcp">
+                        <button type="submit" ?disabled=${this._busy !== null}>${this._spin('maintain')}Add</button>
+                    </form>
+                </div>
+            </section>
+        `;
+    }
+
+    async _addMaintained(e) {
+        e.preventDefault();
+        const input = e.target.querySelector('input');
+        const repo = input.value.trim();
+        if (!repo) return;
+        if (await this._maintained('maintain', d => d.addAlwaysInvolved({ repo }))) input.value = '';
+    }
+
+    /** A change to the repos you maintain: the board fetches again, as their search changed. */
+    async _maintained(what, call) {
+        const ok = await this._do(what, call);
+        if (ok) this.dispatchEvent(new CustomEvent('board-search-changed', { bubbles: true, composed: true }));
+        return ok;
     }
 
     _renderAddForm() {

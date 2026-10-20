@@ -130,6 +130,31 @@ class BoardServiceTest {
     }
 
     @Test
+    void reposYouMaintainBringEveryPrToReviewAndEveryIssueToTheBoard() {
+        when(scopes.scope()).thenReturn(new Scope(Set.of("quarkusio", "quarkiverse"), Set.of(), Set.of()));
+        when(settings.alwaysInvolved()).thenReturn(List.of("quarkiverse/quarkus-agent-mcp"));
+        involvedReturns();
+        when(github.search(anyString(), contains("repo:quarkiverse/quarkus-agent-mcp"), anyInt()))
+                .thenReturn(new GitHub.SearchResult(List.of(pr("quarkiverse/quarkus-agent-mcp", 5, "someone"),
+                        io.github.houseelves.desk.Items.issue("quarkiverse/quarkus-agent-mcp", 6, "someone")), 2));
+        Board b = service.board("me", "t", false);
+        Map<String, List<String>> lanes = new java.util.HashMap<>();
+        b.lanes().forEach(l -> lanes.put(l.id(), l.items().stream().map(Item::key).toList()));
+        assertEquals(List.of("quarkiverse/quarkus-agent-mcp#5"), lanes.get(BoardClassifier.REVIEW));
+        assertEquals(List.of("quarkiverse/quarkus-agent-mcp#6"), lanes.get(BoardClassifier.INVOLVED));
+    }
+
+    @Test
+    void manyMaintainedReposGoInSeveralSearchesUnderGitHubsQueryLimit() {
+        List<String> repos = java.util.stream.IntStream.range(0, 20).mapToObj(i -> "quarkiverse/quarkus-extension-" + i).toList();
+        List<String> queries = BoardService.maintainedQueries(repos);
+        assertTrue(queries.size() > 1);
+        assertTrue(queries.stream().allMatch(q -> q.length() <= BoardService.MAX_QUERY));
+        assertEquals(20, queries.stream().mapToInt(q -> q.split(" repo:").length - 1).sum());
+        assertTrue(BoardService.maintainedQueries(List.of()).isEmpty());
+    }
+
+    @Test
     void markCiShowsARerunAsInProgressWithoutWaitingForGitHub() {
         involvedReturns(pr("quarkusio/quarkus", 1, "x").withCi("FAILURE"));
         service.board("me", "t", false);

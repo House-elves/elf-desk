@@ -457,8 +457,9 @@ public class DeskApi {
     public record ScopeRow(long id, String kind, String name, String mode) {
     }
 
+    /** @param alwaysInvolved repos you maintain: every open PR and issue in them is on the board */
     public record SettingsView(String login, List<ScopeRow> scope, boolean mvnpmInstalled, List<String> mvnpmRepos,
-            int refreshMinutes, boolean mvnpmEnabled) {
+            int refreshMinutes, boolean mvnpmEnabled, List<String> alwaysInvolved) {
     }
 
     public SettingsView settings() {
@@ -466,7 +467,24 @@ public class DeskApi {
                 .map(w -> new ScopeRow(w.id, w.kind.name(), w.name, w.mode.name()))
                 .toList();
         return new SettingsView(user.login(), rows, mvnpm.installed(), mvnpm.repos(), settings.refreshMinutes(),
-                settings.mvnpmEnabled());
+                settings.mvnpmEnabled(), settings.alwaysInvolved());
+    }
+
+    /** A repo you maintain: its open PRs come to "Needs my review" and its issues to the board, involved or not. */
+    public SettingsView addAlwaysInvolved(String repo) {
+        String name = ScopeService.repoName(repo);
+        // Outside what the board watches it would be hidden, so it's watched too.
+        if (!scopes.scope().covers(name)) scopes.watch(name);
+        List<String> repos = new java.util.ArrayList<>(settings.alwaysInvolved());
+        if (!repos.contains(name)) repos.add(name);
+        settings.setAlwaysInvolved(repos);
+        return settings();
+    }
+
+    public SettingsView removeAlwaysInvolved(String repo) {
+        String name = ScopeService.repoName(repo);
+        settings.setAlwaysInvolved(settings.alwaysInvolved().stream().filter(r -> !r.equals(name)).toList());
+        return settings();
     }
 
     public List<BoardService.Suggestion> suggestions() {

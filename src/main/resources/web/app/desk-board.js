@@ -603,7 +603,8 @@ class DeskBoard extends LitElement {
                 </div>
             </div>${settingsToggle(this.settingsOpen, () => { this.settingsOpen = !this.settingsOpen; })}</div>
             ${this.settingsOpen ? html`<div class="settings-area">
-                <desk-settings embedded @mvnpm-changed=${() => this._load(true)}></desk-settings>
+                <desk-settings embedded @mvnpm-changed=${() => this._load(true)}
+                    @board-search-changed=${() => this._load(true)}></desk-settings>
                 ${b.mvnpm?.installed ? html`<elf-settings elf="mvnpm-dependabot" heading="mvnpm updates"
                     note="mvnpm-dependabot checks web-jar bumps in these repos."></elf-settings>` : ''}
                 <elf-settings elf="elf-runner" heading="Agents"

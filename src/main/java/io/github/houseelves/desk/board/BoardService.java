@@ -297,6 +297,9 @@ public class BoardService {
         // Reviewing a PR removes GitHub's review request, so PRs you've reviewed come from their own search.
         var reviewed = async(() -> github.search(token,
                 "is:open is:pr reviewed-by:@me archived:false sort:updated-desc", MAX_REVIEW));
+        // Repos you maintain: every open PR and issue, whether GitHub counts you as involved or not.
+        List<String> maintainedRepos = settings.alwaysInvolved();
+        var maintained = async(() -> maintained(token, maintainedRepos));
         var mvnpmCandidates = async(() -> {
             if (elfRepos.isEmpty()) return List.<Item>of();
             StringBuilder q = new StringBuilder("is:open is:pr author:app/dependabot sort:created-desc");
@@ -314,6 +317,11 @@ public class BoardService {
         GitHub.SearchResult rev = await(review);
         GitHub.SearchResult done = await(reviewed);
         List<Item> mvnpmItems = await(mvnpmCandidates);
+        GitHub.SearchResult own = await(maintained);
+        boolean truncated = inv.truncated() || rev.truncated() || done.truncated() || own.truncated();
+        // Their PRs count as review requests, the rest as involved.
+        inv = new GitHub.SearchResult(concat(inv.items(), own.items().stream().filter(i -> !i.isPr()).toList()), 0);
+        rev = new GitHub.SearchResult(concat(rev.items(), own.items().stream().filter(Item::isPr).toList()), 0);
 
         // Merge state and runs waiting for approval: too heavy for the searches, so read for the PRs only, in
         // parallel batches. If that fails, the board still shows (without Merge, which needs the merge state).
@@ -344,7 +352,44 @@ public class BoardService {
         }
         return new BoardClassifier.Fetched(login, now, enrich(inv.items(), details), enrich(rev.items(), details),
                 enrich(done.items(), details), enrich(mvnpmItems, details),
-                inv.truncated() || rev.truncated() || done.truncated());
+                truncated);
+    }
+
+    /** GitHub's search query is at most 256 characters, so a long list of repos goes in several searches. */
+    static final int MAX_QUERY = 250;
+
+    /** Every open PR and issue in these repos. */
+    private GitHub.SearchResult maintained(String token, List<String> repos) {
+        List<Item> items = new ArrayList<>();
+        boolean truncated = false;
+        for (String q : maintainedQueries(repos)) {
+            GitHub.SearchResult r = github.search(token, q, MAX_REVIEW);
+            items.addAll(r.items());
+            truncated |= r.truncated();
+        }
+        return new GitHub.SearchResult(List.copyOf(items), truncated ? Integer.MAX_VALUE : items.size());
+    }
+
+    static List<String> maintainedQueries(List<String> repos) {
+        String base = "is:open archived:false sort:updated-desc";
+        List<String> queries = new ArrayList<>();
+        StringBuilder q = new StringBuilder(base);
+        for (String repo : repos) {
+            if (q.length() + 6 + repo.length() > MAX_QUERY && q.length() > base.length()) {
+                queries.add(q.toString());
+                q = new StringBuilder(base);
+            }
+            q.append(" repo:").append(repo);
+        }
+        if (q.length() > base.length()) queries.add(q.toString());
+        return queries;
+    }
+
+    private static List<Item> concat(List<Item> a, List<Item> b) {
+        if (b.isEmpty()) return a;
+        List<Item> all = new ArrayList<>(a);
+        all.addAll(b);
+        return List.copyOf(all);
     }
 
     /**
