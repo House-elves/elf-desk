@@ -25,6 +25,12 @@ const SECTIONS = [
 
 const ROLES = { mine: 'My PR', review: 'Review', issue: 'Issue', mvnpm: 'mvnpm', involved: 'Involved' };
 
+/** A row's tag. "Just involved" says how you're involved in its heading, so its rows say what they are. */
+function roleTag(item, role) {
+    if (role === 'involved') return item.kind === 'PR' ? 'PR' : 'Issue';
+    return ROLES[role] ?? role;
+}
+
 /** The board's filter, kept for this browser tab: the text, and the tags picked. */
 const FILTER = 'elf-desk.board-filter';
 
@@ -689,7 +695,7 @@ class DeskBoard extends LitElement {
                 ${kindIcon(item)}
                 <div class="main" @click=${e => { if (!e.target.closest('a, button')) this._toggle(item.key); }}>
                     <div class="line1">
-                        <span class="role">${ROLES[f.role] ?? f.role}</span>
+                        <span class="role">${roleTag(item, f.role)}</span>
                         <a class="title" href=${item.url} target="_blank" rel="noopener">${item.title}</a>
                         ${this._authorTag(item)}
                     </div>
