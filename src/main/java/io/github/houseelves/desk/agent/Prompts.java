@@ -235,7 +235,11 @@ public final class Prompts {
             case CI_WHY -> """
                     CI is failing on this PR. The failed checks and the end of their logs are above. Find out why: \
                     is it caused by this PR's change, by something else on the base branch, or is it flaky or \
-                    infrastructure? Reproduce locally if that's quick. Don't change code.
+                    infrastructure? Don't change code. Reproduce locally only if that takes a few minutes, for \
+                    example one module's failing test; don't build this whole project or another one from source \
+                    (such as Quarkus, when a downstream check fails). Check whether the same check also fails on the \
+                    base branch. If you can't tell without a long build, say what you found and the command that \
+                    would tell.
 
                     `reply`: the failing check, the cause (with file and line where it's in the code), how you know, \
                     and what would fix it. Say plainly if it looks unrelated to the PR or flaky.
