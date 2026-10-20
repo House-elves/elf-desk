@@ -43,7 +43,7 @@ class ElfDesk extends LitElement {
         }
         .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
         .brand svg { width: 26px; height: 26px; }
-        .brand span { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+        .brand span { font-family: var(--font-display); font-size: 19px; font-weight: 700; letter-spacing: -0.015em; }
         nav { display: flex; gap: 2px; }
         nav a {
             font-size: 14px; font-weight: 500; padding: 6px 12px; border-radius: var(--r-control);
@@ -187,10 +187,13 @@ class ElfDesk extends LitElement {
             <header>
                 <div class="bar">
                     <a class="brand" href="#" aria-label="Elf Desk, dashboard">
-                        <svg viewBox="0 0 26 26" aria-hidden="true">
-                            <rect width="26" height="26" rx="7" fill="var(--accent)"/>
-                            <path d="M7 17.5h12M9 17.5V11l4-3.5 4 3.5v6.5" fill="none" stroke="var(--accent-ink)"
-                                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <svg viewBox="0 0 120 120" aria-hidden="true">
+                            <rect width="120" height="120" rx="28" fill="#24533f"/>
+                            <g transform="translate(-5 4)">
+                                <path d="M22 62 L46 86 C60 66 72 46 84 30 C90 22 98 20 104 26" fill="none" stroke="#f4f6f1"
+                                      stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+                                <circle cx="104" cy="32" r="12" fill="var(--bobble)"/>
+                            </g>
                         </svg>
                         <span>Elf Desk</span>
                     </a>

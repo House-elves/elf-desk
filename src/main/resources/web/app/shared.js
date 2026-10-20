@@ -9,6 +9,7 @@ import DOMPurify from 'dompurify';
  */
 export const shared = css`
     :host { display: block; }
+    h1 { font-family: var(--font-display); }
     a { color: var(--accent); text-underline-offset: 2px; }
     :is(a, button, input, select, textarea, summary):focus-visible {
         outline: 2px solid var(--accent); outline-offset: 2px;

@@ -1,3 +1,5 @@
+<img src="docs/brand/mark.svg" width="72" alt="House Elves logo: a checkmark that ends in an elf's hat">
+
 # elf-desk
 
 A [House Elf](https://github.com/House-elves) desk: a morning board of every open GitHub PR and issue you're involved in, grouped by what each one needs from you. Built with Quarkus, the Web Bundler, Lit (from mvnpm) and JSON-RPC.

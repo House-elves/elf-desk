@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Elf Desk</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' rx='28' fill='%2324533F'/%3E%3Cg transform='translate(-5 4)'%3E%3Cpath d='M22 62 L46 86 C60 66 72 46 84 30 C90 22 98 20 104 26' fill='none' stroke='%23F4F6F1' stroke-width='18' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='104' cy='32' r='13' fill='%23F0C33C'/%3E%3C/g%3E%3C/svg%3E">
+    <meta name="theme-color" content="#24533F">
     <script>
         // Apply the saved theme before first paint so the page doesn't flash.
         try {
@@ -13,7 +15,7 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script type="importmap">
         {
             "imports": {
@@ -25,25 +27,28 @@
     </script>
     {#bundle /}
     <style>
-        /* Elf Desk: a calm morning work surface. One accent (cobalt); green / amber / red only for state. */
+        /* Elf Desk, House Elves' "Done by morning" brand: moss and paper, a yellow bobble for the logo only.
+           Moss is the one accent; green / amber / red only for state. */
         :root {
-            --bg: #f3f5f8;
+            --bg: #f4f6f1;
             --surface: #ffffff;
-            --surface-2: #eef1f5;
-            --ink: #151a22;
-            --muted: #5d6572;
-            --line: #e1e5eb;
-            --accent: #2f5bea;
+            --surface-2: #edf1ea;
+            --ink: #17201b;
+            --muted: #56635b;
+            --line: #dde3da;
+            --accent: #24533f;
             --accent-ink: #ffffff;
-            --accent-soft: #e7edff;
+            --accent-soft: #e2eee6;
+            --bobble: #f0c33c;
             --ok: #1d8049; --ok-soft: #e1f3e8;
             --bad: #c3352a; --bad-soft: #fbe8e6;
             --warn: #965c00; --warn-soft: #faefd8;
             --idle: #6b7280; --idle-soft: #edf0f3;
             --merged: #8250df; --merged-soft: #f1eafe;
-            --log-bg: #12161d; --log-ink: #c9d1dc;
-            --shadow: 0 1px 2px rgb(21 26 34 / 0.05), 0 6px 24px rgb(21 26 34 / 0.05);
-            --font: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+            --log-bg: #121813; --log-ink: #c9d4cc;
+            --shadow: 0 1px 2px rgb(23 32 27 / 0.05), 0 6px 24px rgb(23 32 27 / 0.05);
+            --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+            --font-display: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif;
             --font-code: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
             --r-panel: 14px;
             --r-control: 9px;
@@ -51,23 +56,23 @@
         }
         @media (prefers-color-scheme: dark) {
             :root:not([data-theme="light"]) {
-                --bg: #0e1116; --surface: #161a21; --surface-2: #1d222b; --ink: #e7eaf0; --muted: #949dab;
-                --line: #272d37; --accent: #7d9bff; --accent-ink: #0b1230; --accent-soft: #1b2447;
+                --bg: #0f1411; --surface: #161d19; --surface-2: #1d2621; --ink: #e6ece7; --muted: #94a39a;
+                --line: #27322c; --accent: #7db68a; --accent-ink: #0e1f15; --accent-soft: #1a2d22;
                 --ok: #52c58a; --ok-soft: #12291d; --bad: #ff7d72; --bad-soft: #351816;
                 --warn: #e8b14c; --warn-soft: #332610; --idle: #949dab; --idle-soft: #20252e;
                 --merged: #a371f7; --merged-soft: #2a1f45;
-                --log-bg: #0a0d12; --log-ink: #c9d1dc;
+                --log-bg: #0a0e0b; --log-ink: #c9d4cc;
                 --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 24px rgb(0 0 0 / 0.25);
                 color-scheme: dark;
             }
         }
         :root[data-theme="dark"] {
-            --bg: #0e1116; --surface: #161a21; --surface-2: #1d222b; --ink: #e7eaf0; --muted: #949dab;
-            --line: #272d37; --accent: #7d9bff; --accent-ink: #0b1230; --accent-soft: #1b2447;
+            --bg: #0f1411; --surface: #161d19; --surface-2: #1d2621; --ink: #e6ece7; --muted: #94a39a;
+            --line: #27322c; --accent: #7db68a; --accent-ink: #0e1f15; --accent-soft: #1a2d22;
             --ok: #52c58a; --ok-soft: #12291d; --bad: #ff7d72; --bad-soft: #351816;
             --warn: #e8b14c; --warn-soft: #332610; --idle: #949dab; --idle-soft: #20252e;
             --merged: #a371f7; --merged-soft: #2a1f45;
-            --log-bg: #0a0d12; --log-ink: #c9d1dc;
+            --log-bg: #0a0e0b; --log-ink: #c9d4cc;
             --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 24px rgb(0 0 0 / 0.25);
             color-scheme: dark;
         }
