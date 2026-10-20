@@ -326,4 +326,53 @@ class GitHubTest {
         assertFalse(GitHub.passedOnRerun(json("""
                 {"checkSuites": {"nodes": [{"conclusion": "FAILURE", "workflowRun": {"databaseId": 1, "workflow": {"databaseId": 7}}}]}}""")));
     }
+
+    @Test
+    void theRecapSummarySkipsWhatTheTemplateLeftAndKeepsTheFirstRealParagraph() {
+        String body = """
+                <!-- Thanks for the PR! Please describe it below. -->
+                ## Description
+
+                Fixes #1234
+
+                The Dev UI log stream now **reconnects** after the app restarts, so the [log viewer](https://x.y/z)
+                keeps showing new lines.
+
+                - [x] Tests added
+                """;
+        assertEquals("The Dev UI log stream now reconnects after the app restarts, so the log viewer keeps showing new lines.",
+                GitHub.summary(body));
+    }
+
+    @Test
+    void anIssueFormKeepsTheAnswerAndDropsTheQuestionsAndTheCode() {
+        String body = """
+                ### Describe the bug
+
+                ```
+                java.lang.NullPointerException
+                ```
+
+                _No response_
+
+                **Expected behavior**
+
+                Starting dev mode with a custom profile fails when the config has no default.
+                """;
+        assertEquals("Starting dev mode with a custom profile fails when the config has no default.", GitHub.summary(body));
+    }
+
+    @Test
+    void aListBecomesOneLineAndALongOneStopsAtASentence() {
+        assertEquals("Adds the agent MCP tool; Updates the docs", GitHub.summary("- Adds the agent MCP tool\n- Updates the docs"));
+        String longer = "This is a sentence that goes on for a while. ".repeat(10);
+        String s = GitHub.summary(longer);
+        assertTrue(s.length() <= 300 && s.endsWith("."), s);
+        assertEquals("#52528 moved the console out, so the classes move to io.quarkus.devui.deployment.",
+                GitHub.summary("#52528 moved the console out, so the classes move to `io.quarkus.devui.deployment`.\n\n- Relates to: #51873"));
+        assertEquals("Publishes them at https://smallrye.io/docs/<version>/ for each release.",
+                GitHub.summary("Publishes them at https://smallrye.io/docs/<version>/ for each <b>release</b>."));
+        assertEquals("", GitHub.summary(""));
+        assertEquals("", GitHub.summary("<!-- nothing -->\n## Checklist\n- [ ] done"));
+    }
 }

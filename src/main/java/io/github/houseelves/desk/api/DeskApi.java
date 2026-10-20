@@ -133,6 +133,13 @@ public class DeskApi {
         return boards.refreshItem(user.login(), user.githubToken(), itemKey);
     }
 
+    /** What the item is about, from its description on GitHub: for the thread page's recap. */
+    public GitHub.About about(String itemKey) {
+        if (!itemKey.matches("[A-Za-z0-9-]+/[A-Za-z0-9._-]+#\\d+")) throw new IllegalArgumentException("Not an item: " + itemKey);
+        int hash = itemKey.indexOf('#');
+        return github.about(user.githubToken(), itemKey.substring(0, hash), Integer.parseInt(itemKey.substring(hash + 1)));
+    }
+
     /** The thread for one item (owner/repo#number), or null if there is none yet. Only the thread page asks: its answers count as seen. */
     public ThreadView thread(String itemKey) {
         ThreadView v = threads.view(itemKey);

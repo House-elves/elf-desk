@@ -218,7 +218,6 @@ public class GitHub {
         return orgs;
     }
 
-    /** Title, body, comments and (for PRs) reviews and branches of one issue or PR. */
     /** How many commits a PR has. */
     public int commitCount(String token, String repo, int number) {
         String[] parts = repo.split("/", 2);
@@ -256,6 +255,89 @@ public class GitHub {
         return r.isObject() && !r.path("isPrivate").asBoolean(true);
     }
 
+    /**
+     * What an issue or PR is about, for the thread page's recap.
+     *
+     * @param summary the opening of its description in plain text (see {@link #summary}), or "" when it has none
+     * @param closes  PRs only: the issues it fixes or closes, as #123 (same repo) or owner/repo#123
+     * @param files   PRs only: how many files it changes, or null
+     */
+    public record About(String summary, List<String> closes, Integer files, Integer additions, Integer deletions) {
+    }
+
+    public About about(String token, String repo, int number) {
+        String[] parts = repo.split("/", 2);
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("owner", parts[0]);
+        vars.put("name", parts[1]);
+        vars.put("number", number);
+        JsonNode n = call(token, """
+                query($owner: String!, $name: String!, $number: Int!) {
+                  repository(owner: $owner, name: $name) {
+                    issueOrPullRequest(number: $number) {
+                      ... on Issue { body }
+                      ... on PullRequest {
+                        body changedFiles additions deletions
+                        closingIssuesReferences(first: 5) { nodes { number repository { nameWithOwner } } }
+                      }
+                    }
+                  }
+                }""", vars).path("repository").path("issueOrPullRequest");
+        if (!n.isObject()) throw new GitHubException(repo + "#" + number + " was not found");
+        List<String> closes = new ArrayList<>();
+        for (JsonNode c : n.path("closingIssuesReferences").path("nodes")) {
+            String in = c.path("repository").path("nameWithOwner").asText(repo);
+            closes.add((in.equalsIgnoreCase(repo) ? "" : in) + "#" + c.path("number").asInt());
+        }
+        boolean pr = n.has("changedFiles");
+        return new About(summary(n.path("body").asText("")), List.copyOf(closes),
+                pr ? n.path("changedFiles").asInt() : null,
+                pr ? n.path("additions").asInt() : null,
+                pr ? n.path("deletions").asInt() : null);
+    }
+
+    private static final Pattern NOT_PROSE = Pattern.compile(
+            "(?i)\\s*(#{1,6}(\\s.*)?|([-*]\\s*)?\\[[ x]\\].*|([-*]\\s*)?(fix(es|ed)?|close[sd]?|resolve[sd]?|relate[sd]?( to)?|see( also)?|part of):?\\s+\\S*#\\d+.*"
+                    + "|!\\[.*|\\|.*|>.*"
+                    + "|[-*_]{3,}|\\*\\*[^*]+\\*\\*:?|_no response_|\\s*)");
+
+    /**
+     * The first real paragraph of a description, as plain text of at most about 300 characters. Skips what PR and
+     * issue templates leave behind: comments, headings, checklists, "Fixes #1" lines, images, tables, quotes and
+     * code.
+     */
+    static String summary(String body) {
+        String text = body.replace("\r", "")
+                .replaceAll("(?s)<!--.*?-->", "")
+                .replaceAll("(?s)```.*?(```|$)", "\n\n")
+                .replaceAll("(?is)<details>.*?</details>", "\n\n")
+                .replaceAll("(?i)</?(a|b|i|p|br|hr|em|strong|code|kbd|sub|sup|div|span|img|summary|h[1-6]|ul|ol|li|table|tr|td|th|picture|source|video)\\b[^>]*>", "");
+        for (String para : text.split("\\n\\s*\\n")) {
+            List<String> lines = new ArrayList<>();
+            for (String line : para.split("\\n")) {
+                if (NOT_PROSE.matcher(line).matches()) continue;
+                lines.add(line.strip().replaceFirst("^([-*+]|\\d+[.)])\\s+", ""));
+            }
+            String plain = String.join(lines.size() > 1 && para.strip().matches("(?s)([-*+]|\\d+[.)])\\s.*") ? "; " : " ", lines)
+                    .replaceAll("\\[([^\\]]*)\\]\\([^)]*\\)", "$1")
+                    .replaceAll("[*_`]{1,3}([^*_`]+)[*_`]{1,3}", "$1")
+                    .replaceAll("\\s+", " ").strip();
+            if (plain.chars().filter(Character::isLetter).count() < 15) continue;
+            return shorten(plain, 300);
+        }
+        return "";
+    }
+
+    private static String shorten(String s, int max) {
+        if (s.length() <= max) return s;
+        int end = -1;
+        for (int i = max / 2; i < max; i++) {
+            if (".!?".indexOf(s.charAt(i)) >= 0 && (i + 1 == s.length() || s.charAt(i + 1) == ' ')) end = i + 1;
+        }
+        return end > 0 ? s.substring(0, end) : s.substring(0, s.lastIndexOf(' ', max)) + "…";
+    }
+
+    /** Title, body, comments and (for PRs) reviews and branches of one issue or PR. */
     public ItemContext context(String token, String repo, int number) {
         String[] parts = repo.split("/", 2);
         Map<String, Object> vars = new HashMap<>();

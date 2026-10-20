@@ -43,6 +43,7 @@ class DeskThread extends LitElement {
         _ignored: { state: true },
         _toggled: { state: true },
         _recap: { state: true },
+        _about: { state: true },
         _commits: { state: true },
         _diff: { state: true },
         _diffOpen: { state: true },
@@ -205,6 +206,7 @@ class DeskThread extends LitElement {
             this._closed = null;
             this._toggled = new Map();
             this._recap = false;
+            this._about = null;
             this._commits = 0;
             this._diff = null;
             this._diffOpen = false;
@@ -714,6 +716,14 @@ class DeskThread extends LitElement {
     async _toggleRecap() {
         this._recap = !this._recap;
         if (!this._recap) return;
+        // What the PR does or the issue is about, from its description. Doesn't hold the recap up.
+        if (!this._about) {
+            const key = this.itemKey;
+            this._about = { loading: true };
+            api().then(d => d.about({ itemKey: key })).then(
+                a => { if (key === this.itemKey) this._about = a; },
+                () => { if (key === this.itemKey) this._about = { failed: true }; });
+        }
         await this.updateComplete;
         this.renderRoot.querySelector('.title-block')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     }
@@ -726,8 +736,16 @@ class DeskThread extends LitElement {
         return first.length > 220 ? first.slice(0, 220) + '…' : first;
     }
 
+    /** ", changing 5 files (+120 −30), to fix #123" for a PR, once its description is in. */
+    _aboutSize() {
+        const a = this._about;
+        if (!a || a.files == null) return '';
+        const size = `, changing ${a.files} ${a.files === 1 ? 'file' : 'files'} (+${a.additions} −${a.deletions})`;
+        return size + (a.closes?.length ? `, to fix ${a.closes.join(', ')}` : '');
+    }
+
     /**
-     * A short recap, built from the thread itself (no agent run): what the item is, each thing you asked with
+     * A short recap, built from the thread itself and the item's description (no agent run): what the item is, each thing you asked with
      * the agent's conclusion, what was posted, and where it stands now.
      */
     _renderRecap(t, kind, item) {
@@ -770,8 +788,10 @@ class DeskThread extends LitElement {
             <section class="panel recap" aria-label="Recap">
                 <div>
                     <h2>What this is</h2>
-                    <p>${kind === 'ISSUE' ? 'Issue' : 'PR'}${item?.author ? ` by ${item.author}` : ''}.
-                        ${firstAnswer ? this._lead(firstAnswer.text) : ''}</p>
+                    <p>${kind === 'ISSUE' ? 'Issue' : 'PR'}${item?.author ? ` by ${item.author}` : ''}${this._aboutSize()}.
+                        ${this._about?.loading ? html`<span class="when">Reading the description…</span>`
+                            : this._about?.summary || (this._about && !this._about.failed ? 'It has no description.' : '')}</p>
+                    ${firstAnswer ? html`<p>The agent's first look: ${this._lead(firstAnswer.text)}</p>` : ''}
                 </div>
                 <div>
                     <h2>What happened</h2>
