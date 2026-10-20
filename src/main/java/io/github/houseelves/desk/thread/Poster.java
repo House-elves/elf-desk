@@ -6,6 +6,9 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -84,6 +87,7 @@ public class Poster {
     public Preview preview(long draftId, String githubToken, String login) {
         resolvePushTarget(draftId, githubToken);
         checkIssueRepo(draftId, githubToken);
+        checkReviewLines(draftId, githubToken);
         String warning = resolvePrTarget(draftId, githubToken, login);
         return QuarkusTransaction.requiringNew().call(() -> {
             Draft d = pendingDraft(draftId);
@@ -323,6 +327,53 @@ public class Poster {
             if (t != null) Turn.add(t.id, Turn.SYSTEM, null, "You assigned yourself on GitHub.");
         });
         live.changed(itemKey);
+    }
+
+    /**
+     * A review's inline comments must sit on lines of the PR's diff as it is now, or GitHub refuses the whole review
+     * ("Path could not be resolved"). The PR can change after the agent drafted it, a file taken out or lines moved,
+     * so this checks before preview. When the diff can't be read in full, GitHub decides.
+     */
+    private void checkReviewLines(long draftId, String githubToken) {
+        Draft d = QuarkusTransaction.requiringNew().call(() -> pendingDraft(draftId));
+        if (!d.kind.equals(Draft.REVIEW) || githubToken == null) return;
+        AgentOutput.DraftOut out = read(d.payload);
+        if (out.comments() == null || out.comments().isEmpty()) return;
+        DeskThread t = QuarkusTransaction.requiringNew().call(() -> DeskThread.findById(d.threadId));
+        GitHub.Diff diff = github.prDiff(githubToken, t.repo(), t.number(), 50_000_000);
+        if (diff == null || diff.cut()) return;
+        Map<String, Set<Integer>> lines = rightSideLines(diff.text());
+        List<String> gone = new ArrayList<>();
+        for (AgentOutput.InlineComment c : out.comments()) {
+            Set<Integer> at = lines.get(c.path());
+            if (at == null) gone.add(c.path() + " line " + c.line() + " (the file is no longer in the PR)");
+            else if (!at.contains(c.line())) gone.add(c.path() + " line " + c.line() + " (no longer in the diff)");
+        }
+        if (gone.isEmpty()) return;
+        throw new IllegalStateException("The PR changed since this review was drafted, and GitHub would refuse it: "
+                + (gone.size() == 1 ? "the inline comment on " : "the inline comments on ") + String.join(", ", gone)
+                + ". Ask the agent to look at the PR again, or discard this draft.");
+    }
+
+    /** For each file of a unified diff, the new-side lines a review comment can go on: added and context lines. */
+    static Map<String, Set<Integer>> rightSideLines(String diff) {
+        Map<String, Set<Integer>> lines = new HashMap<>();
+        Set<Integer> current = null;
+        int line = 0;
+        for (String l : diff.split("\n", -1)) {
+            if (l.startsWith("diff --git ")) {
+                current = null;
+            } else if (l.startsWith("+++ ") && current == null) {
+                String path = l.substring(4);
+                current = path.startsWith("b/") ? lines.computeIfAbsent(path.substring(2), k -> new HashSet<>()) : null;
+            } else if (l.startsWith("@@ ")) {
+                int plus = l.indexOf(" +");
+                line = plus < 0 ? 0 : Integer.parseInt(l.substring(plus + 2).split("[, ]")[0]);
+            } else if (current != null && line > 0) {
+                if (l.startsWith("+") || l.startsWith(" ")) current.add(line++);
+            }
+        }
+        return lines;
     }
 
     /**
