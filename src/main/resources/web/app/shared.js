@@ -172,6 +172,42 @@ export function ago(iso) {
     return rtf.format(Math.round(seconds / (86400 * 30)), 'month');
 }
 
+/** "Today 08:03", "Yesterday 08:00", "Mon 12 Oct 08:00": when a saved run happened (local time). */
+export function runTime(at) {
+    if (!at) return '';
+    const d = new Date(at);
+    const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    const day = new Date(d); day.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const days = Math.round((today - day) / 86400000);
+    if (days === 0) return `Today ${time}`;
+    if (days === 1) return `Yesterday ${time}`;
+    return `${d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} ${time}`;
+}
+
+/** "3 min", "45 s": how long a run took. */
+export function took(ms) {
+    if (!ms) return '';
+    return ms < 60000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60000)} min`;
+}
+
+const DAYS = { mon: 'Mondays', tue: 'Tuesdays', wed: 'Wednesdays', thu: 'Thursdays', fri: 'Fridays', sat: 'Saturdays', sun: 'Sundays' };
+
+/** "Mon *-*-* 08:00:00" as "Mondays at 08:00", "Mon..Fri *-*-* 07:30" as "Mon to Fri at 07:30"; anything else as is. */
+/** "Mondays at 08:00", "weekdays at 07:30": a schedule's calendar time (Mon *-*-* 08:00:00), in words. */
+export function calendarText(cal) {
+    const m = /^(?:(\S+) )?\*-\*-\* (\d{1,2}:\d{2})(?::00)?$/.exec(cal ?? '');
+    if (!m) return cal ?? '';
+    const time = m[2].padStart(5, '0');
+    if (!m[1]) return `every day at ${time}`;
+    const days = m[1].split(',').map(d => {
+        const [from, to] = d.split('..').map(x => x.toLowerCase());
+        return to ? (from === 'mon' && to === 'fri' ? 'weekdays' : `${from[0].toUpperCase()}${from.slice(1)} to ${to[0].toUpperCase()}${to.slice(1)}`)
+            : DAYS[from] ?? d;
+    });
+    return `${days.join(' and ')} at ${time}`;
+}
+
 /** GitHub says every required check passed and nothing else blocks the merge. */
 export function requiredChecksPassed(item) {
     return item.mergeState === 'CLEAN' || item.mergeState === 'HAS_HOOKS';

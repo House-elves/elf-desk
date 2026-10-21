@@ -22,5 +22,6 @@ export function setTheme(theme) {
     } catch (e) {
         // no storage: the choice lasts for this page only
     }
+    window.dispatchEvent(new CustomEvent('elfdesk-theme', { detail: theme }));
 }
 

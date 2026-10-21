@@ -187,4 +187,30 @@ class HttpSecurityTest {
     void healthIsOpen() {
         given().when().get("/q/health/live").then().statusCode(200);
     }
+
+    @Test
+    void anElfsFramePageNeedsTheCookieAndIsSandboxed() throws Exception {
+        desk().when().get("/elf-frame/daily-triage/email").then().statusCode(302).header("Location", endsWith("/welcome"));
+        SignedIn s = signIn();
+        // No runner in tests, so no such tab; the page is sandboxed and only framed by the desk all the same.
+        var r = desk().cookie(cookie(), s.session()).when().get("/elf-frame/daily-triage/email").then().statusCode(404).extract();
+        String csp = r.header("Content-Security-Policy");
+        assertTrue(csp.contains("sandbox allow-scripts allow-popups"), csp);
+        assertFalse(csp.contains("allow-same-origin"), csp);
+        assertTrue(csp.contains("connect-src 'none'"), csp);
+        assertTrue(csp.contains("frame-ancestors http://elf-desk.localhost:" + RestAssured.port), csp);
+        assertEquals(null, r.header("X-Frame-Options"));
+        desk().cookie(cookie(), s.session()).when().get("/elf-frame/..%2F..%2Fetc/email").then().statusCode(404);
+    }
+
+    @Test
+    void whatAFrameLoadsNeedsNoCookieButOnlyTheRightKeyOpensAnElfsFiles() {
+        desk().when().get("/elf-kit/1/kit.js").then().statusCode(200)
+                .header("Access-Control-Allow-Origin", "*")
+                .body(containsString("export * from '/static/bundle/kit"));
+        desk().when().get("/elf-files/0123456789abcdef0123456789abcdef/ui/email.js").then().statusCode(404);
+        desk().when().get("/elf-files/nope/ui/email.js").then().statusCode(404);
+        // The rest of the desk still needs the session.
+        desk().when().get("/files/1").then().statusCode(302);
+    }
 }

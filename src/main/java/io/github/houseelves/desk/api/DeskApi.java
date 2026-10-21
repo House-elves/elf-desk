@@ -1,7 +1,6 @@
 package io.github.houseelves.desk.api;
 
 import java.util.List;
-import java.util.Locale;
 
 import io.github.houseelves.desk.agent.AgentOutput;
 import io.github.houseelves.desk.board.Board;
@@ -14,13 +13,7 @@ import io.github.houseelves.desk.github.Item;
 import io.github.houseelves.desk.ignore.IgnoreService;
 import io.github.houseelves.desk.runner.Live;
 import io.github.houseelves.desk.merge.MergeService;
-import io.github.houseelves.desk.quarterly.QuarterlyElf;
 import io.github.houseelves.desk.settings.ElfSettings;
-import io.github.houseelves.desk.status.StatusElf;
-import io.github.houseelves.desk.triage.EmailDoneService;
-import io.github.houseelves.desk.triage.TriageElf;
-import io.github.houseelves.desk.triage.TriageRuns;
-import io.github.houseelves.desk.triage.ZulipDoneService;
 import io.github.houseelves.desk.mvnpm.MvnpmElf;
 import io.github.houseelves.desk.mvnpm.MvnpmRuns;
 import io.github.houseelves.desk.runner.RunnerHub;
@@ -91,25 +84,7 @@ public class DeskApi {
     MvnpmRuns mvnpmRuns;
 
     @Inject
-    TriageElf triage;
-
-    @Inject
-    EmailDoneService emailDone;
-
-    @Inject
-    ZulipDoneService zulipDone;
-
-    @Inject
-    StatusElf status;
-
-    @Inject
-    QuarterlyElf quarterly;
-
-    @Inject
     ElfSettings elfSettings;
-
-    @Inject
-    TriageRuns triageRuns;
 
     @Inject
     ElvesService elves;
@@ -226,26 +201,6 @@ public class DeskApi {
         return mvnpmRuns.state();
     }
 
-    // ---- daily-triage: the email triage and the Zulip digest ----
-
-    /** Which daily-triage runs are going, and the log of any that failed. */
-    public TriageRuns.State triageState() {
-        return triageRuns.state();
-    }
-
-    /** Run daily-triage now: "email" (triage unread Gmail, nothing emailed) or "zulip" (the last day's digest). */
-    public TriageRuns.State triageRun(String mode) {
-        triageRuns.run(mode);
-        return triageRuns.state();
-    }
-
-    /** Saved runs of one kind ("email" or "zulip"), newest first. */
-    public List<TriageElf.RunInfo> triageRuns(String kind) {
-        if (kind.equals(TriageRuns.STATUS)) return status.runs();
-        if (kind.equals(TriageRuns.QUARTERLY)) return quarterly.runs();
-        return triage.runs(TriageElf.Kind.valueOf(kind.toUpperCase(Locale.ROOT)));
-    }
-
     // ---- the elves' settings ----
 
     /** An installed elf's settings, or the runner's own ("elf-runner"). */
@@ -289,9 +244,10 @@ public class DeskApi {
         return elves.remove(elf);
     }
 
-    /** Runs one of an elf's own commands, such as its dry run. */
-    public com.fasterxml.jackson.databind.JsonNode runElf(String elf, String command) {
-        return elves.run(elf, command);
+    /** Runs one of an elf's own commands (its dry run, or what its tab's button runs), with the values it takes. */
+    public com.fasterxml.jackson.databind.JsonNode runElf(String elf, String command,
+            com.fasterxml.jackson.databind.JsonNode params) {
+        return elves.run(elf, command, params);
     }
 
     /** The elves' runs going now. */
@@ -299,56 +255,30 @@ public class DeskApi {
         return elves.running();
     }
 
-    // ---- quarterly-review ----
+    // ---- what an elf's own tab asks for (the elf-frame passes on its frame's requests) ----
 
-    /** A quarterly review (the newest when runId is null), or null when there is none. */
-    public QuarterlyElf.Review quarterlyReview(String runId) {
-        return quarterly.review(runId);
+    /** The elves' runs: {running: {elf:command: since}, failed: {elf:command: log}}. */
+    public com.fasterxml.jackson.databind.JsonNode elvesState() {
+        return elves.state();
     }
 
-    /** Write the review for a quarter (2026-Q3) now. Reads GitHub and writes with Claude; sends nothing. */
-    public TriageRuns.State quarterlyRun(String quarter) {
-        triageRuns.run(TriageRuns.QUARTERLY, quarter);
-        return triageRuns.state();
+    /** The files in one of the folders an elf's tab may read. */
+    public com.fasterxml.jackson.databind.JsonNode elfData(String elf, String folder) {
+        return elves.data(elf, folder);
     }
 
-    // ---- weekly-status ----
-
-    /** A weekly status draft (the newest when runId is null), or null when there is none. */
-    public StatusElf.Status weeklyStatus(String runId) {
-        return status.status(runId);
+    /** Some of those files, whole, or (fields) only those top-level fields of each JSON file. */
+    public com.fasterxml.jackson.databind.JsonNode elfRead(String elf, String folder, List<String> files, List<String> fields) {
+        return elves.read(elf, folder, files, fields);
     }
 
-    /** Send the draft, with your edits, to "me" or the "team" (addresses in the elf's config). Only from your click. */
-    public StatusElf.Status sendWeeklyStatus(String runId, String body, String target) {
-        return status.send(runId, body, target);
-    }
-
-    /** "I sent it myself" (sent true) or Undo (false): the draft counts as sent to the team. Emails nothing. */
-    public StatusElf.Status statusSentYourself(String runId, boolean sent) {
-        return status.sentYourself(runId, sent);
-    }
-
-    /** An email triage run (the newest when runId is null), or null when there is none. */
-    public TriageElf.Email email(String runId) {
-        return emailDone.withDone(triage.email(runId));
-    }
-
-    /** Done on an email: its Gmail thread is marked read (by daily-triage, through the runner). */
-    public TriageElf.Email emailDone(String account, String messageId) {
-        emailDone.done(account, messageId);
-        return emailDone.withDone(triage.email(null));
-    }
-
-    /** A Zulip run (the newest when runId is null), or null when there is none. */
-    public TriageElf.Zulip zulip(String runId) {
-        return zulipDone.withDone(triage.zulip(runId));
-    }
-
-    /** Done on a Zulip topic: its messages are marked read (by daily-triage, through the runner). */
-    public TriageElf.Zulip zulipDone(String server, String stream, String topic) {
-        zulipDone.done(server, stream, topic);
-        return zulipDone.withDone(triage.zulip(null));
+    /**
+     * One of the actions an elf declares, with values from its tab. One that asks is only sent after you confirmed
+     * it in the desk's own bar (elf-frame); the runner checks every value against the elf.yaml.
+     */
+    public com.fasterxml.jackson.databind.JsonNode elfAction(String elf, String action,
+            com.fasterxml.jackson.databind.JsonNode params) {
+        return elves.action(elf, action, params);
     }
 
     // ---- what's new ----

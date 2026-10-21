@@ -42,9 +42,9 @@ public class DeskSignIn implements HttpAuthenticationMechanism {
         return "elfdesk-session-" + port;
     }
 
-    /** The page's HTML and bundles: no data in them, so the cookie alone is enough. */
+    /** The page's HTML and bundles, and an elf tab's frame page: no data in them, so the cookie alone is enough. */
     static boolean pageAsset(String path) {
-        return path.equals("/") || path.equals("/index.html") || path.startsWith("/static/")
+        return path.equals("/") || path.equals("/index.html") || path.startsWith("/static/") || path.startsWith("/elf-frame/")
                 || path.startsWith("/_static/") || path.startsWith("/q/");
     }
 

@@ -94,6 +94,12 @@ public class ElvesService {
                 .put("secret", "secret".equalsIgnoreCase(s.path("kind").asText())));
         ArrayNode commands = m.putArray("commands");
         y.path("commands").forEach(c -> commands.add(c.path("label").asText()));
+        // What its tab may do: without asking, or only after you confirm in the desk's bar.
+        ArrayNode quiet = m.putArray("quietActions"), asks = m.putArray("askingActions");
+        y.path("actions").forEach(a -> (a.path("ask").isBoolean() && !a.path("ask").asBoolean() ? quiet : asks)
+                .add(a.path("label").asText()));
+        ArrayNode tabs = m.putArray("tabs");
+        y.path("tabs").forEach(t -> tabs.add(t.path("label").asText(t.path("name").asText())));
         JsonNode schedule = y.path("schedule");
         if (schedule.isObject()) {
             String setting = schedule.path("setting").asText(null);
@@ -131,9 +137,70 @@ public class ElvesService {
         return ask(hub.message("elf.remove").put("elf", name(elf)), 60);
     }
 
-    /** Runs one of the commands the elf declares (its dry run, say). */
-    public JsonNode run(String elf, String command) {
-        return ask(hub.message("elf.run").put("elf", name(elf)).put("command", name(command)), 60);
+    /** Runs one of the commands the elf declares (its dry run, say), with the values it takes (checked by the runner). */
+    public JsonNode run(String elf, String command, JsonNode params) {
+        ObjectNode msg = hub.message("elf.run").put("elf", name(elf)).put("command", name(command));
+        if (params != null && params.isObject()) msg.set("params", params);
+        return ask(msg, 60);
+    }
+
+    // ---- an elf's own tab ----
+
+    /** Its runs going now and since when, and the end of the log of each whose last run failed. */
+    public JsonNode state() {
+        return hub.elvesState();
+    }
+
+    public JsonNode data(String elf, String folder) {
+        return ask(hub.message("elf.data").put("elf", name(elf)).put("folder", name(folder)), 30, RunnerHub.ELF_TABS_SINCE);
+    }
+
+    public JsonNode read(String elf, String folder, List<String> files, List<String> fields) {
+        ObjectNode msg = hub.message("elf.read").put("elf", name(elf)).put("folder", name(folder));
+        ArrayNode f = msg.putArray("files");
+        (files == null ? List.<String>of() : files).forEach(f::add);
+        if (fields != null && !fields.isEmpty()) {
+            ArrayNode x = msg.putArray("fields");
+            fields.forEach(x::add);
+        }
+        return ask(msg, 60, RunnerHub.ELF_TABS_SINCE);
+    }
+
+    public JsonNode action(String elf, String action, JsonNode params) {
+        ObjectNode msg = hub.message("elf.action").put("elf", name(elf)).put("action", name(action));
+        msg.set("params", params != null && params.isObject() ? params : mapper.createObjectNode());
+        return ask(msg, 180, RunnerHub.ELF_TABS_SINCE);
+    }
+
+    /** An installed elf and one of its tabs: {elf (as elves.list shows it), tab}, or null. */
+    public Tab tab(String elf, String tab) {
+        if (elf == null || tab == null || !NAME.matcher(elf).matches() || !NAME.matcher(tab).matches()) return null;
+        for (JsonNode e : installed().path("elves")) {
+            if (!e.path("name").asText().equals(elf)) continue;
+            for (JsonNode t : e.path("tabs")) {
+                if (t.path("name").asText().equals(tab)) return new Tab(elf, e.path("commit").asText(), tab, t.path("page").asText());
+            }
+        }
+        return null;
+    }
+
+    public record Tab(String elf, String commit, String name, String page) {
+    }
+
+    /** The UI's files: they only change with the commit, so each is asked for once. */
+    private final Map<String, byte[]> files = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** A file of an elf's UI (ui/...) at that commit, or null. */
+    public byte[] file(String elf, String commit, String path) {
+        String key = elf + "@" + commit + ":" + path;
+        byte[] cached = files.get(key);
+        if (cached != null) return cached;
+        JsonNode r = ask(hub.message("elf.file").put("elf", name(elf)).put("path", path), 30, RunnerHub.ELF_TABS_SINCE);
+        if (!r.path("commit").asText().equals(commit)) return null; // updated meanwhile: the frame reloads
+        byte[] data = java.util.Base64.getDecoder().decode(r.path("data").asText(""));
+        if (files.size() > 500) files.clear();
+        files.put(key, data);
+        return data;
     }
 
     public List<String> running() {
@@ -151,9 +218,13 @@ public class ElvesService {
     }
 
     private JsonNode ask(ObjectNode msg, int seconds) {
+        return ask(msg, seconds, RunnerHub.ELVES_SINCE);
+    }
+
+    private JsonNode ask(ObjectNode msg, int seconds, String since) {
         JsonNode result;
         try {
-            result = hub.request(msg, RunnerHub.ELVES_SINCE).get(seconds, TimeUnit.SECONDS);
+            result = hub.request(msg, since).get(seconds, TimeUnit.SECONDS);
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             throw new IllegalStateException(cause.getMessage() != null ? cause.getMessage() : "The runner didn't answer in time");

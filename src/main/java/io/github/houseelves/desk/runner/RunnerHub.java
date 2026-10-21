@@ -20,7 +20,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import io.github.houseelves.desk.triage.TriageRuns;
 import io.github.houseelves.desk.mvnpm.MvnpmRuns;
 import io.github.houseelves.desk.thread.ThreadService;
 import jakarta.enterprise.inject.Instance;
@@ -55,13 +54,14 @@ public class RunnerHub {
     Instance<MvnpmRuns> mvnpmRuns;
 
     /** Lazy, for the same reason. */
-    @Inject
-    Instance<TriageRuns> triageRuns;
 
     private volatile WebSocketConnection runner;
     private volatile String runnerVersion = "";
     /** The elves' runs going now (elf:command, or a built-in tab's mode), as the runner last said. */
     private volatile List<String> elvesRunning = List.of();
+    /** Per run key going now, since when (as far as the desk knows); per key whose last run failed, its log's end. */
+    private final Map<String, java.time.Instant> elvesSince = new ConcurrentHashMap<>();
+    private volatile Map<String, String> elvesFailed = Map.of();
 
     /**
      * A message too big for one WebSocket message (a job's answer with a large patch) comes as parts, each a piece
@@ -83,13 +83,11 @@ public class RunnerHub {
     static final String SQUASH_SINCE = "0.9.0";
     static final String ASSIGN_SINCE = "0.10.0";
     static final String ISSUE_SINCE = "0.11.0";
-    public static final String TRIAGE_SINCE = "0.12.0";
-    public static final String EMAIL_TRIAGE_SINCE = "0.13.0";
-    public static final String STATUS_SINCE = "0.24.0";
-    public static final String QUARTERLY_SINCE = "0.26.0";
     public static final String APPROVE_DEPLOYMENT_SINCE = "0.27.0";
     public static final String ELF_CONFIG_SINCE = "0.28.0";
     public static final String ELVES_SINCE = "0.30.0";
+    /** The first runner whose elves draw their own tabs: their UI files, data, actions and failed runs. */
+    public static final String ELF_TABS_SINCE = "0.31.0";
     static final String PR_SINCE = "0.15.0";
     static final String READY_PR_SINCE = "0.21.0";
 
@@ -98,6 +96,16 @@ public class RunnerHub {
 
     public List<String> elvesRunning() {
         return elvesRunning;
+    }
+
+    /** {running: {key: since}, failed: {key: log}}: the elves' runs, for their tabs. */
+    public ObjectNode elvesState() {
+        ObjectNode out = mapper.createObjectNode();
+        ObjectNode running = out.putObject("running");
+        elvesSince.forEach((k, v) -> running.put(k, v.toString()));
+        ObjectNode failed = out.putObject("failed");
+        elvesFailed.forEach(failed::put);
+        return out;
     }
 
     public boolean connected() {
@@ -179,22 +187,20 @@ public class RunnerHub {
             mvnpmRuns.get().onState(units);
             return;
         }
-        if (type.equals("triage.state")) {
-            List<String> modes = new ArrayList<>();
-            msg.path("running").forEach(m -> modes.add(m.asText()));
-            Map<String, String> failed = new HashMap<>();
-            msg.path("failed").fields().forEachRemaining(f -> failed.put(f.getKey(), f.getValue().asText()));
-            triageRuns.get().onState(modes, failed);
-            return;
-        }
         if (type.equals("elves.state")) {
             List<String> keys = new ArrayList<>();
             msg.path("running").forEach(k -> keys.add(k.asText()));
             elvesRunning = List.copyOf(keys);
+            elvesSince.keySet().retainAll(keys);
+            keys.forEach(k -> elvesSince.putIfAbsent(k, java.time.Instant.now()));
+            Map<String, String> failed = new HashMap<>();
+            msg.path("failed").fields().forEachRemaining(f -> failed.put(f.getKey(), f.getValue().asText()));
+            elvesFailed = Map.copyOf(failed);
+            live.elves();
             return;
         }
                 if (type.equals("github.result") || type.equals("git.result") || type.equals("mvnpm.result")
-                || type.equals("triage.result") || type.equals("elf.config.result") || type.equals("elves.result")) {
+                || type.equals("elf.config.result") || type.equals("elves.result")) {
             CompletableFuture<JsonNode> answer = pending.get(msg.path("id").asText());
             if (answer != null) answer.complete(msg);
             return;
@@ -267,7 +273,8 @@ public class RunnerHub {
             dropParts();
             LOG.info("Runner disconnected");
             mvnpmRuns.get().onRunnerGone();
-            triageRuns.get().onRunnerGone();
+            elvesRunning = List.of();
+            elvesSince.clear();
             pending.values().forEach(p -> p.completeExceptionally(new IllegalStateException(
                     "The runner disconnected before GitHub answered. Check GitHub before trying again.")));
             live.runner(false);

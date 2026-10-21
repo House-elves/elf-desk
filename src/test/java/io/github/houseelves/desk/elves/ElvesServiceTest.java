@@ -43,6 +43,11 @@ class ElvesServiceTest {
             commands:
               draft: {label: Draft it, args: [--save]}
             schedule: {command: draft, setting: SCHEDULE}
+            tabs:
+              - {name: status, label: Status, page: ui/status.js, card: true}
+            actions:
+              send: {label: Send it, args: [--action=send], confirm: "Send the status to {target}?"}
+              sent-yourself: {label: Mark it sent, args: [--action=sent-yourself], ask: false}
             """;
 
     final ObjectMapper mapper = new ObjectMapper();
@@ -74,6 +79,9 @@ class ElvesServiceTest {
         assertEquals("An email, only when you click Send.", ws.path("manifest").path("writes").get(0).asText());
         assertTrue(ws.path("manifest").path("settings").get(1).path("secret").asBoolean());
         assertEquals("abc", ws.path("installed").path("commit").asText());
+        assertEquals("Status", ws.path("manifest").path("tabs").get(0).asText());
+        assertEquals("Send it", ws.path("manifest").path("askingActions").get(0).asText());
+        assertEquals("Mark it sent", ws.path("manifest").path("quietActions").get(0).asText());
 
         var mine = list.get(1);
         assertFalse(mine.path("official").asBoolean());
@@ -100,14 +108,34 @@ class ElvesServiceTest {
 
     @Test
     void namesAndCommitsAreCheckedAndTheRunnersRefusalComesBack() throws Exception {
-        assertThrows(IllegalArgumentException.class, () -> elves.run("../x", "draft"));
-        assertThrows(IllegalArgumentException.class, () -> elves.run("weekly-status", "--send=1"));
+        assertThrows(IllegalArgumentException.class, () -> elves.run("../x", "draft", null));
+        assertThrows(IllegalArgumentException.class, () -> elves.run("weekly-status", "--send=1", null));
         assertThrows(IllegalArgumentException.class, () -> elves.update("weekly-status", "HEAD"));
         verify(elves.hub, never()).request(any(), any());
 
         when(elves.hub.request(any(), eq(RunnerHub.ELVES_SINCE))).thenReturn(CompletableFuture.completedFuture(
                 mapper.readTree("{\"status\": 0, \"error\": \"weekly-status isn't installed\"}")));
-        var e = assertThrows(IllegalStateException.class, () -> elves.run("weekly-status", "draft"));
+        var e = assertThrows(IllegalStateException.class, () -> elves.run("weekly-status", "draft", null));
         assertEquals("weekly-status isn't installed", e.getMessage());
+    }
+
+    @Test
+    void aTabsReadsAndActionsGoToTheRunnerForThatElfOnly() throws Exception {
+        assertThrows(IllegalArgumentException.class, () -> elves.read("../x", "runs", List.of("a.json"), null));
+        assertThrows(IllegalArgumentException.class, () -> elves.data("weekly-status", "../config"));
+        assertThrows(IllegalArgumentException.class, () -> elves.action("weekly-status", "Send!", null));
+        verify(elves.hub, never()).request(any(), any());
+
+        when(elves.hub.request(any(), eq(RunnerHub.ELF_TABS_SINCE))).thenReturn(CompletableFuture.completedFuture(
+                mapper.readTree("{\"status\": 200, \"body\": \"{\\\"result\\\": {\\\"sent\\\": true}}\"}")));
+        var r = elves.action("weekly-status", "send", mapper.readTree("{\"target\": \"team\"}"));
+        assertTrue(r.path("result").path("sent").asBoolean());
+        elves.read("weekly-status", "runs", List.of("2026-10-19_10-52-40.json"), List.of("subject"));
+        ArgumentCaptor<ObjectNode> sent = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(elves.hub, org.mockito.Mockito.times(2)).request(sent.capture(), eq(RunnerHub.ELF_TABS_SINCE));
+        assertEquals("elf.action", sent.getAllValues().get(0).path("type").asText());
+        assertEquals("team", sent.getAllValues().get(0).path("params").path("target").asText());
+        assertEquals("elf.read", sent.getAllValues().get(1).path("type").asText());
+        assertEquals("subject", sent.getAllValues().get(1).path("fields").get(0).asText());
     }
 }

@@ -14,12 +14,7 @@ Design doc: <https://claude.ai/artifact/HBSU81qqwHHQVUZ7v1VD3E>
 - **GitHub**: the board below. **Review**, **Investigate** and the CI and conflict actions start the agent and leave you on the board: the row shows **Agent working**, then **Answer ready** or **Draft ready**. **Ask** opens the item, since you type the question there.
 - **Fix it** (on an issue's page, once the agent has answered): the agent fixes the issue as one commit on the default branch and drafts the PR. **Open draft PR…** shows where it goes and warns about open PRs that already mention the issue; **Push and open draft PR** syncs your fork, pushes the commit to a new `fix-<issue>-<sha>` branch on it (never a force push) and opens it as a **draft** PR. Read the change on GitHub, then **Ready for review** (on the PR's row in My PRs, or its page) marks it ready. The runner only opens draft PRs, and only marks your own PRs ready.
 - **Diffs**: a PR's page has **Show files changed** (GitHub's diff), and every draft that pushes code (commits to push, a fix to open as a PR) has **Show the change**, the runner's diff of exactly what would be pushed, so you can read it before confirming.
-- **Email**: **Triage email now** runs [daily-triage](https://github.com/House-elves/daily-triage) `--triage-only --no-email` through the runner. It marks noise read and labels it, and lists what needs you per Gmail account.
-- **Zulip**: **Check Zulip now** runs `daily-triage --zulip-only`: the last 24 hours plus older unread mentions, with a digest per topic, marking nothing read.
-
-The desk reads daily-triage's saved runs from `elfdesk.triage.runs-dir` (`~/.config/daily-triage/runs`) and never writes there.
-
-The Email, Zulip, Status and Quarterly tabs show only once their elf is installed (daily-triage, weekly-status, quarterly-review).
+- **Elves' tabs**: every other tab is drawn by an elf: daily-triage's **Email** and **Zulip**, weekly-status's **Status** and quarterly-review's **Quarterly**. A tab shows once its elf is installed. See [Elf tabs](#elf-tabs).
 
 ## Elves
 
@@ -31,6 +26,15 @@ The **Elves** page installs, sets up and updates elves. It's also the setup wiza
 - **Updating** never happens by itself. When the repo has newer commits, **See the changes** shows the commits and the diff from the installed commit, read from the elf's own clone, and **Update** moves it there.
 - **Settings and a dry run** per elf: the same settings panel the tabs have, and the elf's own dry-run command (for weekly-status, a draft that sends nothing), with the end of its output.
 - **Schedules** are run by the runner, not systemd timers, so they work on macOS too. A run missed while the laptop slept runs when it's back.
+
+## Elf tabs
+
+An elf can bring its own tabs, and a card for each on the dashboard. Its `elf.yaml` lists them (`tabs`), with the folders its tab may read (`data`, under `~/.config/<name>/`) and the actions it may ask for (`actions`). The tab is the elf's own code, so it never runs in the desk's page:
+
+- **A sandboxed frame.** It's drawn in an iframe with `sandbox="allow-scripts"` and no `allow-same-origin`, so it has no origin of its own: no cookie, no page key, no storage, nothing of the desk's page. Its CSP lets it connect nowhere (`connect-src 'none'`). Its files come from `/elf-files/<key>/ui/...`, where the key is made for each elf and commit when the desk starts.
+- **A bridge.** The frame can only post messages to the desk's page, which answers for that one elf: its runs, its own folders, its commands and the actions its `elf.yaml` declares. Its settings open in the desk's own dialog, so secrets never reach it.
+- **Your click.** An action that asks (`ask` is the default) waits for you in a bar the desk draws ("The desk asks, for weekly-status"), with what it would send. Only actions marked `ask: false`, such as marking an email read, run straight from the tab. The Elves page lists both before you install.
+- **The kit.** Elves build their tabs with `/elf-kit/1/kit.js`: Lit, the desk's look, a run bar and `elf`, the bridge. See daily-triage's [ui/](https://github.com/House-elves/daily-triage/tree/main/ui).
 
 ## Threads and posting
 

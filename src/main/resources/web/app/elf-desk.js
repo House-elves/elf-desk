@@ -1,15 +1,13 @@
 import { LitElement, html, css, svg } from 'lit';
+import { keyed } from 'lit/directives/keyed.js';
 import { shared, itemKeyFromHash } from './shared.js';
 import { api, connectionState, onConnectionChange, onBusyChange } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
-import { TABS, tabShown, tabAvailable, showTab, onTabsChange, setInstalledElves } from './tabs.js';
+import { tabs, findTab, tabShown, tabAvailable, showTab, onTabsChange, setInstalledElves, installedElves } from './tabs.js';
 import './desk-board.js';
 import './desk-settings.js';
 import './desk-thread.js';
-import './desk-email.js';
-import './desk-zulip.js';
-import './desk-status.js';
-import './desk-quarterly.js';
+import './elf-frame.js';
 import './desk-dashboard.js';
 import './desk-elves.js';
 
@@ -130,7 +128,10 @@ class ElfDesk extends LitElement {
         window.addEventListener('hashchange', this._onHash);
         document.addEventListener('click', this._onDocClick);
         document.addEventListener('keydown', this._onKey);
-        this._offTabs = onTabsChange(() => { this._tabsChanged = (this._tabsChanged ?? 0) + 1; });
+        this._offTabs = onTabsChange(() => {
+            this._tabsChanged = (this._tabsChanged ?? 0) + 1;
+            this._view = this._viewFromHash();
+        });
         this._offConn = onConnectionChange(s => {
             this._conn = s;
             if (s === 'open') this._loadElves();
@@ -161,7 +162,7 @@ class ElfDesk extends LitElement {
     async _loadElves() {
         try {
             const r = await (await api()).elves();
-            setInstalledElves((r.elves ?? []).map(e => e.name));
+            setInstalledElves(r.elves ?? []);
             let welcomed = true;
             try { welcomed = !!localStorage.getItem(WELCOMED); } catch { /* no storage: never redirect */ }
             if (!r.elves?.length && !welcomed && this._view === 'dashboard') {
@@ -169,24 +170,29 @@ class ElfDesk extends LitElement {
                 location.hash = '#elves';
             }
         } catch (e) {
-            // No runner (or an old one): every tab shows, as before.
+            // No runner: only GitHub's tab, until it's back.
+            if (installedElves() === null) setInstalledElves([]);
         }
     }
 
     _viewFromHash() {
         if (location.hash === '#settings') return 'github'; // the board's settings now live under GitHub
-        if (['#github', '#email', '#zulip', '#status', '#quarterly', '#elves'].includes(location.hash)) return location.hash.slice(1);
-        return itemKeyFromHash(location.hash) ? 'thread' : 'dashboard';
+        if (location.hash === '#github' || location.hash === '#elves') return location.hash.slice(1);
+        if (itemKeyFromHash(location.hash)) return 'thread';
+        // An elf's tab: #email. Until the runner has said which elves there are, it waits.
+        const id = location.hash.slice(1);
+        if (/^[a-z0-9][a-z0-9-]*$/.test(id)) return findTab(id) ? `tab:${id}` : installedElves() === null ? 'waiting' : 'no-tab';
+        return 'dashboard';
     }
 
     _current(tab) {
-        return tab === 'github' ? ['github', 'thread'].includes(this._view) : this._view === tab;
+        return tab === 'github' ? ['github', 'thread'].includes(this._view) : this._view === `tab:${tab}`;
     }
 
     /** The gear next to the theme switch: which tabs show. Dashboard always does. */
     _tabsPicker() {
-        const shown = TABS.filter(t => tabShown(t.id)).length;
-        const available = TABS.filter(t => tabAvailable(t.id));
+        const shown = tabs().filter(t => tabShown(t.id)).length;
+        const available = tabs().filter(t => tabAvailable(t.id));
         return html`<div class="tabs-pick">
             <button class="gear" title="Tabs" aria-label="Choose which tabs show" aria-expanded=${this._tabsOpen ? 'true' : 'false'}
                     aria-controls="tabs-panel" @click=${() => { this._tabsOpen = !this._tabsOpen; }}>
@@ -204,6 +210,11 @@ class ElfDesk extends LitElement {
                     <a href="#elves" @click=${() => { this._tabsOpen = false; }}>Elves</a>.</p>
             </div>` : ''}
         </div>`;
+    }
+
+    /** An elf's tab, drawn by the elf itself. keyed: a different tab is a new frame. */
+    _elfTab(t) {
+        return t ? keyed(`${t.elf}/${t.tab}`, html`<elf-frame elf=${t.elf} tab=${t.tab}></elf-frame>`) : '';
     }
 
     _pickTheme(id) {
@@ -228,7 +239,7 @@ class ElfDesk extends LitElement {
                     </a>
                     <nav aria-label="Views">
                         <a href="#" aria-current=${this._view === 'dashboard' ? 'page' : 'false'}>Dashboard</a>
-                        ${TABS.filter(t => tabShown(t.id) || this._current(t.id)).map(t => html`
+                        ${tabs().filter(t => tabShown(t.id) || this._current(t.id)).map(t => html`
                             <a href="#${t.id}" aria-current=${this._current(t.id) ? 'page' : 'false'}>${t.label}</a>`)}
                         <a href="#elves" aria-current=${this._view === 'elves' ? 'page' : 'false'}>Elves</a>
                     </nav>
@@ -256,10 +267,10 @@ class ElfDesk extends LitElement {
             </header>
             <main>
                 ${this._view === 'elves' ? html`<desk-elves></desk-elves>`
-                    : this._view === 'email' ? html`<desk-email></desk-email>`
-                    : this._view === 'zulip' ? html`<desk-zulip></desk-zulip>`
-                    : this._view === 'status' ? html`<desk-status></desk-status>`
-                    : this._view === 'quarterly' ? html`<desk-quarterly></desk-quarterly>`
+                    : this._view.startsWith('tab:') ? this._elfTab(findTab(this._view.slice(4)))
+                    : this._view === 'waiting' ? html`<div class="skeleton" style="height:40vh"></div>`
+                    : this._view === 'no-tab' ? html`<p class="muted">No installed elf has that tab. Add elves on the
+                        <a href="#elves">Elves</a> page.</p>`
                     : this._view === 'thread' ? html`<desk-thread .itemKey=${itemKeyFromHash(location.hash)}></desk-thread>`
                     : this._view === 'github' ? html`<desk-board ?settingsOpen=${location.hash === '#settings'}></desk-board>`
                     : html`<desk-dashboard></desk-dashboard>`}

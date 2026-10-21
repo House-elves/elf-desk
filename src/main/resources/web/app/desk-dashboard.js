@@ -1,29 +1,22 @@
 import { LitElement, html, css } from 'lit';
 import { shared, ago, spinner, Ticking } from './shared.js';
 import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
-import { boardHeadline, count, joinParts, lastBoard } from './desk-board.js';
-import { runTime } from './triage-run.js';
-import { statusState } from './desk-status.js';
-import { tabShown, onTabsChange } from './tabs.js';
+import { boardHeadline, lastBoard } from './desk-board.js';
+import { tabs, tabShown, onTabsChange } from './tabs.js';
+import './elf-frame.js';
 
 const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
 
-/** The run happened today: tells a stale run from this morning's. */
-function isToday(at) {
-    const d = new Date(at);
-    const now = new Date();
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-}
-
-/** The start page: one sentence per tab (GitHub, Email, Zulip) on what needs you there. */
+/**
+ * The start page: one sentence per tab on what needs you there. GitHub's is the desk's own; every other card is
+ * drawn by its elf (the card view of its tab, in a sandboxed frame), in a panel the desk draws around it.
+ */
 class DeskDashboard extends LitElement {
 
     static properties = {
         _board: { state: true },
-        _email: { state: true },
-        _zulip: { state: true },
-        _status: { state: true },
-        _triage: { state: true },
+        _elves: { state: true },     // the elves' runs: {running: {elf:command: since}}
+        _attention: { state: true }, // per tab id: its card says it needs you
         _loaded: { state: true },
         _errors: { state: true },
         /** Refresh everything: GitHub is being fetched. */
@@ -55,6 +48,7 @@ class DeskDashboard extends LitElement {
         .meta .running { display: inline-flex; align-items: center; gap: 7px; color: var(--accent); }
         .open { font-size: 14px; white-space: nowrap; }
         .skeleton.say-sk { height: 28px; width: min(30rem, 100%); }
+        section.elf { padding-bottom: 14px; }
         @media (max-width: 600px) {
             h1 { font-size: 26px; }
             .say { font-size: 19px; }
@@ -68,18 +62,19 @@ class DeskDashboard extends LitElement {
         this._board = lastBoard;
         this._loaded = {};
         this._errors = {};
+        this._attention = {};
     }
 
     connectedCallback() {
         super.connectedCallback();
         this._loadBoard();
-        this._loadTriage();
+        this._loadElves();
         this._offPush = [
             onPush('desk.board', () => this._softBoard()),
             onPush('desk.thread', e => { if (e.type === 'changed') this._softBoard(); }),
-            onPush('desk.runner', () => { this._softBoard(); this._loadTriage(); }),
-            onPush('desk.triage', () => this._loadTriage()),
-            onConnectionChange(s => { if (s === 'open') { this._loadBoard(); this._loadTriage(); } }),
+            onPush('desk.runner', () => { this._softBoard(); this._loadElves(); }),
+            onPush('desk.elves', () => this._loadElves()),
+            onConnectionChange(s => { if (s === 'open') { this._loadBoard(); this._loadElves(); } }),
             onTabsChange(() => this.requestUpdate()),
         ];
     }
@@ -108,58 +103,44 @@ class DeskDashboard extends LitElement {
         this._soft = setTimeout(() => this._loadBoard(), 1000);
     }
 
-    async _loadTriage() {
-        const desk = await api().catch(() => null);
-        if (!desk) return;
-        const one = async (key, call) => {
-            try {
-                this[`_${key}`] = await call();
-                this._errors = { ...this._errors, [key]: null };
-            } catch (e) {
-                this._errors = { ...this._errors, [key]: errorMessage(e) };
-            } finally {
-                this._loaded = { ...this._loaded, [key]: true };
-            }
-        };
-        await Promise.all([
-            one('triage', () => desk.triageState()),
-            one('email', () => desk.email({ runId: null })),
-            one('zulip', () => desk.zulip({ runId: null })),
-            one('status', () => desk.weeklyStatus({ runId: null })),
-        ]);
+    async _loadElves() {
+        try {
+            this._elves = await (await api()).elvesState();
+        } catch (e) {
+            // No runner: the cards say so themselves.
+        }
     }
 
-    /** The morning button: fetch GitHub, and run the email triage and the Zulip digest, all at once. */
+    /** The tabs with a card on the dashboard that show here. */
+    _cards() {
+        return tabs().filter(t => t.card && tabShown(t.id));
+    }
+
+    _refreshing(t) {
+        return t.refresh && !!this._elves?.running?.[`${t.elf}:${t.refresh}`];
+    }
+
+    /** The morning button: fetch GitHub, and run each card's refresh (the email triage, the Zulip digest) at once. */
     async _refreshAll() {
         this._refreshError = null;
         const desk = await api().catch(e => { this._refreshError = errorMessage(e); return null; });
         if (!desk) return;
         const problems = [];
-        const triage = mode => this._triage?.running?.[mode] || !tabShown(mode) ? null
-            : desk.triageRun({ mode }).then(state => { this._triage = state; })
-                .catch(e => problems.push(`${mode === 'email' ? 'Email' : 'Zulip'}: ${errorMessage(e)}`));
+        const elves = this._cards().filter(t => t.refresh && !this._refreshing(t)).map(t =>
+            desk.runElf({ elf: t.elf, command: t.refresh, params: null })
+                .catch(e => problems.push(`${t.label}: ${errorMessage(e)}`)));
         this._fetching = tabShown('github');
         const github = !tabShown('github') ? null : desk.board({ refresh: true })
             .then(b => { this._board = b; this._errors = { ...this._errors, github: null }; })
             .catch(e => problems.push(`GitHub: ${errorMessage(e)}`))
             .finally(() => { this._fetching = false; });
-        await Promise.all([github, triage('email'), triage('zulip')]);
+        await Promise.all([github, ...elves]);
+        await this._loadElves();
         if (problems.length) this._refreshError = `Not everything refreshed. ${problems.join(' ')}`;
     }
 
     _busy() {
-        return this._fetching || (tabShown('email') && !!this._triage?.running?.email)
-            || (tabShown('zulip') && !!this._triage?.running?.zulip);
-    }
-
-    _running(mode) {
-        const since = this._triage?.running?.[mode];
-        return since ? html`<span class="running" role="status">${spinner}Running, started ${ago(since)}</span>` : '';
-    }
-
-    _failed(mode) {
-        return this._triage?.failed?.[mode] && !this._triage?.running?.[mode]
-            ? html`<span class="error">The last run failed</span>` : '';
+        return this._fetching || this._cards().some(t => this._refreshing(t));
     }
 
     _card({ id, title, href, open, say, meta, attention, key }) {
@@ -192,79 +173,24 @@ class DeskDashboard extends LitElement {
         return this._card({ id: 'github', key: 'github', title: 'GitHub', href: '#github', open: 'Open the board', say, meta, attention });
     }
 
-    _emailCard() {
-        const b = this._email;
-        let say = null, attention = false, meta = [];
-        if (b) {
-            const decisions = (b.accounts ?? []).flatMap(a => a.decisions ?? []);
-            const need = decisions.filter(d => d.decision !== 'MARK_READ' && !d.done).length;
-            const read = decisions.filter(d => d.decision === 'MARK_READ').length;
-            attention = need > 0;
-            say = !decisions.length ? 'No new email in that run.'
-                : need ? html`<a href="#email">${count(need, 'email')}</a> ${need === 1 ? 'needs' : 'need'} you${read ? html`, and ${read} ${read === 1 ? 'was' : 'were'} marked read` : ''}.`
-                : `Nothing in your inbox needs you; ${count(read, 'email')} ${read === 1 ? 'was' : 'were'} marked read.`;
-            meta.push(html`<span>Triaged ${runTime(b.run.at)}${isToday(b.run.at) ? '' : ', not today yet'}</span>`);
-        } else if (this._loaded.email) {
-            say = 'Not triaged yet. Run it from the Email tab.';
-        }
-        meta.push(this._running('email'), this._failed('email'));
-        return this._card({ id: 'email', key: 'email', title: 'Email', href: '#email', open: 'Open email', say, meta, attention });
-    }
-
-    _zulipCard() {
-        const z = this._zulip;
-        let say = null, attention = false, meta = [];
-        if (z) {
-            const topics = new Map();
-            for (const m of z.messages ?? []) {
-                const key = `${m.stream} > ${m.topic}`;
-                const t = topics.get(key) ?? { key, you: false, mention: false, unread: false, last: 0 };
-                t.last = Math.max(t.last, m.time);
-                t.you ||= m.mention || m.involvesMe;
-                t.mention ||= m.mention;
-                t.unread ||= m.unread;
-                topics.set(key, t);
-            }
-            // Topics you marked Done count again once they have newer messages.
-            const all = [...topics.values()].filter(t => !(z.done?.[t.key] && Date.parse(z.done[t.key]) >= t.last * 1000));
-            const mentions = all.filter(t => t.mention).length;
-            const you = all.filter(t => t.you && !t.mention).length;
-            const unread = all.filter(t => t.unread).length;
-            attention = mentions + you + unread > 0;
-            const parts = [];
-            if (mentions) parts.push(html`<a href="#zulip">${count(mentions, 'topic')}</a> ${mentions === 1 ? 'mentions' : 'mention'} you`);
-            if (you) parts.push(html`<a href="#zulip">${count(you, 'topic')}</a> ${you === 1 ? 'involves' : 'involve'} you`);
-            if (unread) parts.push(html`${count(unread, 'topic')} ${unread === 1 ? 'has' : 'have'} unread messages`);
-            say = !all.length ? 'Nothing happened on Zulip.'
-                : parts.length ? html`${joinParts(parts)}, out of ${count(all.length, 'active topic')}.`
-                : `Nothing involves you; ${count(all.length, 'topic')} ${all.length === 1 ? 'was' : 'were'} active.`;
-            meta.push(html`<span>The ${z.hours} hours up to ${runTime(z.run.at)}${isToday(z.run.at) ? '' : ', not checked today yet'}</span>`);
-        } else if (this._loaded.zulip) {
-            say = 'Not checked yet. Check from the Zulip tab.';
-        }
-        meta.push(this._running('zulip'), this._failed('zulip'));
-        return this._card({ id: 'zulip', key: 'zulip', title: 'Zulip', href: '#zulip', open: 'Open Zulip', say, meta, attention });
-    }
-
-    /** The weekly status: from Monday on, it asks for your attention until this week's is sent. */
-    _statusCard() {
-        const s = this._status;
-        const state = statusState(s);
-        let say = null;
-        if (state === 'sent') say = `This week's status went to the team ${ago(s.sends.find(x => x.target === 'team').at)}.`;
-        else if (state === 'self') say = html`<a href="#status">This week's status</a> went to you, not to the team yet.`;
-        else if (state === 'draft') say = html`<a href="#status">This week's status</a> is drafted and ready to send.`;
-        else if (this._loaded.status) say = html`Nothing drafted this week yet. <a href="#status">Draft it now</a>, or it drafts itself Monday at 08:00.`;
-        const meta = [this._running('status'), this._failed('status')];
-        return this._card({ id: 'status', key: 'status', title: 'Weekly status', href: '#status', open: 'Open status',
-            say, meta, attention: this._loaded.status && state !== 'sent' });
+    /** An elf's card: the desk draws the panel and its title, the elf draws what's in it. */
+    _elfCard(t) {
+        return html`
+            <section class="panel elf ${this._attention[t.id] ? 'attention' : ''}" aria-labelledby="d-${t.id}">
+                <div class="head">
+                    <h2 id="d-${t.id}"><a href="#${t.id}">${t.label}</a></h2>
+                    <a class="open" href="#${t.id}">Open ${t.label}</a>
+                </div>
+                <elf-frame elf=${t.elf} tab=${t.tab} view="card"
+                           @elf-card=${e => { this._attention = { ...this._attention, [t.id]: e.detail.attention }; }}></elf-frame>
+            </section>`;
     }
 
     /** What Refresh everything does, for the tabs that show. */
     _refreshHint() {
-        const parts = [tabShown('github') && 'fetches GitHub', tabShown('email') && 'triages new email',
-            tabShown('zulip') && 'catches up on Zulip'].filter(Boolean);
-        if (!parts.length) return 'Nothing to refresh with GitHub, Email and Zulip hidden.';
+        const parts = [tabShown('github') && 'fetches GitHub',
+            ...this._cards().filter(t => t.refresh).map(t => `runs ${t.label}`)].filter(Boolean);
+        if (!parts.length) return 'Nothing to refresh: no tab here refreshes.';
         const text = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
         return `${text[0].toUpperCase()}${text.slice(1)}.`;
     }
@@ -278,7 +204,7 @@ class DeskDashboard extends LitElement {
                         <h1>Your desk</h1>
                     </div>
                     <div class="refresh">
-                        <button class="primary" ?disabled=${this._busy() || !['github', 'email', 'zulip'].some(tabShown)}
+                        <button class="primary" ?disabled=${this._busy() || (!tabShown('github') && !this._cards().some(t => t.refresh))}
                                 @click=${this._refreshAll}>
                             ${this._busy() ? spinner : ''}${this._busy() ? 'Refreshing' : 'Refresh everything'}</button>
                         <p class="hint">${this._refreshHint()}</p>
@@ -287,10 +213,8 @@ class DeskDashboard extends LitElement {
                 ${this._refreshError ? html`<p class="error" role="alert">${this._refreshError}</p>` : ''}
                 <div class="tabs">
                     ${tabShown('github') ? this._github() : ''}
-                    ${tabShown('email') ? this._emailCard() : ''}
-                    ${tabShown('zulip') ? this._zulipCard() : ''}
-                    ${tabShown('status') ? this._statusCard() : ''}
-                    ${!['github', 'email', 'zulip', 'status'].some(tabShown)
+                    ${this._cards().map(t => this._elfCard(t))}
+                    ${!tabShown('github') && !this._cards().length
                         ? html`<p class="hint">Every tab with a card here is hidden. Turn tabs back on with the gear at the top right.</p>` : ''}
                 </div>
             </div>

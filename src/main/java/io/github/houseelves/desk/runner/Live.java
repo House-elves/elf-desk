@@ -20,7 +20,7 @@ public class Live {
     public static final String THREAD = "desk.thread";
     public static final String RUNNER = "desk.runner";
     public static final String BOARD = "desk.board";
-    public static final String TRIAGE = "desk.triage";
+    public static final String ELVES = "desk.elves";
     static final int KEEP_LINES = 300;
 
     @Inject
@@ -64,9 +64,9 @@ public class Live {
         broadcaster.broadcast(BOARD, Map.of("updated", true));
     }
 
-    /** A daily-triage run started, finished or failed: open Briefing and Zulip pages reload. */
-    public void triage(String mode) {
-        broadcaster.broadcast(TRIAGE, Map.of("mode", mode));
+    /** An elf's run started, finished or failed: its open tabs, cards and the Elves page reload. */
+    public void elves() {
+        broadcaster.broadcast(ELVES, Map.of("changed", true));
     }
 
     public void runner(boolean connected) {

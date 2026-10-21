@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared, spinner, ago, settingsToggle } from './shared.js';
+import { calendarText, shared, spinner, ago, settingsToggle } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { setInstalledElves } from './tabs.js';
 import './elf-settings.js';
@@ -11,22 +11,6 @@ const short = sha => (sha ?? '').slice(0, 7);
 function when(iso) {
     if (!iso) return '';
     return new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
-
-const DAYS = { mon: 'Mondays', tue: 'Tuesdays', wed: 'Wednesdays', thu: 'Thursdays', fri: 'Fridays', sat: 'Saturdays', sun: 'Sundays' };
-
-/** "Mon *-*-* 08:00:00" as "Mondays at 08:00", "Mon..Fri *-*-* 07:30" as "Mon to Fri at 07:30"; anything else as is. */
-export function calendarText(cal) {
-    const m = /^(?:(\S+) )?\*-\*-\* (\d{1,2}:\d{2})(?::00)?$/.exec(cal ?? '');
-    if (!m) return cal ?? '';
-    const time = m[2].padStart(5, '0');
-    if (!m[1]) return `every day at ${time}`;
-    const days = m[1].split(',').map(d => {
-        const [from, to] = d.split('..').map(x => x.toLowerCase());
-        return to ? (from === 'mon' && to === 'fri' ? 'weekdays' : `${from[0].toUpperCase()}${from.slice(1)} to ${to[0].toUpperCase()}${to.slice(1)}`)
-            : DAYS[from] ?? d;
-    });
-    return `${days.join(' and ')} at ${time}`;
 }
 
 /**
@@ -116,7 +100,7 @@ class DeskElves extends LitElement {
 
     _showInstalled(r) {
         this._installed = r.elves ?? [];
-        setInstalledElves(this._installed.map(e => e.name));
+        setInstalledElves(this._installed);
         // While a run is going, look again every few seconds so its output shows when it ends.
         clearTimeout(this._poll);
         if (this._installed.some(e => (e.runs ?? []).some(x => x.running))) {
@@ -175,7 +159,7 @@ class DeskElves extends LitElement {
     }
 
     _run(elf, command) {
-        return this._do(`run:${elf}`, desk => desk.runElf({ elf, command }));
+        return this._do(`run:${elf}`, desk => desk.runElf({ elf, command, params: null }));
     }
 
     _catalogFor(elf) {
@@ -264,6 +248,9 @@ class DeskElves extends LitElement {
                 <dl>
                     ${this._lists('Reads', m.reads)}
                     ${this._lists('Writes', m.writes)}
+                    ${m.tabs?.length ? html`<dt>Adds</dt><dd>${m.tabs.length === 1 ? 'A tab' : 'Tabs'}: ${m.tabs.join(', ')}</dd>` : ''}
+                    ${m.quietActions?.length ? html`<dt>Does on a click</dt><dd>${m.quietActions.join('; ')}</dd>` : ''}
+                    ${m.askingActions?.length ? html`<dt>Asks you first</dt><dd>${m.askingActions.join('; ')}</dd>` : ''}
                     ${m.tools?.length ? html`<dt>Needs</dt><dd>${m.tools.join(', ')}</dd>` : ''}
                     ${m.settings?.length ? html`<dt>Asks for</dt><dd>${m.settings.map((s, i) => html`${i ? ', ' : ''}${s.label}${s.secret ? ' (secret)' : ''}`)}</dd>` : ''}
                     <dt>Runs</dt><dd>${m.schedule ? `${calendarText(m.schedule)}, and when you start it` : 'When you start it'}</dd>
