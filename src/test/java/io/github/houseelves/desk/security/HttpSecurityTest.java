@@ -50,8 +50,18 @@ class HttpSecurityTest {
         return "elfdesk-session-" + RestAssured.port;
     }
 
-    static String signIn() throws Exception {
-        return desk().when().get("/open?code=" + code()).then().statusCode(302).extract().cookie(cookie());
+    record SignedIn(String session, String pageKey) {
+    }
+
+    static SignedIn signIn() throws Exception {
+        var r = desk().when().get("/open?code=" + code()).then().statusCode(200).extract();
+        return new SignedIn(r.cookie(cookie()), pageKey(r.body().asString()));
+    }
+
+    static String pageKey(String openPage) {
+        var m = java.util.regex.Pattern.compile("setItem\\('elfdesk-page', '([A-Za-z0-9_-]+)'\\)").matcher(openPage);
+        assertTrue(m.find(), openPage);
+        return m.group(1);
     }
 
     @Test
@@ -63,16 +73,20 @@ class HttpSecurityTest {
     @Test
     void aOneTimeCodeGivesASessionOnce() throws Exception {
         String code = code();
-        String session = desk().when().get("/open?code=" + code)
-                .then().statusCode(302).header("Location", endsWith("/"))
+        var opened = desk().when().get("/open?code=" + code)
+                .then().statusCode(200).header("Cache-Control", "no-store")
                 .header("Set-Cookie", containsStringIgnoringCase("httponly"))
                 .header("Set-Cookie", containsString("SameSite=Strict"))
-                .extract().cookie(cookie());
+                .body(containsString("location.replace('/')"))
+                .extract();
+        String session = opened.cookie(cookie());
+        String pageKey = pageKey(opened.body().asString());
         assertNotNull(session);
-        // Only its hash is on disk, and the old desk key (the cookie before sessions) is gone.
+        // Only their hashes are on disk, and the old desk key (the cookie before sessions) is gone.
         String sessions = Files.readString(DATA.resolve("sessions"));
         assertFalse(sessions.contains(session));
-        assertTrue(sessions.contains(DeskSessions.hash(session)));
+        assertFalse(sessions.contains(pageKey));
+        assertTrue(sessions.contains(DeskSessions.hash(session) + " " + DeskSessions.hash(pageKey)));
         assertFalse(Files.exists(DATA.resolve("desk.key")));
 
         // Used up: the same link again signs nobody in, and there is a new code for next time.
@@ -87,8 +101,23 @@ class HttpSecurityTest {
     }
 
     @Test
+    void dataNeedsThePageKeyAsWell() throws Exception {
+        // The cookie reaches any port of this name; the page key only this origin's pages.
+        SignedIn in = signIn();
+        desk().cookie(cookie(), in.session()).when().get("/files/1").then().statusCode(302)
+                .header("Location", endsWith("/welcome"));
+        desk().cookie(cookie(), in.session()).when().get("/files/1?k=not-the-key").then().statusCode(302);
+        desk().cookie(cookie(), in.session()).when().get("/files/1?k=" + in.pageKey()).then().statusCode(404);
+        desk().cookie(cookie(), in.session()).header("Upgrade", "websocket").header("Connection", "Upgrade")
+                .when().get("/json-rpc").then().statusCode(401);
+        // Another session's page key isn't this one's.
+        SignedIn other = signIn();
+        desk().cookie(cookie(), in.session()).when().get("/files/1?k=" + other.pageKey()).then().statusCode(302);
+    }
+
+    @Test
     void deletingTheSessionsSignsEveryoneOut() throws Exception {
-        String session = signIn();
+        String session = signIn().session();
         desk().cookie(cookie(), session).when().get("/").then().statusCode(200);
         Files.delete(DATA.resolve("sessions"));
         desk().cookie(cookie(), session).when().get("/").then().statusCode(302);
@@ -96,9 +125,9 @@ class HttpSecurityTest {
 
     @Test
     void anExpiredSessionIsRefused() throws Exception {
-        String session = signIn();
-        Files.writeString(DATA.resolve("sessions"),
-                DeskSessions.hash(session) + " " + Instant.now().minusSeconds(60).getEpochSecond() + "\n");
+        String session = signIn().session();
+        Files.writeString(DATA.resolve("sessions"), DeskSessions.hash(session) + " " + DeskSessions.hash("page") + " "
+                + Instant.now().minusSeconds(60).getEpochSecond() + "\n");
         desk().cookie(cookie(), session).when().get("/").then().statusCode(302);
     }
 
@@ -117,11 +146,11 @@ class HttpSecurityTest {
 
     @Test
     void onlyTheDesksOwnPagesMaySendItAnything() throws Exception {
-        String session = signIn();
-        desk().cookie(cookie(), session).header("Origin", "http://localhost:8080").when().post("/json-rpc")
-                .then().statusCode(403);
-        desk().cookie(cookie(), session).header("Origin", "http://localhost:8080").header("Upgrade", "websocket")
-                .header("Connection", "Upgrade").when().get("/json-rpc").then().statusCode(403);
+        SignedIn in = signIn();
+        desk().cookie(cookie(), in.session()).header("Origin", "http://localhost:8080").when()
+                .post("/json-rpc?k=" + in.pageKey()).then().statusCode(403);
+        desk().cookie(cookie(), in.session()).header("Origin", "http://localhost:8080").header("Upgrade", "websocket")
+                .header("Connection", "Upgrade").when().get("/json-rpc?k=" + in.pageKey()).then().statusCode(403);
     }
 
     @Test

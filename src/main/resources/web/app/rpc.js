@@ -4,7 +4,21 @@ import { client, desk } from '@quarkiverse/json-rpc-api';
 // page, not from import.meta.url.
 const endpoint = new URL('json-rpc', document.baseURI);
 endpoint.protocol = endpoint.protocol === 'https:' ? 'wss:' : 'ws:';
+
+// The session's page key, from the one-time link (/open). It lives in this origin's storage, which a server on
+// another port can't read, and goes with everything that carries data. Without it, the desk has to be opened again.
+let pageKey = null;
+try { pageKey = localStorage.getItem('elfdesk-page'); } catch { /* storage blocked */ }
+if (!pageKey) location.replace('/welcome');
+endpoint.searchParams.set('k', pageKey ?? '');
 client.url = endpoint.href;
+
+/** A desk URL (an agent's file, say) with the page key, which the desk needs for anything but the page itself. */
+export function withKey(path) {
+    const url = new URL(path, document.baseURI);
+    url.searchParams.set('k', pageKey ?? '');
+    return url.pathname + url.search;
+}
 
 const listeners = new Set();
 let state = client.connected ? 'open' : 'connecting';

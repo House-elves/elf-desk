@@ -27,10 +27,16 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 /**
  * Who may use the desk: a browser holding one of its sessions. {@code house-elves open} reads the one-time code in
- * {@code open-code} and opens {@code /open?code=...}, which swaps it for a new session cookie; each code works once.
+ * {@code open-code} and opens {@code /open?code=...}, which swaps it for a new session; each code works once.
  *
  * <p>
- * The sessions are in {@code sessions} in the data directory, as hashes with an expiry, so the cookies themselves
+ * A session is two secrets. The cookie goes with every request, but browsers keep cookies per host name, not per
+ * port, so a server on another port of the same name could be sent it too. The page key is kept in the page's own
+ * storage, which browsers keep per origin, port included, and the page adds it to everything that carries data
+ * (see {@link DeskSignIn}).
+ *
+ * <p>
+ * The sessions are in {@code sessions} in the data directory, as hashes with an expiry, so the secrets themselves
  * are nowhere on disk. Deleting the file ({@code house-elves sign-out}) signs every browser out at once.
  */
 @Startup
@@ -47,7 +53,15 @@ public class DeskSessions {
 
     private Path file;
     private FileTime readAt;
-    private Map<String, Instant> sessions = Map.of();
+    private Map<String, Session> sessions = Map.of();
+
+    /** A session as stored: its page key's hash, and when it ends. */
+    record Session(String pageHash, Instant expires) {
+    }
+
+    /** What a browser gets for a one-time code: the cookie's value and the page key. */
+    public record Opened(String token, String pageKey) {
+    }
 
     @PostConstruct
     void init() {
@@ -68,14 +82,21 @@ public class DeskSessions {
         }
     }
 
-    public boolean isSession(String token) {
+    /**
+     * The cookie is a live session's, and, when the request carries data ({@code needsPageKey}), the page key is
+     * that session's too.
+     */
+    public boolean isSession(String token, boolean needsPageKey, String pageKey) {
         if (token == null || token.isEmpty()) return false;
-        Instant expires = current().get(hash(token));
-        return expires != null && Instant.now().isBefore(expires);
+        Session s = current().get(hash(token));
+        if (s == null || !Instant.now().isBefore(s.expires())) return false;
+        if (!needsPageKey) return true;
+        return pageKey != null && MessageDigest.isEqual(hash(pageKey).getBytes(StandardCharsets.UTF_8),
+                s.pageHash().getBytes(StandardCharsets.UTF_8));
     }
 
     /** A new session for a valid one-time code (which is then used up), or null. */
-    public synchronized String redeem(String code) {
+    public synchronized Opened redeem(String code) {
         try {
             Path codeFile = dataDir.resolve("open-code");
             String current = Files.isRegularFile(codeFile) ? Files.readString(codeFile).strip() : "";
@@ -84,33 +105,36 @@ public class DeskSessions {
                 return null;
             }
             newCode();
-            String token = random();
+            Opened opened = new Opened(random(), random());
             Instant now = Instant.now();
-            Map<String, Instant> kept = new LinkedHashMap<>();
-            current().entrySet().stream().filter(e -> e.getValue().isAfter(now))
-                    .sorted(Map.Entry.<String, Instant> comparingByValue(Comparator.reverseOrder()))
+            Map<String, Session> kept = new LinkedHashMap<>();
+            current().entrySet().stream().filter(e -> e.getValue().expires().isAfter(now))
+                    .sorted(Comparator.comparing((Map.Entry<String, Session> e) -> e.getValue().expires()).reversed())
                     .limit(MAX - 1).forEach(e -> kept.put(e.getKey(), e.getValue()));
-            kept.put(hash(token), now.plus(LIFETIME));
-            writePrivate(file, kept.entrySet().stream().map(e -> e.getKey() + " " + e.getValue().getEpochSecond())
+            kept.put(hash(opened.token()), new Session(hash(opened.pageKey()), now.plus(LIFETIME)));
+            writePrivate(file, kept.entrySet().stream()
+                    .map(e -> e.getKey() + " " + e.getValue().pageHash() + " " + e.getValue().expires().getEpochSecond())
                     .collect(Collectors.joining("\n")));
             // Remembered here too: a write within the file system's timestamp resolution looks unchanged.
             sessions = kept;
             readAt = Files.getLastModifiedTime(file);
-            return token;
+            return opened;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
 
     /** The sessions file as it is now: read again whenever it changes, and empty once it's deleted. */
-    private synchronized Map<String, Instant> current() {
+    private synchronized Map<String, Session> current() {
         try {
             FileTime modified = Files.getLastModifiedTime(file);
             if (!modified.equals(readAt)) {
-                Map<String, Instant> read = new LinkedHashMap<>();
+                Map<String, Session> read = new LinkedHashMap<>();
                 for (String line : Files.readAllLines(file)) {
                     String[] parts = line.strip().split(" ");
-                    if (parts.length == 2) read.put(parts[0], Instant.ofEpochSecond(Long.parseLong(parts[1])));
+                    if (parts.length == 3) {
+                        read.put(parts[0], new Session(parts[1], Instant.ofEpochSecond(Long.parseLong(parts[2]))));
+                    }
                 }
                 sessions = read;
                 readAt = modified;

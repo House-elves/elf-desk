@@ -24,7 +24,7 @@ import jakarta.inject.Inject;
  * agent's dev mode. Health checks and the runner may still use any local name.
  *
  * <p>
- * {@code /open?code=...} swaps a one-time code for a session cookie (see {@link DeskSessions}); {@code /welcome} is
+ * {@code /open?code=...} swaps a one-time code for a session (see {@link DeskSessions}); {@code /welcome} is
  * where you land without one. No other site may show the desk in a frame.
  */
 public class LocalOnly {
@@ -61,14 +61,21 @@ public class LocalOnly {
             rc.next();
         });
         router.get("/open").blockingHandler(rc -> {
-            String token = sessions.redeem(rc.request().getParam("code"));
-            if (token == null) {
+            DeskSessions.Opened opened = sessions.redeem(rc.request().getParam("code"));
+            if (opened == null) {
                 rc.redirect("/welcome?expired");
                 return;
             }
-            rc.response().addCookie(Cookie.cookie(DeskSignIn.cookie(rc), token).setHttpOnly(true).setPath("/")
-                    .setSameSite(CookieSameSite.STRICT).setMaxAge(DeskSessions.LIFETIME.toSeconds()));
-            rc.redirect("/");
+            rc.response().addCookie(Cookie.cookie(DeskSignIn.cookie(rc), opened.token()).setHttpOnly(true)
+                    .setPath("/").setSameSite(CookieSameSite.STRICT).setMaxAge(DeskSessions.LIFETIME.toSeconds()));
+            // The page key goes in this origin's storage (rpc.js), which another port can't read. Only whoever
+            // redeemed the code ever sees this response.
+            rc.response().putHeader("Content-Type", "text/html; charset=utf-8").putHeader("Cache-Control", "no-store")
+                    .putHeader("Referrer-Policy", "no-referrer")
+                    .end("""
+                            <!doctype html><meta charset="utf-8"><title>Elf Desk</title>
+                            <script>try { localStorage.setItem('elfdesk-page', '%s'); } catch (e) {} location.replace('/');</script>
+                            """.formatted(opened.pageKey()));
         });
         router.get("/welcome").handler(rc -> rc.response().putHeader("Content-Type", "text/html; charset=utf-8")
                 .putHeader("Cache-Control", "no-store")

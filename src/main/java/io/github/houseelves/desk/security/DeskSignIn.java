@@ -20,8 +20,12 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 /**
- * Signs you in with a session cookie (see {@link DeskSessions}): with it you are the desk's GitHub account and have
- * the {@code owner} role. Without it, pages go to {@code /welcome}, which says how to open the desk.
+ * Signs you in with a session (see {@link DeskSessions}): with it you are the desk's GitHub account and have the
+ * {@code owner} role. Without it, pages go to {@code /welcome}, which says how to open the desk.
+ *
+ * <p>
+ * The page itself (its HTML and bundles, which hold no data) needs only the cookie. Everything else, the JSON-RPC
+ * socket and the agent's files included, also needs the session's page key, which the page sends as {@code k}.
  */
 @ApplicationScoped
 public class DeskSignIn implements HttpAuthenticationMechanism {
@@ -38,11 +42,18 @@ public class DeskSignIn implements HttpAuthenticationMechanism {
         return "elfdesk-session-" + port;
     }
 
+    /** The page's HTML and bundles: no data in them, so the cookie alone is enough. */
+    static boolean pageAsset(String path) {
+        return path.equals("/") || path.equals("/index.html") || path.startsWith("/static/")
+                || path.startsWith("/_static/") || path.startsWith("/q/");
+    }
+
     @Override
     public Uni<SecurityIdentity> authenticate(RoutingContext rc, IdentityProviderManager providers) {
         Cookie c = rc.request().getCookie(cookie(rc));
         if (c == null) return Uni.createFrom().optional(Optional.empty());
-        return providers.authenticate(new SessionRequest(c.getValue()));
+        boolean needsPageKey = !pageAsset(rc.normalizedPath());
+        return providers.authenticate(new SessionRequest(c.getValue(), needsPageKey, rc.request().getParam("k")));
     }
 
     @Override
@@ -59,9 +70,13 @@ public class DeskSignIn implements HttpAuthenticationMechanism {
 
     public static final class SessionRequest extends BaseAuthenticationRequest {
         final String value;
+        final boolean needsPageKey;
+        final String pageKey;
 
-        SessionRequest(String value) {
+        SessionRequest(String value, boolean needsPageKey, String pageKey) {
             this.value = value;
+            this.needsPageKey = needsPageKey;
+            this.pageKey = pageKey;
         }
     }
 
@@ -81,7 +96,7 @@ public class DeskSignIn implements HttpAuthenticationMechanism {
 
         @Override
         public Uni<SecurityIdentity> authenticate(SessionRequest request, AuthenticationRequestContext context) {
-            if (!sessions.isSession(request.value)) return Uni.createFrom().nullItem();
+            if (!sessions.isSession(request.value, request.needsPageKey, request.pageKey)) return Uni.createFrom().nullItem();
             // Asking gh for the login can take a moment the first time: not on the event loop.
             return context.runBlocking(() -> QuarkusSecurityIdentity.builder()
                     .setPrincipal(new QuarkusPrincipal(account.login()))

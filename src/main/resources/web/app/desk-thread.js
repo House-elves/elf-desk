@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { isDependabot, linksFor, prRef, threadHref, rememberItem, shared, ago, markdown, markdownStyles, knownItem, kindIcon, spinner, ciFailing, ciNeedsApproval, hasConflicts, behind, mergeable, mergeableAnyway, Ticking } from './shared.js';
-import { api, errorMessage, onPush } from './rpc.js';
+import { api, errorMessage, onPush, withKey } from './rpc.js';
 import './merge-control.js';
 import './ci-menu.js';
 import './conflict-menu.js';
@@ -682,14 +682,14 @@ class DeskThread extends LitElement {
             <div class="files" role="group" aria-label="Files from the agent">
                 <div class="files-head">
                     <span class="muted small">${turn.files.length === 1 ? '1 file' : `${turn.files.length} files`} from the agent</span>
-                    <a class="btn sm" href="/files/job/${turn.job}.zip" download>Download all (zip)</a>
+                    <a class="btn sm" href=${withKey(`/files/job/${turn.job}.zip`)} download>Download all (zip)</a>
                 </div>
                 ${images.length ? html`<div class="shots">${images.map(f => html`
-                    <a class="shot" href="/files/${f.id}" target="_blank" rel="noopener" title="Open ${f.name} full size">
-                        <img src="/files/${f.id}" alt=${f.name} loading="lazy">
+                    <a class="shot" href=${withKey(`/files/${f.id}`)} target="_blank" rel="noopener" title="Open ${f.name} full size">
+                        <img src=${withKey(`/files/${f.id}`)} alt=${f.name} loading="lazy">
                         <span class="small">${f.name}</span></a>`)}</div>` : ''}
                 ${others.length ? html`<ul class="others">${others.map(f => html`
-                    <li><a href="/files/${f.id}" download=${f.name}>${f.name}</a> <span class="muted small">${size(f.size)}</span></li>`)}</ul>` : ''}
+                    <li><a href=${withKey(`/files/${f.id}`)} download=${f.name}>${f.name}</a> <span class="muted small">${size(f.size)}</span></li>`)}</ul>` : ''}
             </div>`;
     }
 
