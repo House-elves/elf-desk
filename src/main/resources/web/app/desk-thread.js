@@ -531,8 +531,11 @@ class DeskThread extends LitElement {
         const t = this._thread;
         const kind = t?.kind ?? knownItem(this.itemKey)?.kind;
         const url = t?.url ?? knownItem(this.itemKey)?.url;
-        const lastAnswer = [...(t?.turns ?? [])].reverse().find(x => x.role === 'agent');
-        const lastNote = t?.turns?.length && t.turns[t.turns.length - 1].role === 'system' ? t.turns[t.turns.length - 1] : null;
+        const turns = t?.turns ?? [];
+        const lastAnswer = [...turns].reverse().find(x => x.role === 'agent');
+        // What happened since that answer (the agent stopped, you re-ran CI, ...): a later note mustn't hide an
+        // earlier one, such as why the agent stopped.
+        const notes = turns.slice(lastAnswer ? turns.indexOf(lastAnswer) + 1 : 0).filter(x => x.role === 'system').slice(-3);
         return html`
             <div class="compact">
                 ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : ''}
@@ -541,7 +544,7 @@ class DeskThread extends LitElement {
                 ${!this._loaded ? this._renderSkeleton() : ''}
                 ${this._loaded && !t ? html`<p class="muted small" style="margin:0">No agent has looked at this yet.</p>` : ''}
                 ${lastAnswer && !t?.job ? this._renderTurn(lastAnswer) : ''}
-                ${lastNote && !t?.job ? this._renderTurn(lastNote) : ''}
+                ${!t?.job ? notes.map(n => this._renderTurn(n)) : ''}
                 ${t?.job ? this._renderJob(t) : ''}
                 ${kind === 'PR' && url && t?.draft?.kind === 'review' ? this._renderFiles(url) : ''}
                 ${t?.draft ? this._renderDraft(t.draft) : ''}

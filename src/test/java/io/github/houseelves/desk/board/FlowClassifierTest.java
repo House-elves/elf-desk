@@ -138,6 +138,19 @@ class FlowClassifierTest {
     }
 
     @Test
+    void greenButBlockedIsCiStartingOnlyJustAfterAChange() {
+        // GitHub blocks a green PR while required checks haven't started, and also when a ruleset wants an approval
+        // without saying so in reviewDecision (search.quarkus.io#636): only the first right after a push.
+        Item p = pr2(ME, "SUCCESS", "BLOCKED", "MERGEABLE", false, false, null);
+        Item fresh = new Item(p.key(), p.repo(), p.number(), p.kind(), p.title(), p.url(), p.author(), p.assignees(),
+                p.createdAt(), NOW.minusSeconds(300), 0, false, p.headRef(), p.headSha(), "SUCCESS", null, "MERGEABLE", "BLOCKED", false);
+        is(FlowClassifier.flow("mine", fresh, ctx()), Flow.CI, 1, null);
+        Flow old = FlowClassifier.flow("mine", p, ctx());
+        is(old, Flow.OTHERS, 2, null);
+        assertEquals("Waiting on reviewers for 8 days.", old.say());
+    }
+
+    @Test
     void aReviewerSpeakingAfterYouMakesItYourMove() {
         Item waiting = pr2(ME, "SUCCESS", "BLOCKED", "MERGEABLE", false, false, "REVIEW_REQUIRED");
         Instant at = NOW.minusSeconds(3600);

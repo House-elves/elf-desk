@@ -239,7 +239,7 @@ public final class FlowClassifier {
             return flow("mine", MINE_STEPS, 2, Flow.YOU, said.at(), said.who() + what + openThreads(said) + ".",
                     new Flow.Next("read-review", "Read the review"), List.of(new Flow.Next("address", "Address the review")));
         }
-        if (pending(i)) return flow("mine", MINE_STEPS, 1, Flow.CI, i.updatedAt(), "CI is running.", null, List.of());
+        if (pending(i, c)) return flow("mine", MINE_STEPS, 1, Flow.CI, i.updatedAt(), "CI is running.", null, List.of());
         if (ciStarting(i, c)) return flow("mine", MINE_STEPS, 1, Flow.CI, i.updatedAt(), "Pushed. Waiting for CI to start.", null, List.of());
         if ("CHANGES_REQUESTED".equals(i.reviewDecision())) {
             return flow("mine", MINE_STEPS, 2, Flow.YOU, i.updatedAt(), "A reviewer asked for changes" + openThreads(said) + ".",
@@ -288,7 +288,7 @@ public final class FlowClassifier {
         }
         Flow problem = ciProblem("review", REVIEW_STEPS, 2, i, last, false);
         if (problem != null) return problem;
-        if (pending(i)) return flow("review", REVIEW_STEPS, 2, Flow.CI, i.updatedAt(), "Approved. CI is running.", null, List.of());
+        if (pending(i, c)) return flow("review", REVIEW_STEPS, 2, Flow.CI, i.updatedAt(), "Approved. CI is running.", null, List.of());
         if (mergeable(i)) {
             return flow("review", REVIEW_STEPS, 3, Flow.YOU, i.updatedAt(), "Approved and green.", new Flow.Next("merge", "Merge"), List.of());
         }
@@ -343,7 +343,7 @@ public final class FlowClassifier {
                     yield flow("mvnpm", MVNPM_STEPS, 1, Flow.YOU, i.updatedAt(), "Safe. CI waits for you to approve the run.",
                             new Flow.Next("ci-approve", "Approve CI run"), List.of());
                 }
-                if (pending(i)) yield flow("mvnpm", MVNPM_STEPS, 1, Flow.CI, i.updatedAt(), "Safe. CI is running.", null, List.of());
+                if (pending(i, c)) yield flow("mvnpm", MVNPM_STEPS, 1, Flow.CI, i.updatedAt(), "Safe. CI is running.", null, List.of());
                 if (ciFailing(i)) {
                     // A web-jar bump rarely breaks the build: usually CI broke on the base and was fixed there since.
                     // Re-running tests the same old merge again; a rebase takes the fix from the base.
@@ -441,11 +441,14 @@ public final class FlowClassifier {
         return "FAILURE".equals(i.ci()) || "ERROR".equals(i.ci());
     }
 
-    static boolean pending(Item i) {
+    static boolean pending(Item i, Ctx c) {
         return "PENDING".equals(i.ci()) || "EXPECTED".equals(i.ci())
-                // Green so far, but required checks haven't all run (often: the real CI hasn't started yet).
+                // Green so far, but required checks haven't all run (often: the real CI hasn't started yet). Only
+                // just after a change: later, a green PR GitHub still blocks waits for something else, such as an
+                // approval a ruleset asks for without saying so in reviewDecision.
                 || "SUCCESS".equals(i.ci()) && "BLOCKED".equals(i.mergeState()) && !Boolean.TRUE.equals(i.draft())
-                        && !"REVIEW_REQUIRED".equals(i.reviewDecision()) && !"CHANGES_REQUESTED".equals(i.reviewDecision());
+                        && !"REVIEW_REQUIRED".equals(i.reviewDecision()) && !"CHANGES_REQUESTED".equals(i.reviewDecision())
+                        && i.updatedAt() != null && i.updatedAt().isAfter(c.now().minus(java.time.Duration.ofMinutes(30)));
     }
 
     /**
