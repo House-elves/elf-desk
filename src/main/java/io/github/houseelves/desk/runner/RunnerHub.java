@@ -60,6 +60,8 @@ public class RunnerHub {
 
     private volatile WebSocketConnection runner;
     private volatile String runnerVersion = "";
+    /** The elves' runs going now (elf:command, or a built-in tab's mode), as the runner last said. */
+    private volatile List<String> elvesRunning = List.of();
 
     /**
      * A message too big for one WebSocket message (a job's answer with a large patch) comes as parts, each a piece
@@ -87,11 +89,16 @@ public class RunnerHub {
     public static final String QUARTERLY_SINCE = "0.26.0";
     public static final String APPROVE_DEPLOYMENT_SINCE = "0.27.0";
     public static final String ELF_CONFIG_SINCE = "0.28.0";
+    public static final String ELVES_SINCE = "0.30.0";
     static final String PR_SINCE = "0.15.0";
     static final String READY_PR_SINCE = "0.21.0";
 
     /** Requests waiting for the runner's answer, by request id. */
     private final Map<String, CompletableFuture<JsonNode>> pending = new ConcurrentHashMap<>();
+
+    public List<String> elvesRunning() {
+        return elvesRunning;
+    }
 
     public boolean connected() {
         WebSocketConnection c = runner;
@@ -180,8 +187,14 @@ public class RunnerHub {
             triageRuns.get().onState(modes, failed);
             return;
         }
-        if (type.equals("github.result") || type.equals("git.result") || type.equals("mvnpm.result")
-                || type.equals("triage.result") || type.equals("elf.config.result")) {
+        if (type.equals("elves.state")) {
+            List<String> keys = new ArrayList<>();
+            msg.path("running").forEach(k -> keys.add(k.asText()));
+            elvesRunning = List.copyOf(keys);
+            return;
+        }
+                if (type.equals("github.result") || type.equals("git.result") || type.equals("mvnpm.result")
+                || type.equals("triage.result") || type.equals("elf.config.result") || type.equals("elves.result")) {
             CompletableFuture<JsonNode> answer = pending.get(msg.path("id").asText());
             if (answer != null) answer.complete(msg);
             return;

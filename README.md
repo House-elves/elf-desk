@@ -14,10 +14,23 @@ Design doc: <https://claude.ai/artifact/HBSU81qqwHHQVUZ7v1VD3E>
 - **GitHub**: the board below. **Review**, **Investigate** and the CI and conflict actions start the agent and leave you on the board: the row shows **Agent working**, then **Answer ready** or **Draft ready**. **Ask** opens the item, since you type the question there.
 - **Fix it** (on an issue's page, once the agent has answered): the agent fixes the issue as one commit on the default branch and drafts the PR. **Open draft PR…** shows where it goes and warns about open PRs that already mention the issue; **Push and open draft PR** syncs your fork, pushes the commit to a new `fix-<issue>-<sha>` branch on it (never a force push) and opens it as a **draft** PR. Read the change on GitHub, then **Ready for review** (on the PR's row in My PRs, or its page) marks it ready. The runner only opens draft PRs, and only marks your own PRs ready.
 - **Diffs**: a PR's page has **Show files changed** (GitHub's diff), and every draft that pushes code (commits to push, a fix to open as a PR) has **Show the change**, the runner's diff of exactly what would be pushed, so you can read it before confirming.
-- **Email**: **Triage email now** runs [daily-triage](../daily-triage) `--triage-only --no-email` through the runner. It marks noise read and labels it, as its 8 AM email run did, and lists what needs you per Gmail account. Its timer (`daily-triage.timer`) is disabled; `systemctl --user enable --now daily-triage.timer` brings the morning email back.
+- **Email**: **Triage email now** runs [daily-triage](https://github.com/House-elves/daily-triage) `--triage-only --no-email` through the runner. It marks noise read and labels it, and lists what needs you per Gmail account.
 - **Zulip**: **Check Zulip now** runs `daily-triage --zulip-only`: the last 24 hours plus older unread mentions, with a digest per topic, marking nothing read.
 
 The desk reads daily-triage's saved runs from `elfdesk.triage.runs-dir` (`~/.config/daily-triage/runs`) and never writes there.
+
+The Email, Zulip, Status and Quarterly tabs show only once their elf is installed (daily-triage, weekly-status, quarterly-review).
+
+## Elves
+
+The **Elves** page installs, sets up and updates elves. It's also the setup wizard: on a new desk with no elves, the first visit goes there.
+
+- **Finding them:** repos with the `house-elf` topic, House-elves' public ones and your own (private ones too). Each has an `elf.yaml` at its root saying what it is: its settings, the commands the desk may run, its schedule, what it reads and what it writes. See [weekly-status's](https://github.com/House-elves/weekly-status/blob/main/elf.yaml) for an example.
+- **Before you install,** the page shows what the elf reads and writes, the tools it needs and the settings it asks for. An elf from outside House-elves says it runs as you, so read its code first. Install only takes repos from that list.
+- **Installing** clones the repo into `~/.local/share/house-elves/elves/<name>` at the commit shown, and gives its config file (`~/.config/<name>/config`) the settings' defaults. Settings it already has are kept, so an elf you set up by hand keeps its settings.
+- **Updating** never happens by itself. When the repo has newer commits, **See the changes** shows the commits and the diff from the installed commit, read from the elf's own clone, and **Update** moves it there.
+- **Settings and a dry run** per elf: the same settings panel the tabs have, and the elf's own dry-run command (for weekly-status, a draft that sends nothing), with the end of its output.
+- **Schedules** are run by the runner, not systemd timers, so they work on macOS too. A run missed while the laptop slept runs when it's back.
 
 ## Threads and posting
 

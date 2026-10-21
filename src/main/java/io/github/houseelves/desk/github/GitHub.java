@@ -218,6 +218,41 @@ public class GitHub {
         return orgs;
     }
 
+    /** A repo that holds an elf: its name, description, newest commit, and its elf.yaml at that commit. */
+    public record ElfRepo(String repo, String description, boolean isPrivate, String url, String commit, String manifest) {
+    }
+
+    /**
+     * The repos marked as elves (topic house-elf): House-elves' public ones, and your own, private ones included.
+     * Each comes with its elf.yaml at the newest commit of its default branch.
+     */
+    public List<ElfRepo> elfRepos(String token, String login) {
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("pub", "topic:house-elf org:House-elves archived:false");
+        vars.put("mine", "topic:house-elf user:" + login + " archived:false");
+        JsonNode data = call(token, """
+                query($pub: String!, $mine: String!) {
+                  pub: search(query: $pub, type: REPOSITORY, first: 50) { nodes { ...elf } }
+                  mine: search(query: $mine, type: REPOSITORY, first: 50) { nodes { ...elf } }
+                }
+                fragment elf on Repository {
+                  nameWithOwner description isPrivate url
+                  defaultBranchRef { target { oid } }
+                  manifest: object(expression: "HEAD:elf.yaml") { ... on Blob { text } }
+                }""", vars);
+        Map<String, ElfRepo> repos = new java.util.TreeMap<>();
+        for (String list : List.of("pub", "mine")) {
+            for (JsonNode n : data.path(list).path("nodes")) {
+                String commit = n.path("defaultBranchRef").path("target").path("oid").asText(null);
+                if (!n.hasNonNull("nameWithOwner") || commit == null) continue;
+                repos.put(n.path("nameWithOwner").asText(), new ElfRepo(n.path("nameWithOwner").asText(),
+                        n.path("description").asText(""), n.path("isPrivate").asBoolean(), n.path("url").asText(""), commit,
+                        n.path("manifest").path("text").asText(null)));
+            }
+        }
+        return List.copyOf(repos.values());
+    }
+
     /** How many commits a PR has. */
     public int commitCount(String token, String repo, int number) {
         String[] parts = repo.split("/", 2);

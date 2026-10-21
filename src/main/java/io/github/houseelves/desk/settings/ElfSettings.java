@@ -1,7 +1,7 @@
 package io.github.houseelves.desk.settings;
 
 import java.util.Map;
-import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -18,8 +18,8 @@ import jakarta.inject.Inject;
 @ApplicationScoped
 public class ElfSettings {
 
-    /** The elves whose settings the desk shows. */
-    static final Set<String> ELVES = Set.of("daily-triage", "weekly-status", "quarterly-review", "mvnpm-dependabot", "elf-runner");
+    /** An elf's name (the runner answers only for installed elves, and elf-runner for itself). */
+    static final Pattern ELF = Pattern.compile("[a-z0-9][a-z0-9-]{0,40}");
 
     @Inject
     RunnerHub hub;
@@ -43,7 +43,7 @@ public class ElfSettings {
     }
 
     private static String known(String elf) {
-        if (!ELVES.contains(elf)) throw new IllegalArgumentException("Not an elf: " + elf);
+        if (elf == null || !ELF.matcher(elf).matches()) throw new IllegalArgumentException("Not an elf: " + elf);
         return elf;
     }
 

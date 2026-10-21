@@ -7,6 +7,7 @@ import io.github.houseelves.desk.agent.AgentOutput;
 import io.github.houseelves.desk.board.Board;
 import io.github.houseelves.desk.board.BoardService;
 import io.github.houseelves.desk.ci.CiService;
+import io.github.houseelves.desk.elves.ElvesService;
 import io.github.houseelves.desk.conflicts.ConflictService;
 import io.github.houseelves.desk.github.GitHub;
 import io.github.houseelves.desk.github.Item;
@@ -109,6 +110,9 @@ public class DeskApi {
 
     @Inject
     TriageRuns triageRuns;
+
+    @Inject
+    ElvesService elves;
 
     // ---- board ----
 
@@ -244,7 +248,7 @@ public class DeskApi {
 
     // ---- the elves' settings ----
 
-    /** An elf's settings ("daily-triage", "weekly-status", "quarterly-review", "mvnpm-dependabot", "elf-runner"). */
+    /** An installed elf's settings, or the runner's own ("elf-runner"). */
     public com.fasterxml.jackson.databind.JsonNode elfSettings(String elf) {
         return elfSettings.get(elf);
     }
@@ -252,6 +256,47 @@ public class DeskApi {
     /** Change some of an elf's settings; a wrong value changes nothing and comes back as {wrong: {key: why}}. */
     public com.fasterxml.jackson.databind.JsonNode saveElfSettings(String elf, java.util.Map<String, String> values) {
         return elfSettings.set(elf, values);
+    }
+
+    // ---- the Elves page ----
+
+    /** The installed elves, with their schedules and their commands' last runs. */
+    public com.fasterxml.jackson.databind.JsonNode elves() {
+        return elves.installed();
+    }
+
+    /** The elves you can install: House-elves' and your own, each with what its elf.yaml says it does. */
+    public com.fasterxml.jackson.databind.JsonNode elfCatalog() {
+        return elves.catalog(user.login(), user.githubToken());
+    }
+
+    /** Installs an elf from the catalog at the commit you looked at. */
+    public com.fasterxml.jackson.databind.JsonNode installElf(String repo, String commit) {
+        return elves.install(user.login(), user.githubToken(), repo, commit);
+    }
+
+    /** What updating an elf to a commit would change, before you update it. */
+    public com.fasterxml.jackson.databind.JsonNode elfChanges(String elf, String commit) {
+        return elves.changes(elf, commit);
+    }
+
+    public com.fasterxml.jackson.databind.JsonNode updateElf(String elf, String commit) {
+        return elves.update(elf, commit);
+    }
+
+    /** Removes an elf's program; its settings stay. */
+    public com.fasterxml.jackson.databind.JsonNode removeElf(String elf) {
+        return elves.remove(elf);
+    }
+
+    /** Runs one of an elf's own commands, such as its dry run. */
+    public com.fasterxml.jackson.databind.JsonNode runElf(String elf, String command) {
+        return elves.run(elf, command);
+    }
+
+    /** The elves' runs going now. */
+    public List<String> elvesRunning() {
+        return elves.running();
     }
 
     // ---- quarterly-review ----

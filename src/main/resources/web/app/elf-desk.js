@@ -1,8 +1,8 @@
 import { LitElement, html, css, svg } from 'lit';
 import { shared, itemKeyFromHash } from './shared.js';
-import { connectionState, onConnectionChange, onBusyChange } from './rpc.js';
+import { api, connectionState, onConnectionChange, onBusyChange } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
-import { TABS, tabShown, showTab, onTabsChange } from './tabs.js';
+import { TABS, tabShown, tabAvailable, showTab, onTabsChange, setInstalledElves } from './tabs.js';
 import './desk-board.js';
 import './desk-settings.js';
 import './desk-thread.js';
@@ -11,6 +11,10 @@ import './desk-zulip.js';
 import './desk-status.js';
 import './desk-quarterly.js';
 import './desk-dashboard.js';
+import './desk-elves.js';
+
+/** Set once the setup wizard has shown in this browser, so the dashboard isn't skipped again. */
+const WELCOMED = 'elfdesk.elves-welcomed';
 
 const THEMES = [
     { id: 'system', label: 'Match system', icon: svg`<rect x="2.5" y="3" width="11" height="8" rx="1.5"/><path d="M6 13.5h4M8 11v2.5"/>` },
@@ -127,7 +131,11 @@ class ElfDesk extends LitElement {
         document.addEventListener('click', this._onDocClick);
         document.addEventListener('keydown', this._onKey);
         this._offTabs = onTabsChange(() => { this._tabsChanged = (this._tabsChanged ?? 0) + 1; });
-        this._offConn = onConnectionChange(s => { this._conn = s; });
+        this._offConn = onConnectionChange(s => {
+            this._conn = s;
+            if (s === 'open') this._loadElves();
+        });
+        this._loadElves();
         // Show the bar only for calls that take a moment, so quick ones don't flicker.
         this._offBusy = onBusyChange(busy => {
             clearTimeout(this._busyTimer);
@@ -146,9 +154,28 @@ class ElfDesk extends LitElement {
         super.disconnectedCallback();
     }
 
+    /**
+     * Which elves are installed, so only their tabs show. On a new desk (none yet), the first visit goes to the
+     * Elves page: the setup wizard.
+     */
+    async _loadElves() {
+        try {
+            const r = await (await api()).elves();
+            setInstalledElves((r.elves ?? []).map(e => e.name));
+            let welcomed = true;
+            try { welcomed = !!localStorage.getItem(WELCOMED); } catch { /* no storage: never redirect */ }
+            if (!r.elves?.length && !welcomed && this._view === 'dashboard') {
+                try { localStorage.setItem(WELCOMED, '1'); } catch { /* no storage */ }
+                location.hash = '#elves';
+            }
+        } catch (e) {
+            // No runner (or an old one): every tab shows, as before.
+        }
+    }
+
     _viewFromHash() {
         if (location.hash === '#settings') return 'github'; // the board's settings now live under GitHub
-        if (['#github', '#email', '#zulip', '#status', '#quarterly'].includes(location.hash)) return location.hash.slice(1);
+        if (['#github', '#email', '#zulip', '#status', '#quarterly', '#elves'].includes(location.hash)) return location.hash.slice(1);
         return itemKeyFromHash(location.hash) ? 'thread' : 'dashboard';
     }
 
@@ -159,6 +186,7 @@ class ElfDesk extends LitElement {
     /** The gear next to the theme switch: which tabs show. Dashboard always does. */
     _tabsPicker() {
         const shown = TABS.filter(t => tabShown(t.id)).length;
+        const available = TABS.filter(t => tabAvailable(t.id));
         return html`<div class="tabs-pick">
             <button class="gear" title="Tabs" aria-label="Choose which tabs show" aria-expanded=${this._tabsOpen ? 'true' : 'false'}
                     aria-controls="tabs-panel" @click=${() => { this._tabsOpen = !this._tabsOpen; }}>
@@ -169,10 +197,11 @@ class ElfDesk extends LitElement {
             </button>
             ${this._tabsOpen ? html`<div class="tabs-panel" id="tabs-panel" role="group" aria-labelledby="tabs-h">
                 <h2 id="tabs-h">Tabs</h2>
-                ${TABS.map(t => html`<label><input type="checkbox" .checked=${tabShown(t.id)}
+                ${available.map(t => html`<label><input type="checkbox" .checked=${tabShown(t.id)}
                         ?disabled=${tabShown(t.id) && shown === 1}
                         @change=${e => showTab(t.id, e.target.checked)}>${t.label}</label>`)}
-                <p>Hidden tabs leave the header and the dashboard, in this browser.</p>
+                <p>Hidden tabs leave the header and the dashboard, in this browser. More tabs come with elves:
+                    <a href="#elves" @click=${() => { this._tabsOpen = false; }}>Elves</a>.</p>
             </div>` : ''}
         </div>`;
     }
@@ -201,6 +230,7 @@ class ElfDesk extends LitElement {
                         <a href="#" aria-current=${this._view === 'dashboard' ? 'page' : 'false'}>Dashboard</a>
                         ${TABS.filter(t => tabShown(t.id) || this._current(t.id)).map(t => html`
                             <a href="#${t.id}" aria-current=${this._current(t.id) ? 'page' : 'false'}>${t.label}</a>`)}
+                        <a href="#elves" aria-current=${this._view === 'elves' ? 'page' : 'false'}>Elves</a>
                     </nav>
                     <div class="right">
                         ${this._conn !== 'open' ? html`
@@ -225,7 +255,8 @@ class ElfDesk extends LitElement {
                     </div>` : ''}
             </header>
             <main>
-                ${this._view === 'email' ? html`<desk-email></desk-email>`
+                ${this._view === 'elves' ? html`<desk-elves></desk-elves>`
+                    : this._view === 'email' ? html`<desk-email></desk-email>`
                     : this._view === 'zulip' ? html`<desk-zulip></desk-zulip>`
                     : this._view === 'status' ? html`<desk-status></desk-status>`
                     : this._view === 'quarterly' ? html`<desk-quarterly></desk-quarterly>`
