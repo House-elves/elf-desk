@@ -13,7 +13,7 @@ Design doc: <https://claude.ai/artifact/HBSU81qqwHHQVUZ7v1VD3E>
 - **Dashboard** (the start page): one sentence per tab on what needs you there.
 - **GitHub**: the board below. **Review**, **Investigate** and the CI and conflict actions start the agent and leave you on the board: the row shows **Agent working**, then **Answer ready** or **Draft ready**. **Ask** opens the item, since you type the question there.
 - **Fix it** (on an issue's page, once the agent has answered): the agent fixes the issue as one commit on the default branch and drafts the PR. **Open draft PR…** shows where it goes and warns about open PRs that already mention the issue; **Push and open draft PR** syncs your fork, pushes the commit to a new `fix-<issue>-<sha>` branch on it (never a force push) and opens it as a **draft** PR. Read the change on GitHub, then **Ready for review** (on the PR's row in My PRs, or its page) marks it ready. The runner only opens draft PRs, and only marks your own PRs ready.
-- **Diffs**: a PR's page has **Show files changed** (GitHub's diff, fetched with your read token), and every draft that pushes code (commits to push, a fix to open as a PR) has **Show the change**, the runner's diff of exactly what would be pushed, so you can read it before confirming.
+- **Diffs**: a PR's page has **Show files changed** (GitHub's diff), and every draft that pushes code (commits to push, a fix to open as a PR) has **Show the change**, the runner's diff of exactly what would be pushed, so you can read it before confirming.
 - **Email**: **Triage email now** runs [daily-triage](../daily-triage) `--triage-only --no-email` through the runner. It marks noise read and labels it, as its 8 AM email run did, and lists what needs you per Gmail account. Its timer (`daily-triage.timer`) is disabled; `systemctl --user enable --now daily-triage.timer` brings the morning email back.
 - **Zulip**: **Check Zulip now** runs `daily-triage --zulip-only`: the last 24 hours plus older unread mentions, with a digest per topic, marking nothing read.
 
@@ -24,7 +24,7 @@ The desk reads daily-triage's saved runs from `elfdesk.triage.runs-dir` (`~/.con
 - **One thread per issue or PR,** backed by one resumable Claude session. Follow-ups continue it with the context it has already built up.
 - **Drafts.** When the agent has something postable (a review with inline comments, or a comment), it shows as a draft you can edit, discard or post. A newer draft replaces an older pending one.
 - **Posting takes two steps.** **Post…** shows exactly what will be sent and issues a one-time confirmation. **Post to GitHub** then sends it. If the draft changes in between, or ten minutes pass, you have to preview again. **Close** works the same way, with an inline confirmation. Every write is recorded in the `github_action` table.
-- **Writes go through the runner,** which sends them with the machine's `gh` login for its `GITHUB_USER`. That's the "GitHub CLI" app orgs already approve, so it works wherever Claude Code's `gh` does, and orgs with OAuth App access restrictions don't block it. The desk holds no write token, and its GitHub sign-in only reads (`read:org`). Only `Poster` asks the runner to write, and the runner accepts only an allowlist of requests (see [elf-runner](../elf-runner)): reviews, comments, new issues and PRs, close and reopen, assign yourself, merges, CI re-runs and approvals. The agent, in its sandbox, has no credentials at all. Posting needs the runner online.
+- **Writes go through the runner,** which sends them with the machine's `gh` login for its `GITHUB_USER`. That's the "GitHub CLI" app orgs already approve, so it works wherever Claude Code's `gh` does, and orgs with OAuth App access restrictions don't block it. The desk reads with the same `gh` account and never writes with it: only `Poster` asks the runner to write, and the runner accepts only an allowlist of requests (see [elf-runner](../elf-runner)): reviews, comments, new issues and PRs, close and reopen, assign yourself, merges, CI re-runs and approvals. The agent, in its sandbox, has no credentials at all. Posting needs the runner online.
 
 ### mvnpm-dependabot
 
@@ -36,7 +36,7 @@ The **mvnpm updates** lane has **Run checks now** (a full round over every repo 
 
 ### The runner connection
 
-The runner connects to `ws://<desk>/runner` and sends `ELFDESK_RUNNER_TOKEN` (from `.env`) in its first message. With no token configured, every runner is refused. Jobs wait as `queued` until a runner is connected. If the runner reconnects without a job it had been running, that job is marked failed.
+The runner connects to `ws://<desk>/runner` and sends the runner token (`elfdesk.runner.token`, which `house-elves install` puts in both config files) in its first message. With no token configured, every runner is refused. Jobs wait as `queued` until a runner is connected. If the runner reconnects without a job it had been running, that job is marked failed.
 
 ## What the board shows
 
@@ -59,59 +59,55 @@ Every refresh runs `is:open involves:@me` (up to GitHub's cap of 1000 results) a
 
 ## Sign-in
 
-GitHub OAuth, via `quarkus-oidc`'s GitHub provider. Only logins on `elfdesk.allowed-logins` (default `phillip-kruger`) get the `owner` role; any other GitHub account is signed in but refused. The GitHub token stays in the encrypted session cookie and is used only for your own calls.
+There's no sign-in page. The desk works as one of the accounts `gh` is logged in to (`elfdesk.github-user`, chosen by `house-elves install`) and reads GitHub with that account's `gh` token. Writes still go through the runner, only when you click.
 
-### Create the OAuth App (once)
+Who may use it:
 
-Signed in to GitHub as **phillip-kruger**, open <https://github.com/settings/applications/new>:
+- **This machine only.** It listens on 127.0.0.1, and refuses any request whose host isn't `localhost`, `127.0.0.1` or `[::1]`, so a web page can't reach it by pointing its own domain at 127.0.0.1 (DNS rebinding).
+- **Whoever holds its key.** The key is a random secret in `desk.key` in the data directory, readable only by you. `house-elves open` opens a one-time link (`/open?code=…`) that gives the browser the key as a cookie. Without it, pages go to `/welcome`, which says how to open the desk.
 
-- **Application name:** Elf Desk (local)
-- **Homepage URL:** `http://houseelves.lan:7777`
-- **Authorization callback URL:** `http://houseelves.lan:7777/auth/callback`
-
-Register it, click **Generate a new client secret**, and put both values in `.env` in this directory (it's git-ignored):
-
-```
-ELFDESK_GITHUB_CLIENT_ID=Ov23li...
-ELFDESK_GITHUB_CLIENT_SECRET=...
-```
-
-The app asks only for `read:org`: the board reads public data, and writes go through the runner.
+From another machine, forward the port (`ssh -L 7777:localhost:7777 <this machine>`), run `house-elves open --print` here and open the link it prints there.
 
 ## Run it
 
-### As a service (what you use)
+### Installed (what you use)
 
-Elf Desk runs as a systemd user service, `elf-desk.service`, from a packaged build in `~/.local/share/elf-desk/app`. It listens on port 7777 (where the GitHub OAuth callback points), uses the `elfdesk` database in the `elf-desk-pg` container, and reads its secrets from `~/.config/elf-desk/env` (mode 600): `ELFDESK_GITHUB_CLIENT_ID`, `ELFDESK_GITHUB_CLIENT_SECRET`, `ELFDESK_RUNNER_TOKEN`, `ELFDESK_DB_PASSWORD`. It starts after its database and at boot (lingering is on).
+[house-elves](https://github.com/House-elves/house-elves) installs the desk and the runner as user services (systemd on Linux, launchd on macOS): `house-elves install`, then `house-elves open`, `status`, `logs`, `restart`, `doctor`.
+
+| Where | What |
+|---|---|
+| `~/.config/house-elves/desk.properties` | The desk's settings: `elfdesk.github-user`, `elfdesk.runner.token` (mode 600) |
+| `~/.local/share/house-elves/` | The database (`desk.mv.db`), `desk.key`, and the installed programs in `app/` |
+
+To run your own changes in place of the release:
 
 ```shell
-./deploy.sh              # tests, build, install, restart; the only way changes reach the running desk
+./deploy.sh              # tests, build, swap into ~/.local/share/house-elves/app/desk, restart
 ./deploy.sh --no-tests
-journalctl --user -u elf-desk -f
+house-elves logs desk
 ```
 
 ### Developing
 
 ```shell
-./mvnw quarkus:dev       # port 7481, database elfdesk_dev: never touches the running desk
+./mvnw quarkus:dev       # port 7481, data in ~/.local/share/house-elves-dev: never touches the installed desk
 ./mvnw test
 ```
 
-Dev mode reads `.env` for the same variables. Signing in to dev mode needs its own GitHub OAuth App with a `http://<host>:7481/auth/callback` callback; most work doesn't need it (the tests mock GitHub).
-
-The database is the Podman Quadlet `~/.config/containers/systemd/elf-desk-pg.container` (data in the `elf-desk-pg` volume). Flyway manages the schema in both databases. Tests use a throwaway Dev Services database.
+The database is an H2 file, and Flyway manages its schema. Tests use an in-memory H2 database, so nothing needs Podman. `tools/PostgresToH2.java` copies a desk's data from the Postgres it used before.
 
 ## Configuration
 
+Set these in `desk.properties` (or as environment variables).
+
 | Property | Default | |
 |---|---|---|
-| `ELFDESK_GITHUB_CLIENT_ID` / `ELFDESK_GITHUB_CLIENT_SECRET` | none | The OAuth App |
-| `elfdesk.allowed-logins` | `phillip-kruger` | Comma-separated GitHub logins allowed in |
-| `ELFDESK_RUNNER_TOKEN` | none (refuse all) | Shared secret for elf-runner |
+| `elfdesk.github-user` | the active `gh` account | The account the desk works as |
+| `elfdesk.runner.token` | none (refuse all) | Shared secret for elf-runner |
 | `elfdesk.mvnpm.config` | `~/.config/mvnpm-dependabot/config` | The mvnpm elf's config (for `REPOS`) |
 | `elfdesk.mvnpm.state-dir` | `~/.local/state/mvnpm-dependabot` | The mvnpm elf's `state.json` |
 | `quarkus.http.port` | `7777` | |
-| `QUARKUS_DATASOURCE_JDBC_URL` etc. | Dev Services | Postgres outside dev/test |
+| `HOUSE_ELVES_CONFIG` / `HOUSE_ELVES_DATA` | `~/.config/house-elves` / `~/.local/share/house-elves` | Where the config file and the data live |
 
 ## Tests
 
@@ -119,7 +115,7 @@ The database is the Podman Quadlet `~/.config/containers/systemd/elf-desk-pg.con
 ./mvnw test
 ```
 
-Unit tests cover the lane rules, scope matching, the mvnpm reader, GitHub response parsing, the prompts, untrusted-text detection and the runner token check. `@QuarkusTest`s cover scope storage, the JSON-RPC API, a full thread (start, runner answer, edit, preview, refused and accepted posts, audit, follow-up), failures, cancels and runner restarts, plus the sign-in redirect. GitHub is mocked throughout.
+Unit tests cover the lane rules, scope matching, the mvnpm reader, GitHub response parsing, the prompts, untrusted-text detection and the runner token check. `@QuarkusTest`s cover scope storage, the JSON-RPC API, a full thread (start, runner answer, edit, preview, refused and accepted posts, audit, follow-up), failures, cancels and runner restarts, plus the desk key, the one-time link and the localhost check. GitHub is mocked throughout.
 
 ## Layout
 
@@ -133,7 +129,7 @@ src/main/java/io/github/houseelves/desk/
   github/                     GraphQL client and Item
   mvnpm/MvnpmElf.java         reads mvnpm-dependabot's config and state.json
   scope/                      watched orgs, users and repos
-  security/                   owner role by GitHub login; the current user's token
+  security/                   the desk key, localhost only, the gh account and its token
   settings/                   key/value settings
 src/main/resources/web/       index.html + Lit components (bundled by the Web Bundler)
 src/main/resources/db/migration/   Flyway
@@ -141,7 +137,7 @@ src/main/resources/db/migration/   Flyway
 
 ## Guides
 
-- [OIDC well-known providers (GitHub)](https://quarkus.io/guides/security-openid-connect-providers)
+- [Security: custom authentication mechanisms](https://quarkus.io/guides/security-customization)
 - [Web Bundler](https://docs.quarkiverse.io/quarkus-web-bundler/dev/)
 - [JSON-RPC](https://docs.quarkiverse.io/quarkus-json-rpc/dev/)
 - [Hibernate ORM with Panache](https://quarkus.io/guides/hibernate-orm-panache)

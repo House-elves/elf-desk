@@ -220,8 +220,8 @@ class ElfDesk extends LitElement {
                      aria-hidden=${this._busy ? 'false' : 'true'}><span></span></div>
                 ${this._conn === 'lost' ? html`
                     <div class="lost" role="alert">
-                        Lost the connection to the desk. It may have restarted, or your sign-in expired.
-                        <a href="${location.pathname}">Reload to sign in again</a>
+                        Lost the connection to the desk. It may have restarted: <a href="${location.pathname}">reload</a>.
+                        If it still won't connect, open it again with <code>house-elves open</code>.
                     </div>` : ''}
             </header>
             <main>
