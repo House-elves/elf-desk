@@ -20,20 +20,29 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 /**
- * Signs you in with the desk key's cookie (see {@link DeskKey}): with it you are the desk's GitHub account and
- * have the {@code owner} role. Without it, pages go to {@code /welcome}, which says how to open the desk.
+ * Signs you in with a session cookie (see {@link DeskSessions}): with it you are the desk's GitHub account and have
+ * the {@code owner} role. Without it, pages go to {@code /welcome}, which says how to open the desk.
  */
 @ApplicationScoped
-public class DeskKeyAuth implements HttpAuthenticationMechanism {
+public class DeskSignIn implements HttpAuthenticationMechanism {
 
     public static final String OWNER = "owner";
-    public static final String COOKIE = "elfdesk-key";
+
+    /**
+     * The session cookie's name for this request. Cookies are kept per host name, not per port, so each port has its
+     * own name: two desks on one machine (another instance, dev mode) don't overwrite each other's.
+     */
+    public static String cookie(RoutingContext rc) {
+        var authority = rc.request().authority();
+        int port = authority == null || authority.port() == -1 ? 80 : authority.port();
+        return "elfdesk-session-" + port;
+    }
 
     @Override
     public Uni<SecurityIdentity> authenticate(RoutingContext rc, IdentityProviderManager providers) {
-        Cookie c = rc.request().getCookie(COOKIE);
+        Cookie c = rc.request().getCookie(cookie(rc));
         if (c == null) return Uni.createFrom().optional(Optional.empty());
-        return providers.authenticate(new KeyRequest(c.getValue()));
+        return providers.authenticate(new SessionRequest(c.getValue()));
     }
 
     @Override
@@ -45,34 +54,34 @@ public class DeskKeyAuth implements HttpAuthenticationMechanism {
 
     @Override
     public Set<Class<? extends AuthenticationRequest>> getCredentialTypes() {
-        return Set.of(KeyRequest.class);
+        return Set.of(SessionRequest.class);
     }
 
-    public static final class KeyRequest extends BaseAuthenticationRequest {
+    public static final class SessionRequest extends BaseAuthenticationRequest {
         final String value;
 
-        KeyRequest(String value) {
+        SessionRequest(String value) {
             this.value = value;
         }
     }
 
     @ApplicationScoped
-    public static class KeyProvider implements IdentityProvider<KeyRequest> {
+    public static class SessionProvider implements IdentityProvider<SessionRequest> {
 
         @Inject
-        DeskKey key;
+        DeskSessions sessions;
 
         @Inject
         GhAccount account;
 
         @Override
-        public Class<KeyRequest> getRequestType() {
-            return KeyRequest.class;
+        public Class<SessionRequest> getRequestType() {
+            return SessionRequest.class;
         }
 
         @Override
-        public Uni<SecurityIdentity> authenticate(KeyRequest request, AuthenticationRequestContext context) {
-            if (!key.isKey(request.value)) return Uni.createFrom().nullItem();
+        public Uni<SecurityIdentity> authenticate(SessionRequest request, AuthenticationRequestContext context) {
+            if (!sessions.isSession(request.value)) return Uni.createFrom().nullItem();
             // Asking gh for the login can take a moment the first time: not on the event loop.
             return context.runBlocking(() -> QuarkusSecurityIdentity.builder()
                     .setPrincipal(new QuarkusPrincipal(account.login()))

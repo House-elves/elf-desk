@@ -8,6 +8,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import io.vertx.core.http.Cookie;
 import io.vertx.core.http.CookieSameSite;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 
@@ -17,40 +18,73 @@ import jakarta.inject.Inject;
  * talk to the desk as if it were the same site, but its requests still carry that domain as their Host.
  *
  * <p>
- * {@code /open?code=...} swaps a one-time code for the key's cookie (see {@link DeskKey}); {@code /welcome} is
- * where you land without it.
+ * Its pages are only served at its own name, {@code elfdesk.host} ({@code elf-desk.localhost}, which browsers send to
+ * 127.0.0.1 themselves); other local names are redirected there. Browsers keep cookies per host name, not per port,
+ * so a sign-in cookie set on {@code localhost} would also go to every other server on {@code localhost}, such as an
+ * agent's dev mode. Health checks and the runner may still use any local name.
+ *
+ * <p>
+ * {@code /open?code=...} swaps a one-time code for a session cookie (see {@link DeskSessions}); {@code /welcome} is
+ * where you land without one. No other site may show the desk in a frame.
  */
 public class LocalOnly {
+
+    @ConfigProperty(name = "elfdesk.host")
+    String deskHost;
 
     @ConfigProperty(name = "elfdesk.allowed-hosts")
     List<String> allowedHosts;
 
     @Inject
-    DeskKey key;
+    DeskSessions sessions;
 
     void install(@Observes Router router) {
         router.route().order(Integer.MIN_VALUE).handler(rc -> {
             // The authority is the Host header in HTTP/1.1 and :authority in HTTP/2 (which has no Host header).
             var authority = rc.request().authority();
-            if (authority == null || !allowed(authority.host(), allowedHosts)) {
+            if (authority == null
+                    || !(authority.host().equalsIgnoreCase(deskHost) || allowed(authority.host(), allowedHosts))) {
                 rc.response().setStatusCode(403).end("The desk only answers on localhost");
                 return;
             }
+            if (!authority.host().equalsIgnoreCase(deskHost) && !anyName(rc.normalizedPath())) {
+                String desk = "http://" + deskHost + (authority.port() == -1 ? "" : ":" + authority.port());
+                if (page(rc)) {
+                    rc.redirect(desk + rc.request().uri());
+                } else {
+                    rc.response().setStatusCode(403).end("Open the desk at " + desk);
+                }
+                return;
+            }
+            rc.response().putHeader("X-Frame-Options", "DENY");
+            rc.response().putHeader("Content-Security-Policy", "frame-ancestors 'none'");
             rc.next();
         });
         router.get("/open").blockingHandler(rc -> {
-            String k = key.redeem(rc.request().getParam("code"));
-            if (k == null) {
+            String token = sessions.redeem(rc.request().getParam("code"));
+            if (token == null) {
                 rc.redirect("/welcome?expired");
                 return;
             }
-            rc.response().addCookie(Cookie.cookie(DeskKeyAuth.COOKIE, k).setHttpOnly(true).setPath("/")
-                    .setSameSite(CookieSameSite.STRICT).setMaxAge(400L * 24 * 3600));
+            rc.response().addCookie(Cookie.cookie(DeskSignIn.cookie(rc), token).setHttpOnly(true).setPath("/")
+                    .setSameSite(CookieSameSite.STRICT).setMaxAge(DeskSessions.LIFETIME.toSeconds()));
             rc.redirect("/");
         });
         router.get("/welcome").handler(rc -> rc.response().putHeader("Content-Type", "text/html; charset=utf-8")
                 .putHeader("Cache-Control", "no-store")
-                .end(welcome(rc.request().getParam("expired") != null)));
+                .end(welcome(rc.request().getParam("expired") != null, deskHost)));
+    }
+
+    /** Health checks and the runner's socket: for programs on this machine, which may use any local name. */
+    static boolean anyName(String path) {
+        return path.equals("/runner") || path.equals("/runner/") || path.equals("/q/health") || path.startsWith("/q/health/");
+    }
+
+    /** A browser loading a page, as opposed to sending something or opening a socket. */
+    public static boolean page(RoutingContext rc) {
+        String method = rc.request().method().name();
+        return (method.equals("GET") || method.equals("HEAD"))
+                && !"websocket".equalsIgnoreCase(rc.request().getHeader("Upgrade"));
     }
 
     /** The request's host name (without the port) is one of the allowed names. IPv6 hosts come in brackets or not. */
@@ -60,7 +94,7 @@ public class LocalOnly {
         return names.stream().anyMatch(n -> n.strip().equalsIgnoreCase(name.toLowerCase(Locale.ROOT)));
     }
 
-    private static String welcome(boolean expired) {
+    private static String welcome(boolean expired, String deskHost) {
         return """
                 <!doctype html>
                 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -77,9 +111,9 @@ public class LocalOnly {
                 <body><main>
                 <h1>Elf Desk</h1>
                 %s
-                <p>Open the desk from a terminal on this machine with <code>house-elves open</code>. It opens this page with a one-time link that signs you in in this browser.</p>
-                <p class="muted">From another machine, forward the port first (<code>ssh -L 7777:localhost:7777 &lt;this machine&gt;</code>), then run <code>house-elves open --print</code> on this machine and open the link it prints.</p>
+                <p>Open the desk from a terminal on this machine with <code>house-elves open</code>. It opens this page with a one-time link that signs you in in this browser for 30 days.</p>
+                <p class="muted">From another machine, forward the port first (<code>ssh -L 7777:localhost:7777 &lt;this machine&gt;</code>), then run <code>house-elves open --print</code> on this machine and open the link it prints. Use Chrome, Firefox or Edge there: they send <code>%s</code> to your own machine.</p>
                 </main></body></html>
-                """.formatted(expired ? "<p>That link was already used. Each link works once.</p>" : "");
+                """.formatted(expired ? "<p>That link was already used. Each link works once.</p>" : "", deskHost);
     }
 }

@@ -25,7 +25,7 @@ import io.github.houseelves.desk.mvnpm.MvnpmRuns;
 import io.github.houseelves.desk.runner.RunnerHub;
 import io.github.houseelves.desk.scope.ScopeService;
 import io.github.houseelves.desk.security.CurrentUser;
-import io.github.houseelves.desk.security.DeskKeyAuth;
+import io.github.houseelves.desk.security.DeskSignIn;
 import io.github.houseelves.desk.settings.Settings;
 import io.github.houseelves.desk.thread.Poster;
 import io.github.houseelves.desk.thread.ThreadService;
@@ -41,7 +41,7 @@ import jakarta.inject.Inject;
  * a click in the page, and all go through the runner.
  */
 @JsonRPCApi("desk")
-@RolesAllowed(DeskKeyAuth.OWNER)
+@RolesAllowed(DeskSignIn.OWNER)
 public class DeskApi {
 
     @Inject

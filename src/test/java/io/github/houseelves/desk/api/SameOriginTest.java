@@ -5,15 +5,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
+import io.vertx.core.net.HostAndPort;
+
 class SameOriginTest {
 
     @Test
-    void onlyTheDesksOwnPages() {
-        assertTrue(SameOrigin.sameHost("http://houseelves.lan:7777", "houseelves.lan:7777"));
-        assertTrue(SameOrigin.sameHost("http://192.0.2.10:7777", "192.0.2.10:7777"));
-        assertFalse(SameOrigin.sameHost("https://evil.example", "houseelves.lan:7777"));
-        assertFalse(SameOrigin.sameHost("http://houseelves.lan:7778", "houseelves.lan:7777"));
-        assertFalse(SameOrigin.sameHost("null", "houseelves.lan:7777"));
-        assertFalse(SameOrigin.sameHost("http://houseelves.lan:7777", null));
+    void theOriginMustBeTheDeskItself() {
+        HostAndPort desk = HostAndPort.create("elf-desk.localhost", 7777);
+        assertTrue(SameOrigin.sameAuthority("http://elf-desk.localhost:7777", desk));
+        assertTrue(SameOrigin.sameAuthority("http://ELF-DESK.localhost:7777", desk));
+        assertTrue(SameOrigin.sameAuthority("http://localhost", HostAndPort.create("localhost", -1)));
+        assertFalse(SameOrigin.sameAuthority("http://localhost:8080", HostAndPort.create("localhost", 7777)));
+        assertFalse(SameOrigin.sameAuthority("http://elf-desk.localhost:8080", desk));
+        assertFalse(SameOrigin.sameAuthority("https://elf-desk.localhost:7777", desk));
+        assertFalse(SameOrigin.sameAuthority("https://evil.example", desk));
+        assertFalse(SameOrigin.sameAuthority("null", desk));
+        assertFalse(SameOrigin.sameAuthority("http://elf-desk.localhost:7777", null));
     }
 }

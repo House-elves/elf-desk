@@ -64,7 +64,9 @@ There's no sign-in page. The desk works as one of the accounts `gh` is logged in
 Who may use it:
 
 - **This machine only.** It listens on 127.0.0.1, and refuses any request whose host isn't `localhost`, `127.0.0.1` or `[::1]`, so a web page can't reach it by pointing its own domain at 127.0.0.1 (DNS rebinding).
-- **Whoever holds its key.** The key is a random secret in `desk.key` in the data directory, readable only by you. `house-elves open` opens a one-time link (`/open?code=…`) that gives the browser the key as a cookie. Without it, pages go to `/welcome`, which says how to open the desk.
+- **At its own name.** Pages are only served at `elfdesk.host`, <http://elf-desk.localhost:7777> (Chrome, Firefox and Edge send `*.localhost` to 127.0.0.1 themselves); other local names are redirected there. Browsers keep cookies per host name, not per port, so a cookie on `localhost` would reach every other server there, such as an agent's dev mode. Health checks and the runner may use any local name.
+- **Whoever holds a session.** `house-elves open` opens a one-time link (`/open?code=…`) that gives the browser a session cookie for 30 days (HttpOnly, SameSite=Strict, named per port). The data directory keeps only each session's hash, in `sessions`; `house-elves sign-out` deletes it, signing every browser out. Without a session, pages go to `/welcome`, which says how to open the desk.
+- **Only from its own pages.** Anything but a page load (the JSON-RPC socket included) must come from the desk's own origin, and no other site may frame it.
 
 From another machine, forward the port (`ssh -L 7777:localhost:7777 <this machine>`), run `house-elves open --print` here and open the link it prints there.
 
@@ -77,7 +79,7 @@ From another machine, forward the port (`ssh -L 7777:localhost:7777 <this machin
 | Where | What |
 |---|---|
 | `~/.config/house-elves/desk.properties` | The desk's settings: `elfdesk.github-user`, `elfdesk.runner.token` (mode 600) |
-| `~/.local/share/house-elves/` | The database (`desk.mv.db`), `desk.key`, and the installed programs in `app/` |
+| `~/.local/share/house-elves/` | The database (`desk.mv.db`), the sessions, and the installed programs in `app/` |
 
 To run your own changes in place of the release:
 
@@ -107,6 +109,7 @@ Set these in `desk.properties` (or as environment variables).
 | `elfdesk.mvnpm.config` | `~/.config/mvnpm-dependabot/config` | The mvnpm elf's config (for `REPOS`) |
 | `elfdesk.mvnpm.state-dir` | `~/.local/state/mvnpm-dependabot` | The mvnpm elf's `state.json` |
 | `quarkus.http.port` | `7777` | |
+| `elfdesk.host` | `elf-desk.localhost` | The desk's own name. `localhost` for a browser that doesn't resolve `*.localhost` (its cookie then reaches every port there) |
 | `HOUSE_ELVES_CONFIG` / `HOUSE_ELVES_DATA` | `~/.config/house-elves` / `~/.local/share/house-elves` | Where the config file and the data live |
 
 ## Tests
@@ -115,7 +118,7 @@ Set these in `desk.properties` (or as environment variables).
 ./mvnw test
 ```
 
-Unit tests cover the lane rules, scope matching, the mvnpm reader, GitHub response parsing, the prompts, untrusted-text detection and the runner token check. `@QuarkusTest`s cover scope storage, the JSON-RPC API, a full thread (start, runner answer, edit, preview, refused and accepted posts, audit, follow-up), failures, cancels and runner restarts, plus the desk key, the one-time link and the localhost check. GitHub is mocked throughout.
+Unit tests cover the lane rules, scope matching, the mvnpm reader, GitHub response parsing, the prompts, untrusted-text detection and the runner token check. `@QuarkusTest`s cover scope storage, the JSON-RPC API, a full thread (start, runner answer, edit, preview, refused and accepted posts, audit, follow-up), failures, cancels and runner restarts, plus the sessions, the one-time link, the desk's own name, the origin check and the localhost check. GitHub is mocked throughout.
 
 ## Layout
 
@@ -129,7 +132,7 @@ src/main/java/io/github/houseelves/desk/
   github/                     GraphQL client and Item
   mvnpm/MvnpmElf.java         reads mvnpm-dependabot's config and state.json
   scope/                      watched orgs, users and repos
-  security/                   the desk key, localhost only, the gh account and its token
+  security/                   sessions, the desk's own name and localhost only, the gh account and its token
   settings/                   key/value settings
 src/main/resources/web/       index.html + Lit components (bundled by the Web Bundler)
 src/main/resources/db/migration/   Flyway
