@@ -19,7 +19,10 @@ export {
 // ---- where it runs: /elf-frame/<elf>/<tab>?view=tab|card ----
 
 const [, , name, tab] = location.pathname.split('/');
-const view = new URLSearchParams(location.search).get('view') === 'card' ? 'card' : 'tab';
+const query = new URLSearchParams(location.search);
+const view = query.get('view') === 'card' ? 'card' : 'tab';
+/** The desk's key for this load of the frame: it answers only messages that carry it. */
+const key = query.get('key');
 
 // ---- the desk's look: the same tokens as the desk's index.html ----
 
@@ -59,14 +62,14 @@ const waiting = new Map();
 const changeListeners = new Set();
 
 function post(op, args) {
-    parent.postMessage({ elfdesk: 1, op, args }, '*');
+    parent.postMessage({ elfdesk: 1, key, op, args }, '*');
 }
 
 function call(op, args = {}) {
     const id = ++next;
     return new Promise((resolve, reject) => {
         waiting.set(id, { resolve, reject });
-        parent.postMessage({ elfdesk: 1, id, op, args }, '*');
+        parent.postMessage({ elfdesk: 1, key, id, op, args }, '*');
     });
 }
 

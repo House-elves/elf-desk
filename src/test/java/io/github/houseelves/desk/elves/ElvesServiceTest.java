@@ -123,6 +123,7 @@ class ElvesServiceTest {
     void aTabsReadsAndActionsGoToTheRunnerForThatElfOnly() throws Exception {
         assertThrows(IllegalArgumentException.class, () -> elves.read("../x", "runs", List.of("a.json"), null));
         assertThrows(IllegalArgumentException.class, () -> elves.data("weekly-status", "../config"));
+        assertThrows(IllegalArgumentException.class, () -> elves.read("weekly-status", "runs", List.of("../config"), null));
         assertThrows(IllegalArgumentException.class, () -> elves.action("weekly-status", "Send!", null));
         verify(elves.hub, never()).request(any(), any());
 

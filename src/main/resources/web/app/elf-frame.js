@@ -87,6 +87,8 @@ class ElfFrame extends LitElement {
     async _message(e) {
         const frame = this._frame;
         if (!frame || e.source !== frame.contentWindow || e.data?.elfdesk !== 1) return;
+        // The key in this load's URL: a page the frame navigated to (a link clicked inside it) can't speak for the elf.
+        if (e.data.key !== this._key) return;
         const { id, op, args = {} } = e.data;
         if (op === 'size') {
             const h = Number(args.height);
@@ -154,7 +156,8 @@ class ElfFrame extends LitElement {
     async _act(desk, name, params) {
         const action = (installedElf(this.elf)?.actions ?? []).find(a => a.name === name);
         if (!action) throw new Error(`Not one of ${this.elf}'s actions: ${name}`);
-        if (action.ask) {
+        // Asks unless its elf.yaml says ask: false.
+        if (action.ask !== false) {
             const yes = await new Promise(resolve => {
                 this._ask?.resolve(false);
                 this._ask = { action, text: fill(action.confirm || action.label, params), params, resolve };
@@ -201,8 +204,9 @@ class ElfFrame extends LitElement {
         // Only when it's a different tab: a new src reloads the frame. The theme follows by message after that.
         if (changed.has('elf') || changed.has('tab') || changed.has('view') || !this._src) {
             const theme = currentTheme();
+            this._key = crypto.randomUUID();
             this._src = `/elf-frame/${encodeURIComponent(this.elf)}/${encodeURIComponent(this.tab)}?view=${this.view === 'card' ? 'card' : 'tab'}`
-                + (theme === 'system' ? '' : `&theme=${theme}`);
+                + (theme === 'system' ? '' : `&theme=${theme}`) + `&key=${this._key}`;
         }
     }
 

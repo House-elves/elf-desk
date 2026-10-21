@@ -28,6 +28,8 @@ public class ElvesService {
     static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
     static final Pattern NAME = Pattern.compile("[a-z0-9][a-z0-9-]{0,40}");
     static final Pattern COMMIT = Pattern.compile("[0-9a-f]{40}");
+    /** A file in an elf's data folder: a plain name, as the runner checks it too. */
+    static final Pattern FILE = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,120}");
     static final String OFFICIAL = "House-elves/";
 
     @Inject
@@ -158,7 +160,10 @@ public class ElvesService {
     public JsonNode read(String elf, String folder, List<String> files, List<String> fields) {
         ObjectNode msg = hub.message("elf.read").put("elf", name(elf)).put("folder", name(folder));
         ArrayNode f = msg.putArray("files");
-        (files == null ? List.<String>of() : files).forEach(f::add);
+        for (String name : files == null ? List.<String>of() : files) {
+            if (name == null || !FILE.matcher(name).matches()) throw new IllegalArgumentException("Bad file name");
+            f.add(name);
+        }
         if (fields != null && !fields.isEmpty()) {
             ArrayNode x = msg.putArray("fields");
             fields.forEach(x::add);
