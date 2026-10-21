@@ -71,6 +71,19 @@ class HttpSecurityTest {
     }
 
     @Test
+    void theSignInPagesDontLookAtTheCookie() throws Exception {
+        // A cookie that no longer signs you in, or one sent without the page key, mustn't send them to /welcome
+        // (which would then send itself there).
+        SignedIn in = signIn();
+        desk().cookie(cookie(), "an-old-session").when().get("/welcome").then().statusCode(200);
+        desk().cookie(cookie(), in.session()).when().get("/welcome").then().statusCode(200);
+        desk().cookie(cookie(), "an-old-session").when().get("/open?code=" + code()).then().statusCode(200)
+                .header("Set-Cookie", containsString(cookie() + "="));
+        desk().cookie(cookie(), "an-old-session").when().get("/open?code=used").then().statusCode(302)
+                .header("Location", endsWith("/welcome?expired"));
+    }
+
+    @Test
     void aOneTimeCodeGivesASessionOnce() throws Exception {
         String code = code();
         var opened = desk().when().get("/open?code=" + code)

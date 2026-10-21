@@ -48,9 +48,17 @@ public class DeskSignIn implements HttpAuthenticationMechanism {
                 || path.startsWith("/_static/") || path.startsWith("/q/");
     }
 
+    /**
+     * Where you sign in: the cookie isn't looked at there. A cookie that doesn't sign you in (it ended, or it was
+     * sent without the page key) would otherwise send these pages to /welcome, and /welcome to itself.
+     */
+    static boolean signInPage(String path) {
+        return path.equals("/open") || path.equals("/welcome");
+    }
+
     @Override
     public Uni<SecurityIdentity> authenticate(RoutingContext rc, IdentityProviderManager providers) {
-        Cookie c = rc.request().getCookie(cookie(rc));
+        Cookie c = signInPage(rc.normalizedPath()) ? null : rc.request().getCookie(cookie(rc));
         if (c == null) return Uni.createFrom().optional(Optional.empty());
         boolean needsPageKey = !pageAsset(rc.normalizedPath());
         return providers.authenticate(new SessionRequest(c.getValue(), needsPageKey, rc.request().getParam("k")));
