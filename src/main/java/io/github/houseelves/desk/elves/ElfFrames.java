@@ -24,7 +24,7 @@ import jakarta.inject.Inject;
  * post messages to the desk's page, which answers only what the elf's own elf.yaml allows (see elf-frame.js).
  *
  * <ul>
- * <li>{@code /elf-frame/<elf>/<tab>}: the frame's page, behind the desk's cookie like any page (it holds no data).</li>
+ * <li>{@code /elf-frame/<elf>}: the frame's page, behind the desk's cookie like any page (it holds no data).</li>
  * <li>{@code /elf-files/<key>/ui/...}: the elf's UI files at its installed commit. The frame can't send the cookie,
  * so these need none: the key, made for each elf and commit when the desk starts, is what lets them be read.</li>
  * <li>{@code /elf-kit/1/kit.js}: what elves build their UI with (Lit, the desk's look, the bridge), also cookie-free.</li>
@@ -58,7 +58,7 @@ public class ElfFrames {
     private final Map<String, String[]> opens = new ConcurrentHashMap<>();
 
     void install(@Observes Router router) {
-        router.get("/elf-frame/:elf/:tab").blockingHandler(this::frame);
+        router.get("/elf-frame/:elf").blockingHandler(this::frame);
         router.get("/elf-files/:key/*").blockingHandler(this::file);
         router.get("/elf-kit/1/kit.js").handler(this::kit);
     }
@@ -74,14 +74,14 @@ public class ElfFrames {
     }
 
     void frame(RoutingContext rc) {
-        String elf = rc.pathParam("elf"), tab = rc.pathParam("tab");
+        String elf = rc.pathParam("elf");
         String view = rc.request().getParam("view", "tab");
         String theme = rc.request().getParam("theme", "");
         ElvesService.Tab t;
         try {
-            t = NAME.matcher(elf).matches() && NAME.matcher(tab).matches() && VIEWS.contains(view) ? elves.tab(elf, tab) : null;
+            t = NAME.matcher(elf).matches() && VIEWS.contains(view) ? elves.tab(elf) : null;
         } catch (RuntimeException e) {
-            LOG.debugf("No frame for %s/%s: %s", elf, tab, e.getMessage());
+            LOG.debugf("No frame for %s: %s", elf, e.getMessage());
             t = null;
         }
         String origin = origin(rc);
@@ -98,7 +98,7 @@ public class ElfFrames {
         if (t == null) {
             rc.response().setStatusCode(404).end("""
                     <!doctype html><meta charset="utf-8"><body style="font: 15px system-ui; color: #56635b">
-                    That elf or tab isn't installed.</body>""");
+                    That elf isn't installed, or has no tab.</body>""");
             return;
         }
         String themeAttr = theme.equals("light") || theme.equals("dark") ? " data-theme=\"" + theme + "\"" : "";
@@ -109,7 +109,7 @@ public class ElfFrames {
                 <link rel="stylesheet" href="%s">
                 <script type="module" src="/elf-files/%s/%s"></script>
                 </head><body></body></html>
-                """.formatted(themeAttr, t.name(), FONTS.replace("&", "&amp;"), key(t.elf(), t.commit()), t.page()));
+                """.formatted(themeAttr, t.title().replace("&", "&amp;").replace("<", "&lt;"), FONTS.replace("&", "&amp;"), key(t.elf(), t.commit()), t.page()));
     }
 
     void file(RoutingContext rc) {

@@ -2,15 +2,16 @@ import { LitElement, html, css } from 'lit';
 import { shared } from './shared.js';
 import { api, errorMessage, onPush } from './rpc.js';
 import { currentTheme } from './theme.js';
-import { tabs, installedElf } from './tabs.js';
+import { installedElf } from './tabs.js';
 import './elf-settings.js';
+import './elf-schedule.js';
 
 /** What a frame may keep in this browser (elf.store): per elf, keys like these, values up to 200 K characters. */
 const STORE_KEY = /^[A-Za-z0-9._-]{1,100}$/;
 const STORE_MAX = 200_000;
 
 /**
- * An elf's own tab (or its dashboard card), drawn by the elf's UI in a sandboxed frame: no origin of its own, no
+ * An elf's tab (or its dashboard card), drawn by the elf's UI in a sandboxed frame: no origin of its own, no
  * network, no cookie, no page key. It can only post messages here, and this element answers only for that elf and
  * only what its elf.yaml declares: its runs, the folders it may read, its commands and actions, its settings (in
  * the desk's own dialog, so secrets never reach it). An action that asks waits for your click in the desk's own bar.
@@ -19,7 +20,6 @@ class ElfFrame extends LitElement {
 
     static properties = {
         elf: {},
-        tab: {},
         view: {},          // "tab" or "card"
         _height: { state: true },
         _ask: { state: true },       // {action, label, text, params, resolve}
@@ -50,6 +50,7 @@ class ElfFrame extends LitElement {
         }
         dialog::backdrop { background: color-mix(in srgb, var(--ink) 35%, transparent); }
         dialog .close { display: flex; justify-content: flex-end; margin-top: 16px; }
+        dialog .when { margin-top: 20px; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--surface); }
     `];
 
     constructor() {
@@ -120,7 +121,7 @@ class ElfFrame extends LitElement {
                 return this._state(await desk.elvesState());
             case 'act': return this._act(desk, String(args.action ?? ''), object(args.params) ?? {});
             case 'settings':
-                this._settings = { keys: args.keys ? strings(args.keys) : null, heading: String(args.heading ?? `${elf} settings`).slice(0, 80) };
+                this._settings = { keys: args.keys ? strings(args.keys) : null, heading: String(args.heading ?? `${installedElf(elf)?.title ?? elf} settings`).slice(0, 80) };
                 await this.updateComplete;
                 this.renderRoot.querySelector('dialog')?.showModal();
                 return null;
@@ -128,12 +129,9 @@ class ElfFrame extends LitElement {
                 const c = await desk.elfSettings({ elf });
                 return Object.fromEntries((c.settings ?? []).filter(s => s.kind !== 'secret').map(s => [s.key, s.value ?? '']));
             }
-            case 'open': {
-                const t = tabs().find(x => x.elf === elf && x.tab === args.tab);
-                if (!t) throw new Error(`${elf} has no tab ${args.tab}`);
-                location.hash = `#${t.id}`;
+            case 'open':
+                location.hash = `#${elf}`;
                 return null;
-            }
             case 'store-get': return storage(elf, args.key);
             case 'store-set': {
                 const value = args.value == null ? null : String(args.value);
@@ -145,11 +143,16 @@ class ElfFrame extends LitElement {
         }
     }
 
-    /** This elf's runs only, by command: {running: {command: since}, failed: {command: log}}. */
+    /**
+     * This elf's runs only, by command: {running: {command: since}, failed: {command: log}}, and when it refreshes on
+     * its own: {refresh: {command, calendar, next}} (calendar null: only when you refresh it).
+     */
     _state(all) {
         const own = map => Object.fromEntries(Object.entries(map ?? {})
             .filter(([k]) => k.startsWith(`${this.elf}:`)).map(([k, v]) => [k.slice(this.elf.length + 1), v]));
-        return { running: own(all?.running), failed: own(all?.failed) };
+        const r = installedElf(this.elf)?.refresh;
+        return { running: own(all?.running), failed: own(all?.failed),
+            refresh: r ? { command: r.command, calendar: r.calendar ?? null, next: r.next ?? null } : null };
     }
 
     /** An action: straight away if its elf.yaml says ask: false, otherwise once you confirm in the bar below. */
@@ -179,7 +182,7 @@ class ElfFrame extends LitElement {
         return html`<div class="ask" role="alertdialog" aria-labelledby="ask-text">
             <span class="from"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                 <path d="M8 1.5 2.5 4v4c0 3.2 2.3 5.6 5.5 6.5 3.2-.9 5.5-3.3 5.5-6.5V4z"/></svg>
-                The desk asks, for ${this.elf}</span>
+                The desk asks, for ${installedElf(this.elf)?.title ?? this.elf}</span>
             <span class="text" id="ask-text">${a.text}</span>
             ${entries.length ? html`<details><summary>What it sends</summary><dl>
                 ${entries.map(([k, v]) => html`<dt>${k}</dt><dd>${typeof v === 'string' ? v : JSON.stringify(v)}</dd>`)}
@@ -195,24 +198,25 @@ class ElfFrame extends LitElement {
         const s = this._settings;
         return html`<dialog aria-label=${s?.heading ?? 'Settings'} @close=${() => { this._settings = null; this._send({ event: 'changed' }); }}>
             ${s ? html`<elf-settings elf=${this.elf} .keys=${s.keys} heading=${s.heading}
-                note="${this.elf}'s settings. Secrets are never shown."></elf-settings>
+                note="Secrets are never shown."></elf-settings>
+                ${installedElf(this.elf)?.refresh ? html`<div class="when"><elf-schedule .elf=${installedElf(this.elf)}></elf-schedule></div>` : ''}
                 <div class="close"><button @click=${() => this.renderRoot.querySelector('dialog').close()}>Close</button></div>` : ''}
         </dialog>`;
     }
 
     willUpdate(changed) {
         // Only when it's a different tab: a new src reloads the frame. The theme follows by message after that.
-        if (changed.has('elf') || changed.has('tab') || changed.has('view') || !this._src) {
+        if (changed.has('elf') || changed.has('view') || !this._src) {
             const theme = currentTheme();
             this._key = crypto.randomUUID();
-            this._src = `/elf-frame/${encodeURIComponent(this.elf)}/${encodeURIComponent(this.tab)}?view=${this.view === 'card' ? 'card' : 'tab'}`
+            this._src = `/elf-frame/${encodeURIComponent(this.elf)}?view=${this.view === 'card' ? 'card' : 'tab'}`
                 + (theme === 'system' ? '' : `&theme=${theme}`) + `&key=${this._key}`;
         }
     }
 
     render() {
         return html`
-            <iframe src=${this._src} title="${this.elf}: ${this.tab}" style="height:${this._height || (this.view === 'card' ? 60 : 400)}px"
+            <iframe src=${this._src} title=${installedElf(this.elf)?.title ?? this.elf} style="height:${this._height || (this.view === 'card' ? 60 : 400)}px"
                     sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" allow="clipboard-write"
                     referrerpolicy="no-referrer"></iframe>
             ${this._askBar()}

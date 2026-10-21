@@ -190,17 +190,17 @@ class HttpSecurityTest {
 
     @Test
     void anElfsFramePageNeedsTheCookieAndIsSandboxed() throws Exception {
-        desk().when().get("/elf-frame/daily-triage/email").then().statusCode(302).header("Location", endsWith("/welcome"));
+        desk().when().get("/elf-frame/mail-triage").then().statusCode(302).header("Location", endsWith("/welcome"));
         SignedIn s = signIn();
-        // No runner in tests, so no such tab; the page is sandboxed and only framed by the desk all the same.
-        var r = desk().cookie(cookie(), s.session()).when().get("/elf-frame/daily-triage/email").then().statusCode(404).extract();
+        // No runner in tests, so no such elf; the page is sandboxed and only framed by the desk all the same.
+        var r = desk().cookie(cookie(), s.session()).when().get("/elf-frame/mail-triage").then().statusCode(404).extract();
         String csp = r.header("Content-Security-Policy");
         assertTrue(csp.contains("sandbox allow-scripts allow-popups"), csp);
         assertFalse(csp.contains("allow-same-origin"), csp);
         assertTrue(csp.contains("connect-src 'none'"), csp);
         assertTrue(csp.contains("frame-ancestors http://elf-desk.localhost:" + RestAssured.port), csp);
         assertEquals(null, r.header("X-Frame-Options"));
-        desk().cookie(cookie(), s.session()).when().get("/elf-frame/..%2F..%2Fetc/email").then().statusCode(404);
+        desk().cookie(cookie(), s.session()).when().get("/elf-frame/..%2F..%2Fetc").then().statusCode(404);
     }
 
     @Test

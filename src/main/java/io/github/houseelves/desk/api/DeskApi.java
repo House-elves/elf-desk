@@ -250,6 +250,11 @@ public class DeskApi {
         return elves.run(elf, command, params);
     }
 
+    /** When an elf refreshes on its own: a calendar time, null or empty for only when you start it, "default" for its own. */
+    public com.fasterxml.jackson.databind.JsonNode scheduleElf(String elf, String calendar) {
+        return elves.schedule(elf, calendar);
+    }
+
     /** The elves' runs going now. */
     public List<String> elvesRunning() {
         return elves.running();

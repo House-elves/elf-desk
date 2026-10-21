@@ -16,9 +16,11 @@ export {
     shared, markdown, markdownHtml, markdownStyles, spinner, ago, runTime, took, calendarText, Ticking, copyText, copyHtml,
 } from '../app/shared.js';
 
-// ---- where it runs: /elf-frame/<elf>/<tab>?view=tab|card ----
+// ---- where it runs: /elf-frame/<elf>?view=tab|card ----
 
-const [, , name, tab] = location.pathname.split('/');
+const [, , name] = location.pathname.split('/');
+/** Kept for elves written when an elf had several tabs: now its one tab, named after the elf. */
+const tab = name;
 const query = new URLSearchParams(location.search);
 const view = query.get('view') === 'card' ? 'card' : 'tab';
 /** The desk's key for this load of the frame: it answers only messages that carry it. */
@@ -99,10 +101,13 @@ window.addEventListener('message', e => {
  * The desk, as far as this elf may use it. Every call goes to the desk's page and comes back as a promise.
  */
 export const elf = {
-    /** This elf's name, the tab, and whether it's the tab itself ("tab") or its card on the dashboard ("card"). */
+    /** This elf's name, and whether this is its tab ("tab") or its card on the dashboard ("card"). */
     name, tab, view,
 
-    /** Its runs: {running: {command: since}, failed: {command: the end of its log}}. */
+    /**
+     * Its runs: {running: {command: since}, failed: {command: the end of its log}}, and when it refreshes on its own:
+     * refresh: {command, calendar (null: only when you refresh it), next}, or null if it doesn't refresh.
+     */
     state: () => call('state'),
     /** Calls back when one of its runs starts or ends; returns the unsubscribe. */
     onChange(callback) {
@@ -132,8 +137,8 @@ export const elf = {
     settings: (keys, heading) => call('settings', { keys, heading }),
     /** Its settings' values, secrets left out. */
     values: () => call('values'),
-    /** Goes to one of its tabs on the desk. */
-    open: tabName => call('open', { tab: tabName }),
+    /** Goes to its tab on the desk (from its dashboard card, say). */
+    open: () => call('open'),
 
     /** A little memory for the tab (unsent edits, say), kept by the desk in this browser. Values are strings. */
     store: {
@@ -149,14 +154,14 @@ export const elf = {
 new ResizeObserver(() => post('size', { height: Math.ceil(document.body.getBoundingClientRect().height) }))
     .observe(document.body);
 
-// Links: other sites open in a new tab of their own; #tab goes to one of this elf's tabs on the desk.
+// Links: other sites open in a new tab of their own; a link to # (or #anything) goes to this elf's tab on the desk.
 document.addEventListener('click', e => {
     const a = e.composedPath().find(n => n instanceof HTMLAnchorElement);
     if (!a || e.defaultPrevented) return;
     const href = a.getAttribute('href') ?? '';
-    if (href.startsWith('#') && href.length > 1) {
+    if (href.startsWith('#')) {
         e.preventDefault();
-        elf.open(href.slice(1)).catch(() => { /* not one of its tabs */ });
+        elf.open().catch(() => { /* the desk said no */ });
     } else if (/^https?:/i.test(href)) {
         a.target = '_blank';
         a.rel = 'noopener noreferrer';

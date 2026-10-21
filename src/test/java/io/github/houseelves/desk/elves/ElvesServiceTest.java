@@ -29,6 +29,7 @@ class ElvesServiceTest {
     static final String COMMIT = "0123456789abcdef0123456789abcdef01234567";
     static final String YAML = """
             name: weekly-status
+            title: Weekly status
             description: Drafts your weekly status.
             main: WeeklyStatus.java
             config: ~/.config/weekly-status/config
@@ -39,12 +40,10 @@ class ElvesServiceTest {
             settings:
               - {key: DISPLAY_NAME, label: Your name, kind: text}
               - {key: GMAIL_APP_PASSWORD, label: Gmail app password, kind: secret}
-              - {key: SCHEDULE, label: Draft it on, kind: calendar, default: "Mon *-*-* 08:00:00"}
             commands:
               draft: {label: Draft it, args: [--save]}
-            schedule: {command: draft, setting: SCHEDULE}
-            tabs:
-              - {name: status, label: Status, page: ui/status.js, card: true}
+            tab: {page: ui/status.js, card: true}
+            refresh: {command: draft, schedule: "Mon *-*-* 08:00:00"}
             actions:
               send: {label: Send it, args: [--action=send], confirm: "Send the status to {target}?"}
               sent-yourself: {label: Mark it sent, args: [--action=sent-yourself], ask: false}
@@ -79,7 +78,10 @@ class ElvesServiceTest {
         assertEquals("An email, only when you click Send.", ws.path("manifest").path("writes").get(0).asText());
         assertTrue(ws.path("manifest").path("settings").get(1).path("secret").asBoolean());
         assertEquals("abc", ws.path("installed").path("commit").asText());
-        assertEquals("Status", ws.path("manifest").path("tabs").get(0).asText());
+        assertEquals("Weekly status", ws.path("manifest").path("title").asText());
+        assertTrue(ws.path("manifest").path("tab").asBoolean());
+        assertTrue(ws.path("manifest").path("card").asBoolean());
+        assertTrue(ws.path("manifest").path("refreshes").asBoolean());
         assertEquals("Send it", ws.path("manifest").path("askingActions").get(0).asText());
         assertEquals("Mark it sent", ws.path("manifest").path("quietActions").get(0).asText());
 
@@ -138,5 +140,56 @@ class ElvesServiceTest {
         assertEquals("team", sent.getAllValues().get(0).path("params").path("target").asText());
         assertEquals("elf.read", sent.getAllValues().get(1).path("type").asText());
         assertEquals("subject", sent.getAllValues().get(1).path("fields").get(0).asText());
+    }
+
+    @Test
+    void anElfYamlFromBeforeOneTabEachStillPreviews() throws Exception {
+        String old = """
+                name: weekly-status
+                main: WeeklyStatus.java
+                config: ~/.config/weekly-status/config
+                settings:
+                  - {key: SCHEDULE, label: Draft it on, kind: calendar, default: "Mon *-*-* 08:00:00"}
+                commands:
+                  draft: {label: Draft it, args: [--save]}
+                schedule: {command: draft, setting: SCHEDULE}
+                tabs:
+                  - {name: status, label: Status, page: ui/status.js, card: true}
+                """;
+        var m = elves.preview(old);
+        assertEquals("weekly-status", m.path("title").asText());
+        assertTrue(m.path("tab").asBoolean());
+        assertTrue(m.path("card").asBoolean());
+        assertEquals("Mon *-*-* 08:00:00", m.path("schedule").asText());
+        assertFalse(elves.preview(old.replace("schedule: {command: draft, setting: SCHEDULE}\n", "")
+                .replace("tabs:\n  - {name: status, label: Status, page: ui/status.js, card: true}\n", "")).path("tab").asBoolean());
+    }
+
+    @Test
+    void anElfsTabIsItsOneTabAndItsScheduleGoesToTheRunner() throws Exception {
+        when(elves.hub.request(any(), eq(RunnerHub.ELVES_SINCE))).thenReturn(CompletableFuture.completedFuture(mapper.readTree(
+                "{\"status\": 200, \"body\": \"{\\\"elves\\\": [{\\\"name\\\": \\\"mail-triage\\\", \\\"title\\\": \\\"Mail\\\", "
+                        + "\\\"commit\\\": \\\"abc\\\", \\\"tab\\\": {\\\"page\\\": \\\"ui/mail.js\\\"}}, "
+                        + "{\\\"name\\\": \\\"old-one\\\", \\\"commit\\\": \\\"def\\\", \\\"tabs\\\": [{\\\"name\\\": \\\"x\\\", \\\"page\\\": \\\"ui/x.js\\\"}]}, "
+                        + "{\\\"name\\\": \\\"no-tab\\\", \\\"commit\\\": \\\"0\\\"}]}\"}")));
+        var t = elves.tab("mail-triage");
+        assertEquals("Mail", t.title());
+        assertEquals("ui/mail.js", t.page());
+        assertEquals("abc", t.commit());
+        assertEquals("ui/x.js", elves.tab("old-one").page());
+        assertEquals(null, elves.tab("no-tab"));
+        assertEquals(null, elves.tab("../etc"));
+
+        assertThrows(IllegalArgumentException.class, () -> elves.schedule("../x", null));
+        assertThrows(IllegalArgumentException.class, () -> elves.schedule("mail-triage", "Mon *-*-* 07:00\nrm"));
+        when(elves.hub.request(any(), eq(RunnerHub.ELF_REFRESH_SINCE))).thenReturn(CompletableFuture.completedFuture(
+                mapper.readTree("{\"status\": 200, \"body\": \"{\\\"elves\\\": []}\"}")));
+        elves.schedule("mail-triage", "Mon..Fri *-*-* 07:00");
+        elves.schedule("mail-triage", "");
+        ArgumentCaptor<ObjectNode> sent = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(elves.hub, org.mockito.Mockito.times(2)).request(sent.capture(), eq(RunnerHub.ELF_REFRESH_SINCE));
+        assertEquals("elf.schedule", sent.getAllValues().get(0).path("type").asText());
+        assertEquals("Mon..Fri *-*-* 07:00", sent.getAllValues().get(0).path("calendar").asText());
+        assertTrue(sent.getAllValues().get(1).path("calendar").isNull());
     }
 }

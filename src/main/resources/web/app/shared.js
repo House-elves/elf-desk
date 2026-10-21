@@ -192,20 +192,52 @@ export function took(ms) {
 }
 
 const DAYS = { mon: 'Mondays', tue: 'Tuesdays', wed: 'Wednesdays', thu: 'Thursdays', fri: 'Fridays', sat: 'Saturdays', sun: 'Sundays' };
+const DAY_NAMES = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
 
-/** "Mon *-*-* 08:00:00" as "Mondays at 08:00", "Mon..Fri *-*-* 07:30" as "Mon to Fri at 07:30"; anything else as is. */
-/** "Mondays at 08:00", "weekdays at 07:30": a schedule's calendar time (Mon *-*-* 08:00:00), in words. */
-export function calendarText(cal) {
-    const m = /^(?:(\S+) )?\*-\*-\* (\d{1,2}:\d{2})(?::00)?$/.exec(cal ?? '');
-    if (!m) return cal ?? '';
-    const time = m[2].padStart(5, '0');
-    if (!m[1]) return `every day at ${time}`;
-    const days = m[1].split(',').map(d => {
+/** "Mon..Fri" as "weekdays", "Mon,Wed" as "Mondays and Wednesdays", none as "every day". */
+function daysText(days) {
+    if (!days) return 'every day';
+    return days.split(',').map(d => {
         const [from, to] = d.split('..').map(x => x.toLowerCase());
-        return to ? (from === 'mon' && to === 'fri' ? 'weekdays' : `${from[0].toUpperCase()}${from.slice(1)} to ${to[0].toUpperCase()}${to.slice(1)}`)
-            : DAYS[from] ?? d;
-    });
-    return `${days.join(' and ')} at ${time}`;
+        if (!to) return DAYS[from] ?? d;
+        if (from === 'mon' && to === 'fri') return 'weekdays';
+        if (from === 'sat' && to === 'sun') return 'weekends';
+        if (from === 'mon' && to === 'sun') return 'every day';
+        return `${DAY_NAMES[from] ?? from} to ${DAY_NAMES[to] ?? to}`;
+    }).join(' and ');
+}
+
+/**
+ * A refresh schedule's calendar time in words: "Mondays at 08:00", "weekdays at 07:30 and 13:00", "every hour from
+ * 08:00 to 18:00 on weekdays". Several parts (";") are joined; anything else is shown as it is.
+ */
+export function calendarText(cal) {
+    if (!cal) return '';
+    const parts = cal.split(';').map(p => /^(?:(\S+) )?\*-\*-\* (\*|[\d,.]+):(\d{2})(?::00)?$/.exec(p.trim()));
+    if (parts.some(m => !m)) return cal;
+    const out = [];
+    for (const m of parts) {
+        const days = daysText(m[1]);
+        const hours = m[2];
+        const range = /^(\d{1,2})\.\.(\d{1,2})$/.exec(hours);
+        if (hours === '*' || range) {
+            const from = range ? range[1].padStart(2, '0') : '00', to = range ? range[2].padStart(2, '0') : '23';
+            out.push(`every hour${hours === '*' ? '' : ` from ${from}:${m[3]} to ${to}:${m[3]}`}${days === 'every day' ? '' : ` on ${days}`}`);
+        } else if (/^\d{1,2}(,\d{1,2})*$/.test(hours)) {
+            const times = hours.split(',').map(h => `${h.padStart(2, '0')}:${m[3]}`);
+            out.push(`${days} at ${times.length === 1 ? times[0] : `${times.slice(0, -1).join(', ')} and ${times.at(-1)}`}`);
+        } else {
+            return cal;
+        }
+    }
+    // Same days: "weekdays at 07:00 and 13:30" rather than saying the days twice.
+    const same = parts.every(m => (m[1] ?? '') === (parts[0][1] ?? '')) && out.every(x => !x.startsWith('every hour'));
+    if (same && out.length > 1) {
+        const days = daysText(parts[0][1]);
+        const times = out.map(x => x.slice(days.length + 4));
+        return `${days} at ${times.slice(0, -1).join(', ')} and ${times.at(-1)}`;
+    }
+    return out.join('; ');
 }
 
 /** GitHub says every required check passed and nothing else blocks the merge. */

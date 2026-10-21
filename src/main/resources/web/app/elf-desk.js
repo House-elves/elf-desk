@@ -3,16 +3,19 @@ import { keyed } from 'lit/directives/keyed.js';
 import { shared, itemKeyFromHash } from './shared.js';
 import { api, connectionState, onConnectionChange, onBusyChange } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
-import { tabs, findTab, tabShown, tabAvailable, showTab, onTabsChange, setInstalledElves, installedElves } from './tabs.js';
+import { tabs, findTab, onTabsChange, setInstalledElves, installedElves } from './tabs.js';
 import './desk-board.js';
 import './desk-settings.js';
 import './desk-thread.js';
-import './elf-frame.js';
+import './elf-tab.js';
 import './desk-dashboard.js';
 import './desk-elves.js';
 
 /** Set once the setup wizard has shown in this browser, so the dashboard isn't skipped again. */
 const WELCOMED = 'elfdesk.elves-welcomed';
+
+/** The tabs before each elf had one, named after the elf: an old link still lands. */
+const MOVED = { email: 'mail-triage', zulip: 'zulip-digest', status: 'weekly-status', quarterly: 'quarterly-review' };
 
 const THEMES = [
     { id: 'system', label: 'Match system', icon: svg`<rect x="2.5" y="3" width="11" height="8" rx="1.5"/><path d="M6 13.5h4M8 11v2.5"/>` },
@@ -28,7 +31,6 @@ class ElfDesk extends LitElement {
         _conn: { state: true },
         _busy: { state: true },
         _theme: { state: true },
-        _tabsOpen: { state: true },
         _tabsChanged: { state: true },
     };
 
@@ -65,24 +67,6 @@ class ElfDesk extends LitElement {
         }
         .themes button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
         .themes svg { width: 16px; height: 16px; display: block; }
-        .tabs-pick { position: relative; }
-        .gear {
-            border: 1px solid var(--line); background: var(--surface-2); color: var(--muted);
-            padding: 6px; border-radius: 999px; display: inline-flex;
-        }
-        .gear:hover, .gear[aria-expanded="true"] { color: var(--ink); }
-        .gear svg { width: 16px; height: 16px; display: block; }
-        .tabs-panel {
-            position: absolute; right: 0; top: calc(100% + 8px); z-index: 6; min-width: 13rem;
-            background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card, 10px);
-            box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 14%, transparent);
-            padding: 12px 14px; display: grid; gap: 8px;
-        }
-        .tabs-panel h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 2px; }
-        .tabs-panel label { display: flex; align-items: center; gap: 10px; font-size: 14px; }
-        .tabs-panel input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
-        .tabs-panel p { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
-
         /* The loader: a thin bar along the header's bottom edge while any call is in flight. */
         .progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; pointer-events: none; }
         .progress span {
@@ -113,10 +97,6 @@ class ElfDesk extends LitElement {
         this._conn = connectionState();
         this._busy = false;
         this._theme = currentTheme();
-        this._onDocClick = e => {
-            if (this._tabsOpen && !e.composedPath().includes(this.renderRoot.querySelector('.tabs-pick'))) this._tabsOpen = false;
-        };
-        this._onKey = e => { if (e.key === 'Escape' && this._tabsOpen) this._tabsOpen = false; };
         this._onHash = () => {
             this._view = this._viewFromHash();
             window.scrollTo({ top: 0 });
@@ -126,8 +106,8 @@ class ElfDesk extends LitElement {
     connectedCallback() {
         super.connectedCallback();
         window.addEventListener('hashchange', this._onHash);
-        document.addEventListener('click', this._onDocClick);
-        document.addEventListener('keydown', this._onKey);
+        // Settings saved anywhere (a tab's dialog, the Elves page) may finish an elf's setup: its tab shows then.
+        this.addEventListener('elf-settings-saved', () => this._loadElves());
         this._offTabs = onTabsChange(() => {
             this._tabsChanged = (this._tabsChanged ?? 0) + 1;
             this._view = this._viewFromHash();
@@ -147,8 +127,6 @@ class ElfDesk extends LitElement {
 
     disconnectedCallback() {
         window.removeEventListener('hashchange', this._onHash);
-        document.removeEventListener('click', this._onDocClick);
-        document.removeEventListener('keydown', this._onKey);
         this._offTabs?.();
         this._offConn?.();
         this._offBusy?.();
@@ -179,8 +157,9 @@ class ElfDesk extends LitElement {
         if (location.hash === '#settings') return 'github'; // the board's settings now live under GitHub
         if (location.hash === '#github' || location.hash === '#elves') return location.hash.slice(1);
         if (itemKeyFromHash(location.hash)) return 'thread';
-        // An elf's tab: #email. Until the runner has said which elves there are, it waits.
-        const id = location.hash.slice(1);
+        // An elf's tab: #mail-triage. Until the runner has said which elves there are, it waits.
+        let id = location.hash.slice(1);
+        if (MOVED[id] && !findTab(id) && findTab(MOVED[id])) id = MOVED[id];
         if (/^[a-z0-9][a-z0-9-]*$/.test(id)) return findTab(id) ? `tab:${id}` : installedElves() === null ? 'waiting' : 'no-tab';
         return 'dashboard';
     }
@@ -189,32 +168,9 @@ class ElfDesk extends LitElement {
         return tab === 'github' ? ['github', 'thread'].includes(this._view) : this._view === `tab:${tab}`;
     }
 
-    /** The gear next to the theme switch: which tabs show. Dashboard always does. */
-    _tabsPicker() {
-        const shown = tabs().filter(t => tabShown(t.id)).length;
-        const available = tabs().filter(t => tabAvailable(t.id));
-        return html`<div class="tabs-pick">
-            <button class="gear" title="Tabs" aria-label="Choose which tabs show" aria-expanded=${this._tabsOpen ? 'true' : 'false'}
-                    aria-controls="tabs-panel" @click=${() => { this._tabsOpen = !this._tabsOpen; }}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"
-                     stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/>
-                    <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/>
-                    <circle cx="8" cy="8" r="4.6"/></svg>
-            </button>
-            ${this._tabsOpen ? html`<div class="tabs-panel" id="tabs-panel" role="group" aria-labelledby="tabs-h">
-                <h2 id="tabs-h">Tabs</h2>
-                ${available.map(t => html`<label><input type="checkbox" .checked=${tabShown(t.id)}
-                        ?disabled=${tabShown(t.id) && shown === 1}
-                        @change=${e => showTab(t.id, e.target.checked)}>${t.label}</label>`)}
-                <p>Hidden tabs leave the header and the dashboard, in this browser. More tabs come with elves:
-                    <a href="#elves" @click=${() => { this._tabsOpen = false; }}>Elves</a>.</p>
-            </div>` : ''}
-        </div>`;
-    }
-
-    /** An elf's tab, drawn by the elf itself. keyed: a different tab is a new frame. */
+    /** An elf's tab: its setup until it's set up, then what the elf draws. keyed: a different elf is a new frame. */
     _elfTab(t) {
-        return t ? keyed(`${t.elf}/${t.tab}`, html`<elf-frame elf=${t.elf} tab=${t.tab}></elf-frame>`) : '';
+        return t ? keyed(t.elf, html`<elf-tab .tab=${t}></elf-tab>`) : '';
     }
 
     _pickTheme(id) {
@@ -239,7 +195,7 @@ class ElfDesk extends LitElement {
                     </a>
                     <nav aria-label="Views">
                         <a href="#" aria-current=${this._view === 'dashboard' ? 'page' : 'false'}>Dashboard</a>
-                        ${tabs().filter(t => tabShown(t.id) || this._current(t.id)).map(t => html`
+                        ${tabs().map(t => html`
                             <a href="#${t.id}" aria-current=${this._current(t.id) ? 'page' : 'false'}>${t.label}</a>`)}
                         <a href="#elves" aria-current=${this._view === 'elves' ? 'page' : 'false'}>Elves</a>
                     </nav>
@@ -254,7 +210,6 @@ class ElfDesk extends LitElement {
                                          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${t.icon}</svg>
                                 </button>`)}
                         </div>
-                        ${this._tabsPicker()}
                     </div>
                 </div>
                 <div class="progress ${this._busy ? 'on' : ''}" role="progressbar" aria-label="Loading"
@@ -269,7 +224,7 @@ class ElfDesk extends LitElement {
                 ${this._view === 'elves' ? html`<desk-elves></desk-elves>`
                     : this._view.startsWith('tab:') ? this._elfTab(findTab(this._view.slice(4)))
                     : this._view === 'waiting' ? html`<div class="skeleton" style="height:40vh"></div>`
-                    : this._view === 'no-tab' ? html`<p class="muted">No installed elf has that tab. Add elves on the
+                    : this._view === 'no-tab' ? html`<p class="muted">No elf by that name is installed. Add elves on the
                         <a href="#elves">Elves</a> page.</p>`
                     : this._view === 'thread' ? html`<desk-thread .itemKey=${itemKeyFromHash(location.hash)}></desk-thread>`
                     : this._view === 'github' ? html`<desk-board ?settingsOpen=${location.hash === '#settings'}></desk-board>`

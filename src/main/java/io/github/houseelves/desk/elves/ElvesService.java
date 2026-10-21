@@ -100,16 +100,27 @@ public class ElvesService {
         ArrayNode quiet = m.putArray("quietActions"), asks = m.putArray("askingActions");
         y.path("actions").forEach(a -> (a.path("ask").isBoolean() && !a.path("ask").asBoolean() ? quiet : asks)
                 .add(a.path("label").asText()));
-        ArrayNode tabs = m.putArray("tabs");
-        y.path("tabs").forEach(t -> tabs.add(t.path("label").asText(t.path("name").asText())));
+        m.put("title", y.path("title").asText(name));
+        // Its tab: one per elf (an elf.yaml from before 0.32 listed tabs: its first is the one it gets).
+        JsonNode tab = y.hasNonNull("tab") ? y.path("tab") : y.path("tabs").path(0);
+        m.put("tab", tab.isObject());
+        m.put("card", tab.path("card").asBoolean(false));
+        // When it refreshes on its own until you change it, if it refreshes at all.
+        JsonNode refresh = y.path("refresh");
         JsonNode schedule = y.path("schedule");
-        if (schedule.isObject()) {
+        if (refresh.isObject() || refresh.isTextual()) {
+            m.put("refreshes", true);
+            if (refresh.hasNonNull("schedule")) m.put("schedule", refresh.path("schedule").asText());
+        } else if (schedule.isObject()) {
             String setting = schedule.path("setting").asText(null);
             String when = schedule.path("default").asText(null);
             for (JsonNode s : y.path("settings")) {
                 if (s.path("key").asText().equals(setting)) when = s.path("default").asText(when);
             }
-            m.put("schedule", when);
+            m.put("refreshes", true);
+            if (when != null) m.put("schedule", when);
+        } else {
+            m.put("refreshes", tab.hasNonNull("refresh"));
         }
         return m;
     }
@@ -177,19 +188,29 @@ public class ElvesService {
         return ask(msg, 180, RunnerHub.ELF_TABS_SINCE);
     }
 
-    /** An installed elf and one of its tabs: {elf (as elves.list shows it), tab}, or null. */
-    public Tab tab(String elf, String tab) {
-        if (elf == null || tab == null || !NAME.matcher(elf).matches() || !NAME.matcher(tab).matches()) return null;
+    /** When an elf refreshes on its own: a calendar time, null for never, or "default" for its elf.yaml's. */
+    public JsonNode schedule(String elf, String calendar) {
+        ObjectNode msg = hub.message("elf.schedule").put("elf", name(elf));
+        if (calendar == null || calendar.isBlank()) msg.putNull("calendar");
+        else if (calendar.length() > 300 || calendar.chars().anyMatch(c -> c < 0x20)) throw new IllegalArgumentException("Not a time it can run at");
+        else msg.put("calendar", calendar.strip());
+        return ask(msg, 30, RunnerHub.ELF_REFRESH_SINCE);
+    }
+
+    /** An installed elf's tab: {elf, commit, title, page}, or null if it has none. */
+    public Tab tab(String elf) {
+        if (elf == null || !NAME.matcher(elf).matches()) return null;
         for (JsonNode e : installed().path("elves")) {
             if (!e.path("name").asText().equals(elf)) continue;
-            for (JsonNode t : e.path("tabs")) {
-                if (t.path("name").asText().equals(tab)) return new Tab(elf, e.path("commit").asText(), tab, t.path("page").asText());
-            }
+            // A runner before 0.32 lists tabs: the first is the elf's tab.
+            JsonNode t = e.hasNonNull("tab") ? e.path("tab") : e.path("tabs").path(0);
+            if (!t.isObject()) return null;
+            return new Tab(elf, e.path("commit").asText(), e.path("title").asText(elf), t.path("page").asText());
         }
         return null;
     }
 
-    public record Tab(String elf, String commit, String name, String page) {
+    public record Tab(String elf, String commit, String title, String page) {
     }
 
     /** The UI's files: they only change with the commit, so each is asked for once. */

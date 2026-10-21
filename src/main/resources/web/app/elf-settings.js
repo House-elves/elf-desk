@@ -10,7 +10,7 @@ import { api, errorMessage } from './rpc.js';
 class ElfSettings extends LitElement {
 
     static properties = {
-        elf: {},                        // daily-triage, weekly-status, quarterly-review, mvnpm-dependabot, elf-runner
+        elf: {},                        // an installed elf's name, or elf-runner
         heading: {},
         note: {},                       // a line under the heading
         keys: { attribute: false },     // which settings, in this order (default: all)
@@ -115,6 +115,7 @@ class ElfSettings extends LitElement {
             } else {
                 this._show(r);
                 this._saved = true;
+                this.dispatchEvent(new CustomEvent('elf-settings-saved', { detail: r, bubbles: true, composed: true }));
             }
         } catch (err) {
             this._error = errorMessage(err);
@@ -127,17 +128,20 @@ class ElfSettings extends LitElement {
         const id = `${this.elf}-${s.key}`;
         const value = this._values[s.key] ?? s.value ?? '';
         const wrong = this._wrong[s.key];
+        // Needed: it can't run without it, and there's nothing in it yet.
+        const needed = s.needed && (s.kind === 'secret' ? !s.set : !(s.value ?? '').trim())
+            ? html` <span class="chip warn">Needed</span>` : '';
         const help = html`${s.help ? html`<p class="help" id="${id}-help">${s.help}</p>` : ''}
             ${wrong ? html`<p class="wrong" role="alert">${wrong}</p>` : ''}`;
         if (s.kind === 'bool') {
-            return html`<div class="row"><span class="name">${s.label}</span><div class="field">
+            return html`<div class="row"><span class="name">${s.label}${needed}</span><div class="field">
                 <label class="check"><input type="checkbox" id=${id} aria-describedby="${id}-help" .checked=${value === 'true'}
                     @change=${e => this._set(s.key, e.target.checked ? 'true' : 'false')}>${value === 'true' ? 'On' : 'Off'}</label>
                 ${help}</div></div>`;
         }
         if (s.kind === 'secret') {
             const replacing = this._replacing.has(s.key);
-            return html`<div class="row"><label for=${id}>${s.label}</label><div class="field">
+            return html`<div class="row"><label for=${id}>${s.label}${needed}</label><div class="field">
                 ${replacing ? html`<input type="password" id=${id} autocomplete="new-password" aria-describedby="${id}-help"
                         .value=${this._values[s.key] ?? ''} @input=${e => this._set(s.key, e.target.value)}>`
                     : html`<div class="secret"><span class="chip ${s.set ? 'ok' : 'warn'}">${s.set ? 'Set' : 'Not set'}</span>
@@ -145,7 +149,7 @@ class ElfSettings extends LitElement {
                             ${s.set ? 'Replace' : 'Set it'}</button></div>`}
                 ${help}</div></div>`;
         }
-        return html`<div class="row"><label for=${id}>${s.label}</label><div class="field">
+        return html`<div class="row"><label for=${id}>${s.label}${needed}</label><div class="field">
             <input type=${s.kind === 'int' ? 'number' : 'text'} id=${id} aria-describedby="${id}-help" .value=${value}
                 min=${s.min ?? ''} max=${s.max ?? ''} spellcheck="false" aria-invalid=${wrong ? 'true' : 'false'}
                 @input=${e => this._set(s.key, e.target.value)}>

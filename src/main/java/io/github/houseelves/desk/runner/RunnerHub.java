@@ -88,6 +88,8 @@ public class RunnerHub {
     public static final String ELVES_SINCE = "0.30.0";
     /** The first runner whose elves draw their own tabs: their UI files, data, actions and failed runs. */
     public static final String ELF_TABS_SINCE = "0.31.0";
+    /** Elves with a title, one tab and a refresh you can schedule (elf.schedule). */
+    public static final String ELF_REFRESH_SINCE = "0.32.0";
     static final String PR_SINCE = "0.15.0";
     static final String READY_PR_SINCE = "0.21.0";
 

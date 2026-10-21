@@ -3,6 +3,7 @@ import { calendarText, shared, spinner, ago, settingsToggle } from './shared.js'
 import { api, errorMessage } from './rpc.js';
 import { setInstalledElves } from './tabs.js';
 import './elf-settings.js';
+import './elf-schedule.js';
 import './diff-view.js';
 
 const short = sha => (sha ?? '').slice(0, 7);
@@ -42,7 +43,7 @@ class DeskElves extends LitElement {
         ol.steps strong { color: var(--ink); font-weight: 600; }
         .elf { padding: 18px 20px; display: grid; gap: 12px; min-width: 0; }
         .top { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; justify-content: space-between; }
-        h3 { font-size: 16px; font-weight: 600; font-family: var(--font-code); }
+        h3 { font-size: 16px; font-weight: 600; }
         .desc { margin: 0; max-width: 46rem; }
         .meta { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
         .meta a { color: inherit; }
@@ -63,6 +64,9 @@ class DeskElves extends LitElement {
         .empty { color: var(--muted); padding: 16px 18px; margin: 0; }
         code { font: 13px var(--font-code); background: var(--surface-2); padding: 2px 6px; border-radius: 5px; }
         .sk { height: 120px; }
+        .when { padding: 16px 18px; }
+        h3 code { font-weight: 400; color: var(--muted); margin-left: 6px; }
+        a.chip { text-decoration: none; }
         @media (max-width: 600px) {
             h1 { font-size: 26px; }
             dl { grid-template-columns: minmax(0, 1fr); }
@@ -129,10 +133,13 @@ class DeskElves extends LitElement {
         }
     }
 
+    /** Installs it, and goes to its tab: its setup until it's set up (an elf without a tab opens its settings here). */
     async _install(c) {
         const r = await this._do(`install:${c.repo}`, desk => desk.installElf({ repo: c.repo, commit: c.commit }));
         if (r) {
-            this._open = c.manifest?.name;
+            const elf = (r.elves ?? []).find(e => e.repo === c.repo);
+            if (elf?.tab) location.hash = `#${elf.name}`;
+            else this._open = c.manifest?.name;
             this._load();
         }
     }
@@ -178,8 +185,9 @@ class DeskElves extends LitElement {
         const changes = this._changes?.elf === elf.name ? this._changes : null;
         return html`<article class="panel elf" aria-labelledby="elf-${elf.name}">
             <div class="top">
-                <h3 id="elf-${elf.name}">${elf.name}</h3>
+                <h3 id="elf-${elf.name}">${elf.title || elf.name} <code>${elf.name}</code></h3>
                 <div class="chips">
+                    ${elf.missing?.length ? html`<a class="chip warn" href="#${elf.name}">Needs setting up</a>` : ''}
                     <span class="chip" title=${elf.commit}>at ${short(elf.commit)}</span>
                     ${behind ? html`<span class="chip warn">Update: ${short(latest.commit)}</span>` : ''}
                     ${missing.length ? html`<span class="chip bad">Needs ${missing.join(', ')}</span>` : ''}
@@ -188,8 +196,9 @@ class DeskElves extends LitElement {
             <p class="desc">${elf.description}</p>
             <div class="meta">
                 <a href="https://github.com/${elf.repo}" target="_blank" rel="noopener">${elf.repo}</a>
-                ${elf.schedule ? html`<span>Runs ${calendarText(elf.schedule.calendar)}${elf.schedule.next ? html`, next ${when(elf.schedule.next)}` : ''}</span>`
-                    : html`<span>Runs when you start it from its tab</span>`}
+                ${elf.tab ? html`<a href="#${elf.name}">Its tab: ${elf.title || elf.name}</a>` : ''}
+                ${elf.refresh?.calendar ? html`<span>Refreshes ${calendarText(elf.refresh.calendar)}${elf.refresh.next ? html`, next ${when(elf.refresh.next)}` : ''}</span>`
+                    : elf.refresh ? html`<span>Refreshes when you refresh it</span>` : html`<span>Runs when you start it from its tab</span>`}
             </div>
             <div class="acts">
                 ${settingsToggle(this._open === elf.name, () => { this._open = this._open === elf.name ? null : elf.name; })}
@@ -208,7 +217,10 @@ class DeskElves extends LitElement {
                 <button class="sm quiet" @click=${() => { this._removing = null; }}>Keep it</button>
             </div>` : ''}
             ${this._open === elf.name ? html`<elf-settings elf=${elf.name} heading="Settings"
-                    note="In ~/.config/${elf.name}/config, only readable by you. Secrets are never shown."></elf-settings>` : ''}
+                    @elf-settings-saved=${() => this._load()}
+                    note="In ~/.config/${elf.name}/config, only readable by you. Secrets are never shown."></elf-settings>
+                ${elf.refresh ? html`<div class="panel when"><elf-schedule .elf=${elf}
+                    @elf-schedule-saved=${e => this._showInstalled(e.detail)}></elf-schedule></div>` : ''}` : ''}
             ${dry && (dry.running || dry.output) ? html`<div class="run" aria-live="polite">
                 <div class="run-head">
                     ${dry.running ? html`<span class="chip run">Running</span>`
@@ -236,7 +248,7 @@ class DeskElves extends LitElement {
         const m = c.manifest;
         return html`<article class="panel elf" aria-labelledby="av-${c.repo}">
             <div class="top">
-                <h3 id="av-${c.repo}">${m?.name ?? c.repo}</h3>
+                <h3 id="av-${c.repo}">${m?.title || m?.name || c.repo}${m?.name ? html` <code>${m.name}</code>` : ''}</h3>
                 <div class="chips">
                     ${c.official ? html`<span class="chip ok">House-elves</span>` : html`<span class="chip warn">Not from House-elves</span>`}
                     ${c.private ? html`<span class="chip">Private</span>` : ''}
@@ -248,12 +260,13 @@ class DeskElves extends LitElement {
                 <dl>
                     ${this._lists('Reads', m.reads)}
                     ${this._lists('Writes', m.writes)}
-                    ${m.tabs?.length ? html`<dt>Adds</dt><dd>${m.tabs.length === 1 ? 'A tab' : 'Tabs'}: ${m.tabs.join(', ')}</dd>` : ''}
+                    ${m.tab ? html`<dt>Adds</dt><dd>A ${m.title || m.name} tab${m.card ? ', and a card on the dashboard' : ''}</dd>` : ''}
                     ${m.quietActions?.length ? html`<dt>Does on a click</dt><dd>${m.quietActions.join('; ')}</dd>` : ''}
                     ${m.askingActions?.length ? html`<dt>Asks you first</dt><dd>${m.askingActions.join('; ')}</dd>` : ''}
                     ${m.tools?.length ? html`<dt>Needs</dt><dd>${m.tools.join(', ')}</dd>` : ''}
                     ${m.settings?.length ? html`<dt>Asks for</dt><dd>${m.settings.map((s, i) => html`${i ? ', ' : ''}${s.label}${s.secret ? ' (secret)' : ''}`)}</dd>` : ''}
-                    <dt>Runs</dt><dd>${m.schedule ? `${calendarText(m.schedule)}, and when you start it` : 'When you start it'}</dd>
+                    <dt>Runs</dt><dd>${m.refreshes ? html`When you refresh it${m.schedule ? html`, and ${calendarText(m.schedule)}
+                        (you can change when)` : ''}. Its first run starts once it's set up.` : 'When you start it'}</dd>
                 </dl>
                 ${c.official ? '' : html`<p class="warn-note">It runs on your machine as you, with the settings you give it.
                     Read its code on GitHub before you install it.</p>`}
@@ -278,8 +291,8 @@ class DeskElves extends LitElement {
                 <h2 id="setup-h">Set up your desk</h2>
                 <ol class="steps">
                     <li><strong>Pick elves</strong> below. Each says what it reads and what it can write.</li>
-                    <li><strong>Fill in their settings.</strong> Secrets are only ever written, never shown again.</li>
-                    <li><strong>Do a dry run</strong> to see it work on your own data. It sends nothing.</li>
+                    <li><strong>Fill in their settings</strong> on their tab. Secrets are only ever written, never shown again.</li>
+                    <li><strong>Each runs once by itself</strong> when it's set up, then when you refresh it or on its schedule.</li>
                 </ol>
             </section>` : ''}
             ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : ''}

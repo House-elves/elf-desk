@@ -1,29 +1,17 @@
-// Which tabs there are: GitHub, and the tabs the installed elves draw themselves (their elf.yaml's tabs, such as
-// daily-triage's Email and Zulip). Which of them show is remembered per browser, like the theme. A hidden tab leaves
-// the header and the dashboard; its page still opens from a link.
+// Which tabs there are: GitHub, then one per installed elf that has a tab, named by its title (Mail, Zulip, Weekly
+// status), in the order you added them. Adding an elf adds its tab; removing it takes the tab away.
 
-const KEY = 'elfdesk.hidden-tabs';
 const EVENT = 'elfdesk-tabs';
 
 export const GITHUB = { id: 'github', label: 'GitHub' };
 
-function hidden() {
-    try {
-        const ids = JSON.parse(localStorage.getItem(KEY) ?? '[]');
-        return new Set(Array.isArray(ids) ? ids.filter(id => typeof id === 'string') : []);
-    } catch (e) {
-        return new Set();
-    }
-}
-
-let current = hidden();
 /** The installed elves (as the runner lists them), once known; null until then. */
 let installed = null;
 let elfTabs = [];
 
 /**
- * Every tab: GitHub, then each installed elf's, as {id, label, elf, tab, card, refresh}. A tab's id is its name
- * (#email), or elf-name when two elves have a tab of the same name.
+ * Every tab: GitHub's, then each installed elf's, as {id, label, elf, card, refresh, missing}. A tab's id is its
+ * elf's name (#mail-triage). refresh: the command that brings it up to date; missing: settings it needs first.
  */
 export function tabs() {
     return [GITHUB, ...elfTabs];
@@ -33,24 +21,20 @@ export function findTab(id) {
     return tabs().find(t => t.id === id);
 }
 
-/** The tab with this id exists (GitHub always does). */
-export function tabAvailable(id) {
-    return !!findTab(id);
-}
-
-export function tabShown(id) {
-    return tabAvailable(id) && !current.has(id);
+/** An elf's tab: from its elf.yaml's tab (a runner before 0.32 lists tabs, and the first is it). */
+function tabOf(e) {
+    return e.tab ?? e.tabs?.[0] ?? null;
 }
 
 /** What the Elves page or the shell learnt is installed: the runner's list of elves. */
 export function setInstalledElves(elves) {
-    const next = [];
-    for (const e of elves ?? []) {
-        for (const t of e.tabs ?? []) {
-            const id = next.some(x => x.id === t.name) || t.name === GITHUB.id || t.name === 'elves' ? `${e.name}-${t.name}` : t.name;
-            next.push({ id, label: t.label, elf: e.name, tab: t.name, card: !!t.card, refresh: t.refresh ?? null });
-        }
-    }
+    const next = [...(elves ?? [])]
+        .filter(e => tabOf(e) && e.name !== GITHUB.id && e.name !== 'elves')
+        .sort((a, b) => (a.installedAt ?? '').localeCompare(b.installedAt ?? '') || a.name.localeCompare(b.name))
+        .map(e => ({
+            id: e.name, label: e.title || e.name, elf: e.name, card: !!tabOf(e).card,
+            refresh: e.refresh?.command ?? tabOf(e).refresh ?? null, missing: e.missing ?? [],
+        }));
     const same = installed && JSON.stringify(next) === JSON.stringify(elfTabs)
         && JSON.stringify(elves) === JSON.stringify(installed);
     installed = elves ?? [];
@@ -67,20 +51,7 @@ export function installedElf(name) {
     return installed?.find(e => e.name === name) ?? null;
 }
 
-export function showTab(id, on) {
-    const next = new Set(current);
-    if (on) next.delete(id); else next.add(id);
-    current = next;
-    try {
-        if (next.size) localStorage.setItem(KEY, JSON.stringify([...next]));
-        else localStorage.removeItem(KEY);
-    } catch (e) {
-        // no storage: the choice lasts for this page only
-    }
-    window.dispatchEvent(new CustomEvent(EVENT));
-}
-
-/** Calls back when tabs are turned on or off, or come and go with elves; returns the unsubscribe. */
+/** Calls back when tabs come and go with elves, or an elf's setup or schedule changes; returns the unsubscribe. */
 export function onTabsChange(callback) {
     window.addEventListener(EVENT, callback);
     return () => window.removeEventListener(EVENT, callback);

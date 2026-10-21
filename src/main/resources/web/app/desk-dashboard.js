@@ -2,14 +2,15 @@ import { LitElement, html, css } from 'lit';
 import { shared, ago, spinner, Ticking } from './shared.js';
 import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
 import { boardHeadline, lastBoard } from './desk-board.js';
-import { tabs, tabShown, onTabsChange } from './tabs.js';
+import { tabs, onTabsChange } from './tabs.js';
 import './elf-frame.js';
 
 const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
 
 /**
  * The start page: one sentence per tab on what needs you there. GitHub's is the desk's own; every other card is
- * drawn by its elf (the card view of its tab, in a sandboxed frame), in a panel the desk draws around it.
+ * drawn by its elf (the card view of its tab, in a sandboxed frame), in a panel the desk draws around it. An elf that
+ * isn't set up yet gets a line saying so instead.
  */
 class DeskDashboard extends LitElement {
 
@@ -111,26 +112,34 @@ class DeskDashboard extends LitElement {
         }
     }
 
-    /** The tabs with a card on the dashboard that show here. */
+    /** The elves with a card on the dashboard. */
     _cards() {
-        return tabs().filter(t => t.card && tabShown(t.id));
+        return tabs().filter(t => t.card);
+    }
+
+    /**
+     * What Refresh everything runs: the elves on the dashboard that refresh and are set up. One without a card (a
+     * quarterly review, say) only refreshes from its own tab or its schedule.
+     */
+    _refreshable() {
+        return this._cards().filter(t => t.refresh && !t.missing?.length);
     }
 
     _refreshing(t) {
         return t.refresh && !!this._elves?.running?.[`${t.elf}:${t.refresh}`];
     }
 
-    /** The morning button: fetch GitHub, and run each card's refresh (the email triage, the Zulip digest) at once. */
+    /** The morning button: fetch GitHub, and refresh every elf that's set up (the mail triage, the Zulip digest) at once. */
     async _refreshAll() {
         this._refreshError = null;
         const desk = await api().catch(e => { this._refreshError = errorMessage(e); return null; });
         if (!desk) return;
         const problems = [];
-        const elves = this._cards().filter(t => t.refresh && !this._refreshing(t)).map(t =>
+        const elves = this._refreshable().filter(t => !this._refreshing(t)).map(t =>
             desk.runElf({ elf: t.elf, command: t.refresh, params: null })
                 .catch(e => problems.push(`${t.label}: ${errorMessage(e)}`)));
-        this._fetching = tabShown('github');
-        const github = !tabShown('github') ? null : desk.board({ refresh: true })
+        this._fetching = true;
+        const github = desk.board({ refresh: true })
             .then(b => { this._board = b; this._errors = { ...this._errors, github: null }; })
             .catch(e => problems.push(`GitHub: ${errorMessage(e)}`))
             .finally(() => { this._fetching = false; });
@@ -140,7 +149,7 @@ class DeskDashboard extends LitElement {
     }
 
     _busy() {
-        return this._fetching || this._cards().some(t => this._refreshing(t));
+        return this._fetching || this._refreshable().some(t => this._refreshing(t));
     }
 
     _card({ id, title, href, open, say, meta, attention, key }) {
@@ -173,24 +182,24 @@ class DeskDashboard extends LitElement {
         return this._card({ id: 'github', key: 'github', title: 'GitHub', href: '#github', open: 'Open the board', say, meta, attention });
     }
 
-    /** An elf's card: the desk draws the panel and its title, the elf draws what's in it. */
+    /** An elf's card: the desk draws the panel and its title, the elf draws what's in it (once it's set up). */
     _elfCard(t) {
+        const setup = t.missing?.length;
         return html`
-            <section class="panel elf ${this._attention[t.id] ? 'attention' : ''}" aria-labelledby="d-${t.id}">
+            <section class="panel elf ${this._attention[t.id] || setup ? 'attention' : ''}" aria-labelledby="d-${t.id}">
                 <div class="head">
                     <h2 id="d-${t.id}"><a href="#${t.id}">${t.label}</a></h2>
-                    <a class="open" href="#${t.id}">Open ${t.label}</a>
+                    <a class="open" href="#${t.id}">${setup ? `Set up ${t.label}` : `Open ${t.label}`}</a>
                 </div>
-                <elf-frame elf=${t.elf} tab=${t.tab} view="card"
-                           @elf-card=${e => { this._attention = { ...this._attention, [t.id]: e.detail.attention }; }}></elf-frame>
+                ${setup ? html`<p class="say"><a href="#${t.id}">Set it up</a>: it needs a few settings before its first run.</p>`
+                    : html`<elf-frame elf=${t.elf} view="card"
+                           @elf-card=${e => { this._attention = { ...this._attention, [t.id]: e.detail.attention }; }}></elf-frame>`}
             </section>`;
     }
 
-    /** What Refresh everything does, for the tabs that show. */
+    /** What Refresh everything does. */
     _refreshHint() {
-        const parts = [tabShown('github') && 'fetches GitHub',
-            ...this._cards().filter(t => t.refresh).map(t => `runs ${t.label}`)].filter(Boolean);
-        if (!parts.length) return 'Nothing to refresh: no tab here refreshes.';
+        const parts = ['fetches GitHub', ...this._refreshable().map(t => `runs ${t.label}`)];
         const text = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
         return `${text[0].toUpperCase()}${text.slice(1)}.`;
     }
@@ -204,7 +213,7 @@ class DeskDashboard extends LitElement {
                         <h1>Your desk</h1>
                     </div>
                     <div class="refresh">
-                        <button class="primary" ?disabled=${this._busy() || (!tabShown('github') && !this._cards().some(t => t.refresh))}
+                        <button class="primary" ?disabled=${this._busy()}
                                 @click=${this._refreshAll}>
                             ${this._busy() ? spinner : ''}${this._busy() ? 'Refreshing' : 'Refresh everything'}</button>
                         <p class="hint">${this._refreshHint()}</p>
@@ -212,10 +221,10 @@ class DeskDashboard extends LitElement {
                 </div>
                 ${this._refreshError ? html`<p class="error" role="alert">${this._refreshError}</p>` : ''}
                 <div class="tabs">
-                    ${tabShown('github') ? this._github() : ''}
+                    ${this._github()}
                     ${this._cards().map(t => this._elfCard(t))}
-                    ${!tabShown('github') && !this._cards().length
-                        ? html`<p class="hint">Every tab with a card here is hidden. Turn tabs back on with the gear at the top right.</p>` : ''}
+                    ${!this._cards().length ? html`<p class="hint">Elves you add on the <a href="#elves">Elves</a> page show
+                        what needs you here.</p>` : ''}
                 </div>
             </div>
         `;
