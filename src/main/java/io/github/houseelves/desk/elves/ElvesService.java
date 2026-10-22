@@ -105,7 +105,11 @@ public class ElvesService {
         JsonNode tab = y.hasNonNull("tab") ? y.path("tab") : y.path("tabs").path(0);
         m.put("tab", tab.isObject());
         m.put("card", tab.path("card").asBoolean(false));
-        m.put("agents", y.path("agents").asBoolean(false));
+        m.put("agents", y.path("agents").isObject() || y.path("agents").asBoolean(false));
+        // Its own version and who made it, as the elf.yaml says (the runner checks both when it installs it).
+        String version = y.path("version").asText(""), author = y.path("author").asText("").replaceFirst("^@", "");
+        if (version.matches("\\d{1,4}(\\.\\d{1,4}){0,3}([.-][A-Za-z0-9]{1,20})?")) m.put("version", version);
+        if (author.matches("[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})")) m.put("author", author);
         // When it refreshes on its own until you change it, if it refreshes at all.
         JsonNode refresh = y.path("refresh");
         JsonNode schedule = y.path("schedule");

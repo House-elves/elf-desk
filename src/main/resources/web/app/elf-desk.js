@@ -1,7 +1,7 @@
 import { LitElement, html, css, svg } from 'lit';
 import { keyed } from 'lit/directives/keyed.js';
 import { shared, itemKeyFromHash } from './shared.js';
-import { api, connectionState, onConnectionChange, onBusyChange } from './rpc.js';
+import { api, connectionState, onConnectionChange, onBusyChange, onPush } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
 import { tabs, findTab, onTabsChange, setInstalledElves, installedElves, githubElf } from './tabs.js';
 import './desk-board.js';
@@ -29,6 +29,7 @@ class ElfDesk extends LitElement {
     static properties = {
         _view: { state: true },
         _conn: { state: true },
+        _versions: { state: true },  // {desk, runner, runnerProtocol}: what's running, at the bottom of the page
         _busy: { state: true },
         _theme: { state: true },
         _tabsChanged: { state: true },
@@ -85,10 +86,15 @@ class ElfDesk extends LitElement {
         .lost {
             background: var(--bad-soft); color: var(--bad); padding: 9px 24px; text-align: center; font-size: 14px;
         }
-        main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+        main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 48px; }
+        .versions { max-width: 1180px; margin: 0 auto; padding: 0 24px 32px; display: flex; flex-wrap: wrap; gap: 4px 18px;
+            font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+        .versions a { color: inherit; text-decoration: none; }
+        .versions a:hover { color: var(--ink); text-decoration: underline; }
         @media (max-width: 640px) {
             .bar { padding: 10px 16px; }
-            main { padding: 22px 16px 64px; }
+            main { padding: 22px 16px 40px; }
+            .versions { padding: 0 16px 24px; }
         }
     `];
 
@@ -118,6 +124,7 @@ class ElfDesk extends LitElement {
             if (s === 'open') this._loadElves();
         });
         this._loadElves();
+        this._offRunner = onPush('desk.runner', () => this._loadVersions());
         // Show the bar only for calls that take a moment, so quick ones don't flicker.
         this._offBusy = onBusyChange(busy => {
             clearTimeout(this._busyTimer);
@@ -131,6 +138,7 @@ class ElfDesk extends LitElement {
         this._offTabs?.();
         this._offConn?.();
         this._offBusy?.();
+        this._offRunner?.();
         super.disconnectedCallback();
     }
 
@@ -142,6 +150,7 @@ class ElfDesk extends LitElement {
         try {
             const r = await (await api()).elves();
             setInstalledElves(r.elves ?? []);
+            this._loadVersions();
             let welcomed = true;
             try { welcomed = !!localStorage.getItem(WELCOMED); } catch { /* no storage: never redirect */ }
             if (!r.elves?.length && !welcomed && this._view === 'dashboard') {
@@ -152,6 +161,29 @@ class ElfDesk extends LitElement {
             // No runner: only GitHub's tab, until it's back.
             if (installedElves() === null) setInstalledElves([]);
         }
+    }
+
+    async _loadVersions() {
+        try {
+            this._versions = await (await api()).versions();
+        } catch {
+            // an older desk, or it's restarting: the next connection tries again
+        }
+    }
+
+    /** What's running: the desk's and the runner's releases, and the commit each elf is at (each links to it). */
+    _renderVersions() {
+        const v = this._versions;
+        if (!v) return '';
+        const release = r => !r ? null : /^\d/.test(r) ? `v${r}` : r;
+        const desk = v.desk && !v.desk.includes('SNAPSHOT') ? release(v.desk) : 'a local build';
+        const elves = (installedElves() ?? []).filter(e => e.commit).sort((a, b) => (a.title || a.name).localeCompare(b.title || b.name));
+        return html`<footer class="versions" aria-label="Versions">
+            <span>Elf Desk ${desk}</span>
+            <span>${v.runner ? html`Runner ${release(v.runner)}` : 'Runner offline'}</span>
+            ${elves.map(e => html`<a href="https://github.com/${e.repo}/commit/${e.commit}" target="_blank" rel="noopener"
+                title="${e.repo} at ${e.commit}${e.author ? `, by @${e.author}` : ''}">${e.title || e.name} ${e.version ? `v${e.version}` : e.commit.slice(0, 7)}</a>`)}
+        </footer>`;
     }
 
     _viewFromHash() {
@@ -242,6 +274,7 @@ class ElfDesk extends LitElement {
                     : this._view === 'github' ? html`<desk-board ?settingsOpen=${location.hash === '#settings'}></desk-board>`
                     : html`<desk-dashboard></desk-dashboard>`}
             </main>
+            ${this._renderVersions()}
         `;
     }
 }

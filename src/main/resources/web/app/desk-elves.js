@@ -136,7 +136,11 @@ class DeskElves extends LitElement {
                 </div>
             </div>
             <p class="desc">${m?.description || c.description}</p>
-            <div class="meta"><a href=${c.url} target="_blank" rel="noopener">${c.repo}</a><span>at ${short(c.commit)}</span></div>
+            <div class="meta">
+                ${m?.version ? html`<span>Version ${m.version}</span>` : ''}
+                ${m?.author ? html`<span>By <a href="https://github.com/${m.author}" target="_blank" rel="noopener">@${m.author}</a></span>` : ''}
+                <a href=${c.url} target="_blank" rel="noopener">${c.repo}</a><span>at ${short(c.commit)}</span>
+            </div>
             ${c.problem ? html`<p class="warn-note">Can't add it: ${c.problem}.</p>` : html`
                 <dl>
                     ${this._lists('Reads', m.reads)}

@@ -291,6 +291,19 @@ public class DeskApi {
         return elves.cancelAgent(elf, id);
     }
 
+    /**
+     * What's running: the desk's release (from the release build; 1.0.0-SNAPSHOT when built locally) and the
+     * runner's (v0.5.0, or dev when it runs from source), with the version of what the runner understands.
+     */
+    public record Versions(String desk, String runner, String runnerProtocol) {
+    }
+
+    public Versions versions() {
+        String desk = org.eclipse.microprofile.config.ConfigProvider.getConfig()
+                .getOptionalValue("quarkus.application.version", String.class).orElse("");
+        return new Versions(desk, runner.connected() ? runner.runnerRelease() : null, runner.connected() ? runner.runnerVersion() : null);
+    }
+
     // ---- what's new ----
 
     /** What happened on a PR since your last review or comment: commits, reviews, comments, review requests. */

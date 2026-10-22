@@ -30,6 +30,8 @@ class ElvesServiceTest {
     static final String YAML = """
             name: weekly-status
             title: Weekly status
+            version: 1.2.0
+            author: "@phillip-kruger"
             description: Drafts your weekly status.
             main: WeeklyStatus.java
             config: ~/.config/weekly-status/config
@@ -79,6 +81,8 @@ class ElvesServiceTest {
         assertTrue(ws.path("manifest").path("settings").get(1).path("secret").asBoolean());
         assertEquals("abc", ws.path("installed").path("commit").asText());
         assertEquals("Weekly status", ws.path("manifest").path("title").asText());
+        assertEquals("1.2.0", ws.path("manifest").path("version").asText());
+        assertEquals("phillip-kruger", ws.path("manifest").path("author").asText());
         assertTrue(ws.path("manifest").path("tab").asBoolean());
         assertTrue(ws.path("manifest").path("card").asBoolean());
         assertTrue(ws.path("manifest").path("refreshes").asBoolean());

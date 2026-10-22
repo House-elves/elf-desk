@@ -57,6 +57,7 @@ public class RunnerHub {
 
     private volatile WebSocketConnection runner;
     private volatile String runnerVersion = "";
+    private volatile String runnerRelease = "";
     /** The elves' runs going now (elf:command, or a built-in tab's mode), as the runner last said. */
     private volatile List<String> elvesRunning = List.of();
     /** Per run key going now, since when (as far as the desk knows); per key whose last run failed, its log's end. */
@@ -110,6 +111,15 @@ public class RunnerHub {
         ObjectNode failed = out.putObject("failed");
         elvesFailed.forEach(failed::put);
         return out;
+    }
+
+    /** The connected runner's release (v0.5.0, or dev), and the version of what it understands (0.33.0). */
+    public String runnerRelease() {
+        return runnerRelease;
+    }
+
+    public String runnerVersion() {
+        return runnerVersion;
     }
 
     public boolean connected() {
@@ -268,6 +278,7 @@ public class RunnerHub {
         dropParts();
         runner = c;
         runnerVersion = msg.path("version").asText("");
+        runnerRelease = msg.path("release").asText("");
         if (previous != null && previous != c && previous.isOpen()) previous.closeAndAwait();
         Set<Long> known = new HashSet<>();
         msg.path("jobs").forEach(j -> known.add(j.asLong()));

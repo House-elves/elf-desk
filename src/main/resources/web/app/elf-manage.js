@@ -130,8 +130,9 @@ class ElfManage extends LitElement {
             <section aria-label="Version">
                 <h3>Version</h3>
                 <div class="row">
-                    <span>At <code title=${e.commit}>${short(e.commit)}</code> of
-                        <a href="https://github.com/${e.repo}" target="_blank" rel="noopener">${e.repo}</a>.</span>
+                    <span>${e.version ? html`Version ${e.version}, at` : 'At'} <code title=${e.commit}>${short(e.commit)}</code> of
+                        <a href="https://github.com/${e.repo}" target="_blank" rel="noopener">${e.repo}</a>${e.author ? html`,
+                        by <a href="https://github.com/${e.author}" target="_blank" rel="noopener">@${e.author}</a>` : ''}.</span>
                     ${this._latest === undefined ? html`<span class="hint">Looking for updates…</span>`
                         : behind ? html`<button class="sm" ?disabled=${!!this._busy} aria-expanded=${c ? 'true' : 'false'}
                                 @click=${() => c ? (this._changes = null) : this._showChanges(e)}>

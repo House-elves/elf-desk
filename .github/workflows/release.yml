@@ -19,7 +19,8 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
-      - run: ./mvnw -B package
+      # The desk says which release it is (at the bottom of every page).
+      - run: ./mvnw -B package -Dquarkus.application.version=${GITHUB_REF_NAME#v}
       - run: cd target && zip -qr ../elf-desk.zip quarkus-app
       - env:
           GH_TOKEN: ${{ github.token }}
