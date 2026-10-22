@@ -229,6 +229,8 @@ export function calendarText(cal) {
     if (!cal) return '';
     const parts = cal.split(';').map(p => /^(?:(\S+) )?\*-\*-\* (\*|[\d,.]+):(\d{2})(?::00)?$/.exec(p.trim()));
     if (parts.some(m => !m)) return cal;
+    const every = everyFewMinutes(parts);
+    if (every) return every;
     const out = [];
     for (const m of parts) {
         const days = daysText(m[1]);
@@ -252,6 +254,27 @@ export function calendarText(cal) {
         return `${days} at ${times.slice(0, -1).join(', ')} and ${times.at(-1)}`;
     }
     return out.join('; ');
+}
+
+/**
+ * One calendar per minute of the hour, over the same hours and days ("Mon..Fri *-*-* 7..19:00; Mon..Fri *-*-*
+ * 7..18:05; ... 7..18:55"): "every 5 minutes on weekdays, 07:00 to 19:00". Null when it isn't that.
+ */
+function everyFewMinutes(parts) {
+    if (parts.length < 2 || parts.some(m => (m[1] ?? '') !== (parts[0][1] ?? ''))) return null;
+    const runs = parts.map(m => {
+        const r = /^(\d{1,2})\.\.(\d{1,2})$/.exec(m[2]);
+        return r && { from: +r[1], to: +r[2], minute: +m[3] };
+    });
+    if (runs.some(r => !r) || runs.some(r => r.from !== runs[0].from)) return null;
+    const minutes = runs.map(r => r.minute).sort((x, y) => x - y);
+    const step = minutes[1] - minutes[0];
+    if (minutes[0] !== 0 || step <= 0 || 60 % step !== 0 || minutes.length !== 60 / step
+            || minutes.some((x, i) => x !== i * step)) return null;
+    const last = Math.max(...runs.map(r => r.to * 60 + r.minute));
+    const time = mins => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+    const days = daysText(parts[0][1]);
+    return `every ${step} minutes${days === 'every day' ? '' : ` on ${days}`}, ${time(runs[0].from * 60)} to ${time(last)}`;
 }
 
 /** GitHub says every required check passed and nothing else blocks the merge. */
