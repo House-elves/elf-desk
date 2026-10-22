@@ -4,9 +4,7 @@ import { shared, itemKeyFromHash, closeX } from './shared.js';
 import { api, connectionState, onConnectionChange, onBusyChange, onPush, errorMessage } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
 import { tabs, findTab, onTabsChange, setInstalledElves, installedElves, installedElf, githubElf, setCatalog, updateFor } from './tabs.js';
-import './desk-board.js';
 import './desk-settings.js';
-import './desk-thread.js';
 import './elf-tab.js';
 import './elf-manage.js';
 import './desk-dashboard.js';
@@ -150,7 +148,8 @@ class ElfDesk extends LitElement {
         });
         this._loadElves();
         this._loadVersions();
-        this._offRunner = onPush('desk.runner', () => this._loadVersions());
+        // The runner came or went: what's running, and once it's back, which elves there are.
+        this._offRunner = onPush('desk.runner', () => { this._loadVersions(); this._loadElves(); });
         // Which elves, and whether Elf Desk, have an update waiting (a mark): now, every 10 minutes, and when you come
         // back to the page after a while.
         this._lookForUpdates();
@@ -193,8 +192,7 @@ class ElfDesk extends LitElement {
                 location.hash = '#elves';
             }
         } catch (e) {
-            // No runner: only GitHub's tab, until it's back.
-            if (installedElves() === null) setInstalledElves([]);
+            // No runner: which elves there are isn't known, so their tabs wait for it (it says when it's back).
         }
     }
 
@@ -303,11 +301,12 @@ class ElfDesk extends LitElement {
     }
 
     _viewFromHash() {
-        // With the github elf installed, its tab is the board: GitHub's old links (its settings, a thread) go there.
-        if (githubElf() && (['#github', '#settings'].includes(location.hash) || itemKeyFromHash(location.hash))) return 'tab:github';
-        if (location.hash === '#settings') return 'github'; // the board's settings now live under GitHub
-        if (location.hash === '#github' || location.hash === '#elves') return location.hash.slice(1);
-        if (itemKeyFromHash(location.hash)) return 'thread';
+        // GitHub is the github elf's tab: the old links (#settings, a thread's #thread/...) go there too. Until the
+        // runner has said which elves there are, they wait; the desk's own board is gone.
+        if (['#github', '#settings'].includes(location.hash) || itemKeyFromHash(location.hash)) {
+            return githubElf() ? 'tab:github' : installedElves() === null ? 'waiting' : 'no-tab';
+        }
+        if (location.hash === '#elves') return 'elves';
         // An elf's tab: #mail-triage, or a place in it: #github/thread/quarkusio/quarkus/123 (see _route). Until the
         // runner has said which elves there are, it waits.
         let id = location.hash.slice(1).split('/')[0];
@@ -329,7 +328,7 @@ class ElfDesk extends LitElement {
     }
 
     _current(tab) {
-        return tab === 'github' && !githubElf() ? ['github', 'thread'].includes(this._view) : this._view === `tab:${tab}`;
+        return this._view === `tab:${tab}`;
     }
 
     /** An elf's tab: its setup until it's set up, then what the elf draws. keyed: a different elf is a new frame. */
@@ -399,11 +398,12 @@ class ElfDesk extends LitElement {
             <main>
                 ${this._view === 'elves' ? html`<desk-elves></desk-elves>`
                     : this._view.startsWith('tab:') ? this._elfTab(findTab(this._view.slice(4)))
-                    : this._view === 'waiting' ? html`<div class="skeleton" style="height:40vh"></div>`
+                    : this._view === 'waiting' ? this._versions && !this._versions.runner
+                        ? html`<p class="muted">The runner isn't connected, so the elves' tabs can't show yet. They come back when it
+                            does; if it doesn't, start it again with <code>house-elves start</code>.</p>`
+                        : html`<div class="skeleton" style="height:40vh"></div>`
                     : this._view === 'no-tab' ? html`<p class="muted">No elf by that name is installed. Add one with the
                         <a href="#elves">+</a> at the end of the tabs.</p>`
-                    : this._view === 'thread' ? html`<desk-thread .itemKey=${itemKeyFromHash(location.hash)}></desk-thread>`
-                    : this._view === 'github' ? html`<desk-board ?settingsOpen=${location.hash === '#settings'}></desk-board>`
                     : html`<desk-dashboard></desk-dashboard>`}
             </main>
         `;

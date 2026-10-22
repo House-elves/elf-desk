@@ -1,6 +1,6 @@
-// Which tabs there are: GitHub, then one per installed elf that has a tab, named by its title (Mail, Zulip, Weekly
-// status), in the order you added them. Adding an elf adds its tab; removing it takes the tab away. GitHub is the
-// desk's own board until the github elf is installed: then that elf's tab is GitHub, first as before.
+// Which tabs there are: one per installed elf that has a tab, named by its title (GitHub, Mail, Zulip, Weekly
+// status), the github elf first and then in the order you added them. Adding an elf adds its tab; removing it takes
+// the tab away. The desk's own GitHub board is gone: GitHub is the github elf's tab.
 
 const EVENT = 'elfdesk-tabs';
 
@@ -11,14 +11,14 @@ let installed = null;
 let elfTabs = [];
 
 /**
- * Every tab: GitHub's, then each installed elf's, as {id, label, elf, card, refresh, missing}. A tab's id is its
+ * Every tab: each installed elf's, as {id, label, elf, card, refresh, missing}. A tab's id is its
  * elf's name (#mail-triage). refresh: the command that brings it up to date; missing: settings it needs first.
  */
 export function tabs() {
-    return githubElf() ? elfTabs : [GITHUB, ...elfTabs];
+    return elfTabs;
 }
 
-/** The github elf's tab, once it's installed: it takes the place of the desk's own board. */
+/** The github elf's tab, once it's installed. */
 export function githubElf() {
     return elfTabs.find(t => t.elf === GITHUB.id) ?? null;
 }

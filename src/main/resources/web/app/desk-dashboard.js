@@ -1,8 +1,7 @@
 import { LitElement, html, css } from 'lit';
-import { shared, ago, spinner, Ticking } from './shared.js';
+import { shared, spinner } from './shared.js';
 import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
-import { boardHeadline, lastBoard } from './desk-board.js';
-import { tabs, onTabsChange, githubElf } from './tabs.js';
+import { tabs, onTabsChange, installedElves } from './tabs.js';
 import './elf-frame.js';
 
 const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -15,11 +14,8 @@ const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric',
 class DeskDashboard extends LitElement {
 
     static properties = {
-        _board: { state: true },
         _elves: { state: true },     // the elves' runs: {running: {elf:command: since}}
         _attention: { state: true }, // per tab id: its card says it needs you
-        _loaded: { state: true },
-        _errors: { state: true },
         /** Refresh everything: GitHub is being fetched. */
         _fetching: { state: true },
         _refreshError: { state: true },
@@ -59,50 +55,23 @@ class DeskDashboard extends LitElement {
 
     constructor() {
         super();
-        new Ticking(this);
-        this._board = lastBoard;
-        this._loaded = {};
-        this._errors = {};
         this._attention = {};
     }
 
     connectedCallback() {
         super.connectedCallback();
-        this._loadBoard();
         this._loadElves();
         this._offPush = [
-            onPush('desk.board', () => this._softBoard()),
-            onPush('desk.thread', e => { if (e.type === 'changed') this._softBoard(); }),
-            onPush('desk.runner', () => { this._softBoard(); this._loadElves(); }),
+            onPush('desk.runner', () => this._loadElves()),
             onPush('desk.elves', () => this._loadElves()),
-            onConnectionChange(s => { if (s === 'open') { this._loadBoard(); this._loadElves(); } }),
+            onConnectionChange(s => { if (s === 'open') this._loadElves(); }),
             onTabsChange(() => this.requestUpdate()),
         ];
     }
 
     disconnectedCallback() {
-        clearTimeout(this._soft);
         this._offPush?.forEach(off => off());
         super.disconnectedCallback();
-    }
-
-    async _loadBoard() {
-        if (githubElf()) return; // the github elf's card shows the board
-        try {
-            const desk = await api();
-            this._board = await desk.board({ refresh: false });
-            this._errors = { ...this._errors, github: null };
-        } catch (e) {
-            this._errors = { ...this._errors, github: errorMessage(e) };
-        } finally {
-            this._loaded = { ...this._loaded, github: true };
-        }
-    }
-
-    /** At most once a second: board pushes come in bursts. */
-    _softBoard() {
-        clearTimeout(this._soft);
-        this._soft = setTimeout(() => this._loadBoard(), 1000);
     }
 
     async _loadElves() {
@@ -139,49 +108,13 @@ class DeskDashboard extends LitElement {
         const elves = this._refreshable().filter(t => !this._refreshing(t)).map(t =>
             desk.runElf({ elf: t.elf, command: t.refresh, params: null })
                 .catch(e => problems.push(`${t.label}: ${errorMessage(e)}`)));
-        // With the github elf installed, it's one of the elves above; otherwise the desk's own board is fetched.
-        this._fetching = !githubElf();
-        const github = githubElf() ? Promise.resolve() : desk.board({ refresh: true })
-            .then(b => { this._board = b; this._errors = { ...this._errors, github: null }; })
-            .catch(e => problems.push(`GitHub: ${errorMessage(e)}`))
-            .finally(() => { this._fetching = false; });
-        await Promise.all([github, ...elves]);
+        await Promise.all(elves);
         await this._loadElves();
         if (problems.length) this._refreshError = `Not everything refreshed. ${problems.join(' ')}`;
     }
 
     _busy() {
-        return this._fetching || this._refreshable().some(t => this._refreshing(t));
-    }
-
-    _card({ id, title, href, open, say, meta, attention, key }) {
-        const error = this._errors[key];
-        return html`
-            <section class="panel ${attention ? 'attention' : ''}" aria-labelledby="d-${id}">
-                <div class="head">
-                    <h2 id="d-${id}"><a href=${href}>${title}</a></h2>
-                    <a class="open" href=${href}>${open}</a>
-                </div>
-                ${error ? html`<p class="error" role="alert">${error}</p>`
-                    : !this._loaded[key] && say == null ? html`<div class="skeleton say-sk"></div>`
-                    : html`<p class="say">${say}</p>`}
-                ${meta ? html`<div class="meta">${meta}</div>` : ''}
-            </section>`;
-    }
-
-    _github() {
-        const b = this._board;
-        let say = null, attention = false;
-        if (b?.scopeEmpty) say = html`Pick what to watch in <a href="#settings">GitHub's settings</a>, and your work shows up here.`;
-        else if (b) {
-            say = boardHeadline(b, (_, text) => html`<a href="#github">${text}</a>`);
-            attention = typeof say !== 'string';
-        }
-        const meta = b ? html`
-            <span>Runner ${b.runnerConnected ? 'online' : 'offline'}</span>
-            <span>${b.refreshing || this._fetching ? html`<span class="running" role="status">${spinner}Fetching from GitHub</span>`
-                : html`Updated ${ago(b.fetchedAt)}`}</span>` : '';
-        return this._card({ id: 'github', key: 'github', title: 'GitHub', href: '#github', open: 'Open the board', say, meta, attention });
+        return this._refreshable().some(t => this._refreshing(t));
     }
 
     /** An elf's card: the desk draws the panel and its title, the elf draws what's in it (once it's set up). */
@@ -201,7 +134,8 @@ class DeskDashboard extends LitElement {
 
     /** What Refresh everything does. */
     _refreshHint() {
-        const parts = [...(githubElf() ? [] : ['fetches GitHub']), ...this._refreshable().map(t => `runs ${t.label}`)];
+        const parts = this._refreshable().map(t => `runs ${t.label}`);
+        if (!parts.length) return 'Add an elf with the + to refresh it from here.';
         const text = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
         return `${text[0].toUpperCase()}${text.slice(1)}.`;
     }
@@ -223,9 +157,9 @@ class DeskDashboard extends LitElement {
                 </div>
                 ${this._refreshError ? html`<p class="error" role="alert">${this._refreshError}</p>` : ''}
                 <div class="tabs">
-                    ${githubElf() ? '' : this._github()}
                     ${this._cards().map(t => this._elfCard(t))}
-                    ${!this._cards().length ? html`<p class="hint">Elves you add with the <a href="#elves">+</a> at the end of the tabs show
+                    ${installedElves() === null ? html`<p class="hint">Waiting for the runner to say which elves there are.</p>`
+                        : !this._cards().length ? html`<p class="hint">Elves you add with the <a href="#elves">+</a> at the end of the tabs show
                         what needs you here.</p>` : ''}
                 </div>
             </div>
