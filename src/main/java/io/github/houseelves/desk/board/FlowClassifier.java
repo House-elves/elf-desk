@@ -147,7 +147,8 @@ public final class FlowClassifier {
             case "answered" -> at.with(Flow.YOU, t.since(), "The agent " + did(t.action()) + (fixes && t.action().equals("review")
                     ? ": " + (t.reviewFixes() == 1 ? "1 fix" : t.reviewFixes() + " fixes") + " worth making" : "") + ".",
                     new Flow.Next("open", "Read answer"), after);
-            default -> t.failed()
+            // The agent stopped looking into CI that is running again (you re-ran it): what CI says now counts.
+            default -> t.failed() && !(t.action() != null && t.action().startsWith("ci-") && Flow.CI.equals(f.waiting()))
                     ? at.with(Flow.YOU, t.since(), "The agent stopped before it finished " + doing(t.action()) + ".",
                             new Flow.Next("open", "See what happened"), after)
                     : fixes ? f.with(f.waiting(), f.since(), f.say(), f.next(), after) : f;

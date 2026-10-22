@@ -138,6 +138,18 @@ class FlowClassifierTest {
     }
 
     @Test
+    void aStoppedCiJobGivesWayToCiRunningAgain() {
+        ThreadView.Summary stopped = new ThreadView.Summary("k", "idle", "ci-why", null, NOW, true, null, null);
+        var c = ctx(stopped, null, null, null, List.of());
+        // You re-ran the failed jobs: CI is what you wait on now, not the agent that stopped.
+        is(FlowClassifier.flow("mine", pr2(ME, "PENDING", "BLOCKED", "MERGEABLE", false, false, null), c), Flow.CI, 1, null);
+        // Still failing: the stop is your move, and asking again is right there.
+        Flow failing = FlowClassifier.flow("mine", pr2(ME, "FAILURE", "BLOCKED", "MERGEABLE", false, false, null), c);
+        is(failing, Flow.YOU, 1, "open");
+        assertTrue(failing.more().stream().anyMatch(n -> n.id().startsWith("ci-")), failing.more().toString());
+    }
+
+    @Test
     void greenButBlockedIsCiStartingOnlyJustAfterAChange() {
         // GitHub blocks a green PR while required checks haven't started, and also when a ruleset wants an approval
         // without saying so in reviewDecision (search.quarkus.io#636): only the first right after a push.
