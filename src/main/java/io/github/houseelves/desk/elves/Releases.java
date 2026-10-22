@@ -18,13 +18,13 @@ import jakarta.inject.Inject;
 
 /**
  * The newest releases of Elf Desk and its runner (their tags on GitHub, v0.6.6), so the desk can say when there's an
- * update. Asked without a token (they're public), at most every half hour each.
+ * update. Asked without a token (they're public), at most every 10 minutes each.
  */
 @ApplicationScoped
 public class Releases {
 
     private static final Logger LOG = Logger.getLogger(Releases.class);
-    static final Duration KEEP = Duration.ofMinutes(30);
+    static final Duration KEEP = Duration.ofMinutes(10);
 
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     private final Map<String, Seen> seen = new ConcurrentHashMap<>();

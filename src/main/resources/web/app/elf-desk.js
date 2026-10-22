@@ -11,6 +11,9 @@ import './elf-tab.js';
 import './desk-dashboard.js';
 import './desk-elves.js';
 
+/** How often to look for updates of Elf Desk and the elves. */
+const LOOK_EVERY = 10 * 60 * 1000;
+
 /** Set once the setup wizard has shown in this browser, so the dashboard isn't skipped again. */
 const WELCOMED = 'elfdesk.elves-welcomed';
 
@@ -143,9 +146,14 @@ class ElfDesk extends LitElement {
         this._loadElves();
         this._loadVersions();
         this._offRunner = onPush('desk.runner', () => this._loadVersions());
-        // Which elves have an update waiting (their tabs get a mark): now, then every half hour.
+        // Which elves, and whether Elf Desk, have an update waiting (a mark): now, every 10 minutes, and when you come
+        // back to the page after a while.
         this._lookForUpdates();
-        this._updatesTimer = setInterval(() => this._lookForUpdates(), 30 * 60 * 1000);
+        this._updatesTimer = setInterval(() => this._lookForUpdates(), LOOK_EVERY);
+        this._onVisible = () => {
+            if (document.visibilityState === 'visible' && Date.now() - this._lookedAt > LOOK_EVERY) this._lookForUpdates();
+        };
+        document.addEventListener('visibilitychange', this._onVisible);
         // Show the bar only for calls that take a moment, so quick ones don't flicker.
         this._offBusy = onBusyChange(busy => {
             clearTimeout(this._busyTimer);
@@ -161,6 +169,7 @@ class ElfDesk extends LitElement {
         this._offBusy?.();
         this._offRunner?.();
         clearInterval(this._updatesTimer);
+        document.removeEventListener('visibilitychange', this._onVisible);
         super.disconnectedCallback();
     }
 
@@ -185,6 +194,7 @@ class ElfDesk extends LitElement {
     }
 
     async _lookForUpdates() {
+        this._lookedAt = Date.now();
         try {
             this._update = await (await api()).update();
         } catch {
