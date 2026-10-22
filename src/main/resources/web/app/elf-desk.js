@@ -1,7 +1,7 @@
 import { LitElement, html, css, svg } from 'lit';
 import { keyed } from 'lit/directives/keyed.js';
 import { shared, itemKeyFromHash } from './shared.js';
-import { api, connectionState, onConnectionChange, onBusyChange, onPush } from './rpc.js';
+import { api, connectionState, onConnectionChange, onBusyChange, onPush, errorMessage } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
 import { tabs, findTab, onTabsChange, setInstalledElves, installedElves, githubElf, setCatalog, updateFor } from './tabs.js';
 import './desk-board.js';
@@ -29,6 +29,9 @@ class ElfDesk extends LitElement {
     static properties = {
         _view: { state: true },
         _conn: { state: true },
+        _update: { state: true },    // {desk, deskLatest, runner, runnerLatest, available}: a newer Elf Desk is out
+        _updating: { state: true },  // the update was asked for: the desk restarts
+        _updateError: { state: true },
         _versions: { state: true },  // {desk, runner, runnerProtocol}: what's running; the desk's shows by its name
         _busy: { state: true },
         _theme: { state: true },
@@ -89,6 +92,16 @@ class ElfDesk extends LitElement {
         }
         main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
         /* Its version, quietly, right after the name (the bar's gap would push it away). */
+        button.version { position: relative; border: 0; background: none; padding: 2px 12px 2px 0; cursor: pointer; }
+        button.version .update-dot { top: 0; right: 2px; }
+        button.version:hover { color: var(--ink); }
+        .update-dialog { width: min(32rem, calc(100vw - 32px)); padding: 22px 24px; border: 1px solid var(--line);
+            border-radius: var(--r-panel); background: var(--bg); color: var(--ink); box-shadow: var(--shadow); }
+        .update-dialog::backdrop { background: color-mix(in srgb, var(--ink) 35%, transparent); }
+        .update-dialog h2 { font-size: 20px; font-weight: 600; margin: 0 0 12px; }
+        .update-dialog ul { margin: 0 0 12px; padding-left: 18px; }
+        .update-dialog .acts { display: flex; gap: 10px; margin-top: 14px; }
+        .update-dialog .hint { color: var(--muted); font-size: 14px; }
         .version { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; margin-left: -14px; }
         @media (max-width: 640px) {
             .bar { padding: 10px 16px; }
@@ -120,6 +133,9 @@ class ElfDesk extends LitElement {
         this._offConn = onConnectionChange(s => {
             this._conn = s;
             if (s === 'open') {
+                let updating = false;
+                try { updating = !!sessionStorage.getItem('elfdesk-updating'); sessionStorage.removeItem('elfdesk-updating'); } catch { /* no storage */ }
+                if (updating && this._updating !== undefined) { location.reload(); return; }
                 this._loadElves();
                 this._loadVersions(); // the desk's own, so not waiting on the runner
             }
@@ -170,6 +186,11 @@ class ElfDesk extends LitElement {
 
     async _lookForUpdates() {
         try {
+            this._update = await (await api()).update();
+        } catch {
+            // GitHub didn't answer, or an older desk: no mark
+        }
+        try {
             const desk = await api();
             if (installedElves() === null) setInstalledElves((await desk.elves()).elves ?? []);
             setCatalog((await desk.elfCatalog()).elves);
@@ -186,11 +207,52 @@ class ElfDesk extends LitElement {
         }
     }
 
-    /** Which Elf Desk this is, next to its name (each elf shows its own version in its settings). */
+    /**
+     * Which Elf Desk this is, next to its name (each elf shows its own version in its settings). With a newer one
+     * out, it has the update mark, and opens the update.
+     */
     _renderVersions() {
         const v = this._versions?.desk;
         if (!v) return '';
-        return html`<span class="version" title="Elf Desk's version">${v.includes('SNAPSHOT') ? 'local build' : `v${v}`}</span>`;
+        const label = v.includes('SNAPSHOT') ? 'local build' : `v${v}`;
+        if (!this._update?.available) return html`<span class="version" title="Elf Desk's version">${label}</span>`;
+        return html`<button class="version has-update" title="A newer Elf Desk is out" aria-label="${label}, a newer Elf Desk is out"
+                @click=${() => this.renderRoot.querySelector('.update-dialog').showModal()}>${label}<span class="update-dot"></span></button>
+            ${this._renderUpdateDialog()}`;
+    }
+
+    _renderUpdateDialog() {
+        const u = this._update;
+        const v = s => !s ? '?' : /^\d/.test(s) ? `v${s}` : s;
+        const row = (name, now, latest, repo) => html`<li>${name}: ${v(now)}${latest && latest !== v(now)
+            ? html` → <a href="https://github.com/House-elves/${repo}/releases/tag/${latest}" target="_blank" rel="noopener">${latest}</a>` : ', up to date'}</li>`;
+        return html`<dialog class="update-dialog" aria-label="Update Elf Desk">
+            <h2>Update Elf Desk</h2>
+            <ul>
+                ${row('Elf Desk', u.desk, u.deskLatest, 'elf-desk')}
+                ${row('Runner', u.runner, u.runnerLatest, 'elf-runner')}
+            </ul>
+            <p class="hint">This downloads them and restarts both, as <code>house-elves install</code> does. It takes a minute;
+                this page reloads when the desk is back. It waits if an agent is at work.</p>
+            ${this._updateError ? html`<p class="error" role="alert">${this._updateError}</p>` : ''}
+            ${this._updating ? html`<p role="status">Updating… the desk is restarting.</p>` : ''}
+            <div class="acts">
+                <button class="primary" ?disabled=${this._updating} @click=${() => this._updateNow()}>Update</button>
+                <button class="quiet" @click=${() => this.renderRoot.querySelector('.update-dialog').close()}>Not now</button>
+            </div>
+        </dialog>`;
+    }
+
+    async _updateNow() {
+        this._updateError = null;
+        try {
+            await (await api()).updateNow();
+            this._updating = true;
+            // When the desk is back, this page loads its new version.
+            try { sessionStorage.setItem('elfdesk-updating', '1'); } catch { /* reload by hand */ }
+        } catch (e) {
+            this._updateError = errorMessage(e);
+        }
     }
 
     _viewFromHash() {

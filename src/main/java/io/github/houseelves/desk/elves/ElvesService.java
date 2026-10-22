@@ -205,6 +205,11 @@ public class ElvesService {
         return java.util.List.of();
     }
 
+    /** Has the runner update Elf Desk and itself to their latest releases (it restarts both). */
+    public JsonNode houseUpdate() {
+        return ask(hub.message("house.update"), 60, RunnerHub.HOUSE_UPDATE_SINCE);
+    }
+
     /** Stops one of an elf's agents. */
     public JsonNode cancelAgent(String elf, String id) {
         if (id == null || !id.matches("[a-z0-9][a-z0-9-]{0,79}")) throw new IllegalArgumentException("Not an agent");

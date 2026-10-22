@@ -93,6 +93,8 @@ public class RunnerHub {
     public static final String ELF_REFRESH_SINCE = "0.32.0";
     /** Elves that start agents (agents: true in elf.yaml), and elf.agentCancel. */
     public static final String ELF_AGENTS_SINCE = "0.33.0";
+    /** house.update: the runner updates Elf Desk and itself. */
+    public static final String HOUSE_UPDATE_SINCE = "0.35.0";
     static final String PR_SINCE = "0.15.0";
     static final String READY_PR_SINCE = "0.21.0";
 

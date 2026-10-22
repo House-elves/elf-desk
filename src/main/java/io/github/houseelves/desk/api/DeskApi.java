@@ -89,6 +89,9 @@ public class DeskApi {
     @Inject
     ElvesService elves;
 
+    @Inject
+    io.github.houseelves.desk.elves.Releases releases;
+
     // ---- board ----
 
     /** The board. {@code refresh} skips the short GitHub cache. */
@@ -296,6 +299,26 @@ public class DeskApi {
      * runner's (v0.5.0, or dev when it runs from source), with the version of what the runner understands.
      */
     public record Versions(String desk, String runner, String runnerProtocol) {
+    }
+
+    /**
+     * Whether a newer Elf Desk or runner is out: each one's version now and its newest release. A desk built here
+     * (1.0.0-SNAPSHOT) or a runner run from source (dev) never counts as behind.
+     */
+    public record Update(String desk, String deskLatest, String runner, String runnerLatest, boolean available) {
+    }
+
+    public Update update() {
+        Versions v = versions();
+        String deskLatest = releases.latest("elf-desk"), runnerLatest = releases.latest("elf-runner");
+        boolean available = io.github.houseelves.desk.elves.Releases.older(v.desk(), deskLatest)
+                || io.github.houseelves.desk.elves.Releases.older(v.runner(), runnerLatest);
+        return new Update(v.desk(), deskLatest, v.runner(), runnerLatest, available);
+    }
+
+    /** Updates Elf Desk and the runner now (the runner runs house-elves install; both restart). */
+    public com.fasterxml.jackson.databind.JsonNode updateNow() {
+        return elves.houseUpdate();
     }
 
     public Versions versions() {
