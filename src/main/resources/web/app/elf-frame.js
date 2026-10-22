@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { shared } from './shared.js';
 import { api, errorMessage, onPush } from './rpc.js';
 import { currentTheme } from './theme.js';
-import { installedElf } from './tabs.js';
+import { findTab, installedElf } from './tabs.js';
 import './elf-settings.js';
 import './elf-manage.js';
 import './elf-schedule.js';
@@ -135,9 +135,13 @@ class ElfFrame extends LitElement {
                 const c = await desk.elfSettings({ elf });
                 return Object.fromEntries((c.settings ?? []).filter(s => s.kind !== 'secret').map(s => [s.key, s.value ?? '']));
             }
-            case 'open':
-                location.hash = `#${elf}`;
+            case 'open': {
+                // Its own tab, or another installed elf's (the GitHub board pointing at mvnpm's, say): only a tab.
+                const to = args.elf == null ? elf : String(args.elf);
+                if (to !== elf && !findTab(to)) throw new Error(`There's no ${to} tab`);
+                location.hash = `#${to}`;
                 return null;
+            }
             case 'go': {
                 // A place in its own tab, as the desk's link: #<elf>/<route>, so Back and a shared link work.
                 const route = String(args.route ?? '').slice(0, 500).replace(/^\/+/, '');
