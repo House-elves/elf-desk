@@ -50,6 +50,8 @@ class DeskElves extends LitElement {
         code { font: 13px var(--font-code); background: var(--surface-2); padding: 2px 6px; border-radius: 5px; }
         .sk { height: 120px; }
         .when { padding: 16px 18px; }
+        details.elf summary { cursor: pointer; font-weight: 600; }
+        details.elf[open] summary { margin-bottom: 8px; }
         h3 code { font-weight: 400; color: var(--muted); margin-left: 6px; }
         a.chip { text-decoration: none; }
         @media (max-width: 600px) {
@@ -198,6 +200,15 @@ class DeskElves extends LitElement {
                 <p class="hint">These work behind the scenes. Their settings are here.</p>
                 ${tabless.map(e => this._tabless(e))}
             </section>` : ''}
+            <section aria-labelledby="runner-h">
+                <h2 id="runner-h">How agents run</h2>
+                <p class="hint">The runner's settings, for every elf that starts an agent (such as GitHub's).</p>
+                <details class="panel elf">
+                    <summary>The runner's settings</summary>
+                    <elf-settings elf="elf-runner" heading="Agents"
+                        note="In ~/.config/house-elves/runner.config, only readable by you. Most apply when the runner restarts."></elf-settings>
+                </details>
+            </section>
         </div>`;
     }
 }

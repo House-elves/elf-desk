@@ -171,19 +171,11 @@ class ElfDesk extends LitElement {
         }
     }
 
-    /** What's running: the desk's and the runner's releases, and the commit each elf is at (each links to it). */
+    /** Which Elf Desk this is (each elf shows its own version in its settings). */
     _renderVersions() {
-        const v = this._versions;
+        const v = this._versions?.desk;
         if (!v) return '';
-        const release = r => !r ? null : /^\d/.test(r) ? `v${r}` : r;
-        const desk = v.desk && !v.desk.includes('SNAPSHOT') ? release(v.desk) : 'a local build';
-        const elves = (installedElves() ?? []).filter(e => e.commit).sort((a, b) => (a.title || a.name).localeCompare(b.title || b.name));
-        return html`<footer class="versions" aria-label="Versions">
-            <span>Elf Desk ${desk}</span>
-            <span>${v.runner ? html`Runner ${release(v.runner)}` : 'Runner offline'}</span>
-            ${elves.map(e => html`<a href="https://github.com/${e.repo}/commit/${e.commit}" target="_blank" rel="noopener"
-                title="${e.repo} at ${e.commit}${e.author ? `, by @${e.author}` : ''}">${e.title || e.name} ${e.version ? `v${e.version}` : e.commit.slice(0, 7)}</a>`)}
-        </footer>`;
+        return html`<footer class="versions">Elf Desk ${v.includes('SNAPSHOT') ? 'local build' : `v${v}`}</footer>`;
     }
 
     _viewFromHash() {
