@@ -176,7 +176,7 @@ class ElfDesk extends LitElement {
     }
 
     _current(tab) {
-        return tab === 'github' ? ['github', 'thread'].includes(this._view) : this._view === `tab:${tab}`;
+        return tab === 'github' && !githubElf() ? ['github', 'thread'].includes(this._view) : this._view === `tab:${tab}`;
     }
 
     /** An elf's tab: its setup until it's set up, then what the elf draws. keyed: a different elf is a new frame. */
