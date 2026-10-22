@@ -90,7 +90,7 @@ window.addEventListener('message', e => {
             w.resolve(m.result);
         }
     } else if (m.event === 'changed') {
-        changeListeners.forEach(l => l());
+        changeListeners.forEach(l => l(m.what ?? null));
     } else if (m.event === 'theme') {
         if (m.data === 'light' || m.data === 'dark') document.documentElement.dataset.theme = m.data;
         else delete document.documentElement.dataset.theme;
@@ -109,7 +109,10 @@ export const elf = {
      * refresh: {command, calendar (null: only when you refresh it), next}, or null if it doesn't refresh.
      */
     state: () => call('state'),
-    /** Calls back when one of its runs starts or ends; returns the unsubscribe. */
+    /**
+     * Calls back when one of its runs starts or ends, or (with the folder's name, such as "agents") when something
+     * else changed its data; returns the unsubscribe.
+     */
     onChange(callback) {
         changeListeners.add(callback);
         return () => changeListeners.delete(callback);
@@ -132,6 +135,17 @@ export const elf = {
      * rejects with an error whose `cancelled` is true. Resolves with what the elf printed last (JSON if it was).
      */
     act: (action, params) => call('act', { action, params }),
+
+    /**
+     * Agents, for an elf whose elf.yaml says agents: true. One of its actions starts one by answering with
+     * {agent: {id, checkout: {repo, number, kind: PR | ISSUE}, prompt, untrusted, schema, session}}; the runner runs
+     * it in its sandbox and reports in agents/<id>.json: {id, status: queued | running | done | failed | cancelled,
+     * lines, output, session, git, files, error, worktree, created, started, finished}. onChange calls back with
+     * "agents" as it goes.
+     */
+    agent: id => elf.readJson('agents', `${id}.json`),
+    /** Stops one of its agents. */
+    cancelAgent: id => call('cancelAgent', { id }),
 
     /** Opens the desk's settings for this elf, with only these keys (default: all). Secrets never reach the tab. */
     settings: (keys, heading) => call('settings', { keys, heading }),

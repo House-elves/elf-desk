@@ -105,6 +105,7 @@ public class ElvesService {
         JsonNode tab = y.hasNonNull("tab") ? y.path("tab") : y.path("tabs").path(0);
         m.put("tab", tab.isObject());
         m.put("card", tab.path("card").asBoolean(false));
+        m.put("agents", y.path("agents").asBoolean(false));
         // When it refreshes on its own until you change it, if it refreshes at all.
         JsonNode refresh = y.path("refresh");
         JsonNode schedule = y.path("schedule");
@@ -186,6 +187,13 @@ public class ElvesService {
         ObjectNode msg = hub.message("elf.action").put("elf", name(elf)).put("action", name(action));
         msg.set("params", params != null && params.isObject() ? params : mapper.createObjectNode());
         return ask(msg, 180, RunnerHub.ELF_TABS_SINCE);
+    }
+
+    /** Stops one of an elf's agents. */
+    public JsonNode cancelAgent(String elf, String id) {
+        if (id == null || !id.matches("[a-z0-9][a-z0-9-]{0,79}")) throw new IllegalArgumentException("Not an agent");
+        // "agent", not "id": a request's id is the desk's own, to match the answer.
+        return ask(hub.message("elf.agentCancel").put("elf", name(elf)).put("agent", id), 30, RunnerHub.ELF_AGENTS_SINCE);
     }
 
     /** When an elf refreshes on its own: a calendar time, null for never, or "default" for its elf.yaml's. */

@@ -286,6 +286,11 @@ public class DeskApi {
         return elves.action(elf, action, params);
     }
 
+    /** Stops one of an elf's agents (its tab's Stop). */
+    public com.fasterxml.jackson.databind.JsonNode cancelElfAgent(String elf, String id) {
+        return elves.cancelAgent(elf, id);
+    }
+
     // ---- what's new ----
 
     /** What happened on a PR since your last review or comment: commits, reviews, comments, review requests. */

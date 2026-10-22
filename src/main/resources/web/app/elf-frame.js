@@ -66,7 +66,10 @@ class ElfFrame extends LitElement {
         super.connectedCallback();
         window.addEventListener('message', this._onMessage);
         window.addEventListener('elfdesk-theme', this._onTheme);
-        this._offPush = onPush('desk.elves', () => this._send({ event: 'changed' }));
+        this._offPush = onPush('desk.elves', d => {
+            if (d?.elf && d.elf !== this.elf) return; // another elf's data
+            this._send({ event: 'changed', what: d?.what ?? null });
+        });
     }
 
     disconnectedCallback() {
@@ -121,6 +124,7 @@ class ElfFrame extends LitElement {
                 await desk.runElf({ elf, command: String(args.command ?? ''), params: object(args.params) });
                 return this._state(await desk.elvesState());
             case 'act': return this._act(desk, String(args.action ?? ''), object(args.params) ?? {});
+            case 'cancelAgent': return desk.cancelElfAgent({ elf, id: String(args.id ?? '') });
             case 'settings':
                 this._settings = { keys: args.keys ? strings(args.keys) : null, heading: String(args.heading ?? `${installedElf(elf)?.title ?? elf} settings`).slice(0, 80) };
                 await this.updateComplete;

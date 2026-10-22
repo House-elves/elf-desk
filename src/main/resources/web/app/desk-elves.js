@@ -144,6 +144,8 @@ class DeskElves extends LitElement {
                     ${m.tab ? html`<dt>Adds</dt><dd>A ${m.title || m.name} tab${m.card ? ', and a card on the dashboard' : ''}</dd>` : ''}
                     ${m.quietActions?.length ? html`<dt>Does on a click</dt><dd>${m.quietActions.join('; ')}</dd>` : ''}
                     ${m.askingActions?.length ? html`<dt>Asks you first</dt><dd>${m.askingActions.join('; ')}</dd>` : ''}
+                    ${m.agents ? html`<dt>Agents</dt><dd>Starts Claude Code on a PR or issue when you ask, in the runner's sandbox, with no
+                        GitHub credentials</dd>` : ''}
                     ${m.tools?.length ? html`<dt>Needs</dt><dd>${m.tools.join(', ')}</dd>` : ''}
                     ${m.settings?.length ? html`<dt>Asks for</dt><dd>${m.settings.map((s, i) => html`${i ? ', ' : ''}${s.label}${s.secret ? ' (secret)' : ''}`)}</dd>` : ''}
                     <dt>Runs</dt><dd>${m.refreshes ? html`When you refresh it${m.schedule ? html`, and ${calendarText(m.schedule)}

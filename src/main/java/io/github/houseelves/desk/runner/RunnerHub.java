@@ -90,6 +90,8 @@ public class RunnerHub {
     public static final String ELF_TABS_SINCE = "0.31.0";
     /** Elves with a title, one tab and a refresh you can schedule (elf.schedule). */
     public static final String ELF_REFRESH_SINCE = "0.32.0";
+    /** Elves that start agents (agents: true in elf.yaml), and elf.agentCancel. */
+    public static final String ELF_AGENTS_SINCE = "0.33.0";
     static final String PR_SINCE = "0.15.0";
     static final String READY_PR_SINCE = "0.21.0";
 
@@ -187,6 +189,11 @@ public class RunnerHub {
             List<String> units = new ArrayList<>();
             msg.path("running").forEach(u -> units.add(u.asText()));
             mvnpmRuns.get().onState(units);
+            return;
+        }
+        if (type.equals("elf.changed")) {
+            // One elf's data changed outside its runs (an agent's report): only its own tab reloads.
+            live.elves(msg.path("elf").asText(null), msg.path("what").asText(null));
             return;
         }
         if (type.equals("elves.state")) {

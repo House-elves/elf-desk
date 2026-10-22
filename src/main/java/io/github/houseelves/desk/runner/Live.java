@@ -69,6 +69,12 @@ public class Live {
         broadcaster.broadcast(ELVES, Map.of("changed", true));
     }
 
+    /** Only this elf's data changed ({@code what}: the folder, such as agents): its own tab and card reload. */
+    public void elves(String elf, String what) {
+        if (elf == null) return;
+        broadcaster.broadcast(ELVES, what == null ? Map.of("changed", true, "elf", elf) : Map.of("changed", true, "elf", elf, "what", what));
+    }
+
     public void runner(boolean connected) {
         broadcaster.broadcast(RUNNER, Map.of("connected", connected));
     }
