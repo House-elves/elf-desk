@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared } from './shared.js';
+import { shared, closeX } from './shared.js';
 import { installedElf } from './tabs.js';
 import './elf-settings.js';
 import './elf-schedule.js';
@@ -46,7 +46,7 @@ class ElfSettingsDialog extends LitElement {
         const own = e && !this.manageOnly && ownSettings(this.elf);
         const heading = this.heading ?? `${e?.title ?? this.elf} settings`;
         return html`<dialog aria-label=${this.heading ?? `${e?.title ?? this.elf} settings`} @close=${() => { this._open = false; }}>
-            ${this._open ? html`
+            ${this._open ? html`${closeX()}
                 ${e ? html`<elf-manage only="update" elf=${this.elf}></elf-manage>` : ''}
                 ${this.manageOnly ? html`<h2>${this.heading ?? `${e?.title ?? this.elf}`}</h2>` : html`
                     ${own ? html`<h2>${heading}</h2><elf-frame elf=${this.elf} view="settings"></elf-frame>` : ''}

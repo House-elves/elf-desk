@@ -1,6 +1,6 @@
 import { LitElement, html, css, svg } from 'lit';
 import { keyed } from 'lit/directives/keyed.js';
-import { shared, itemKeyFromHash } from './shared.js';
+import { shared, itemKeyFromHash, closeX } from './shared.js';
 import { api, connectionState, onConnectionChange, onBusyChange, onPush, errorMessage } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
 import { tabs, findTab, onTabsChange, setInstalledElves, installedElves, installedElf, githubElf, setCatalog, updateFor } from './tabs.js';
@@ -254,7 +254,7 @@ class ElfDesk extends LitElement {
         const e = t && installedElf(t.elf);
         const close = () => this.renderRoot.querySelector('.update-dialog.elf')?.close();
         return html`<dialog class="update-dialog elf" aria-label="Update ${t?.label ?? 'the elf'}" @close=${() => { this._elfUpdate = null; }}>
-            ${e ? html`
+            ${e ? html`${closeX()}
                 <h2>Update ${t.label}</h2>
                 <p class="hint">${e.version ? `Version ${e.version}, at` : 'At'} <code>${(e.commit ?? '').slice(0, 7)}</code> of
                     <a href="https://github.com/${e.repo}" target="_blank" rel="noopener">${e.repo}</a>. Its settings, schedule and
@@ -273,6 +273,7 @@ class ElfDesk extends LitElement {
         const row = (name, now, latest, repo) => html`<li>${name}: ${v(now)}${latest && latest !== v(now)
             ? html` → <a href="https://github.com/House-elves/${repo}/releases/tag/${latest}" target="_blank" rel="noopener">${latest}</a>` : ', up to date'}</li>`;
         return html`<dialog class="update-dialog" aria-label="Update Elf Desk">
+            ${closeX()}
             <h2>Update Elf Desk</h2>
             <ul>
                 ${row('Elf Desk', u.desk, u.deskLatest, 'elf-desk')}

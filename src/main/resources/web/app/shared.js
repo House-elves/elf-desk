@@ -93,6 +93,13 @@ export const shared = css`
         .skeleton { animation: none; }
         button, .btn { transition: none; }
     }
+    /* A pop-up's close, in its top right corner (closeX). */
+    button.dialog-x { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; padding: 0; border: 0;
+        border-radius: 8px; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+    button.dialog-x:hover { color: var(--ink); background: var(--surface-2); }
+    button.dialog-x svg { width: 16px; height: 16px; }
+    /* What comes first in the pop-up keeps clear of it. */
+    button.dialog-x + * { margin-right: 36px; }
 `;
 
 /** The Settings button in a tab's title row: opens that tab's settings above its content. */
@@ -106,6 +113,13 @@ export function settingsToggle(open, onClick) {
 
 /** A spinner, for buttons doing work. */
 export const spinner = html`<span class="spinner" aria-hidden="true"></span>`;
+
+/** The X in a pop-up's top right corner: closes the <dialog> it's in. */
+export function closeX() {
+    return html`<button class="dialog-x" aria-label="Close" title="Close" @click=${e => e.currentTarget.closest('dialog')?.close()}>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+            <path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg></button>`;
+}
 
 /** PR or issue icon, coloured by state: CI for PRs, open/closed for issues. */
 export function kindIcon(item) {

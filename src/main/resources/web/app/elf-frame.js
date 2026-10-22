@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared } from './shared.js';
+import { shared, closeX } from './shared.js';
 import { api, errorMessage, onPush } from './rpc.js';
 import { currentTheme } from './theme.js';
 import { findTab, installedElf, tabOf } from './tabs.js';
@@ -221,7 +221,7 @@ class ElfFrame extends LitElement {
         const s = this._settings;
         const own = !s?.keys && ownSettings(this.elf);
         return html`<dialog aria-label=${s?.heading ?? 'Settings'} @close=${() => { this._settings = null; this._send({ event: 'changed' }); }}>
-            ${s ? html`${!s.keys ? html`<elf-manage only="update" elf=${this.elf} @elf-updated=${() => this._updated()}></elf-manage>` : ''}
+            ${s ? html`${closeX()}${!s.keys ? html`<elf-manage only="update" elf=${this.elf} @elf-updated=${() => this._updated()}></elf-manage>` : ''}
                 ${own ? html`<h2 class="title">${s.heading}</h2><elf-frame elf=${this.elf} view="settings"></elf-frame>` : ''}
                 <elf-settings elf=${this.elf} .keys=${s.keys} heading=${own ? 'Its setup' : s.heading}
                 note="Secrets are never shown."></elf-settings>
