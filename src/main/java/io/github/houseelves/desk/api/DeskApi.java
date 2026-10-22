@@ -247,7 +247,7 @@ public class DeskApi {
         return elves.remove(elf);
     }
 
-    /** Runs one of an elf's own commands (its dry run, or what its tab's button runs), with the values it takes. */
+    /** Runs one of an elf's own commands (what its tab's button runs), with the values it takes. */
     public com.fasterxml.jackson.databind.JsonNode runElf(String elf, String command,
             com.fasterxml.jackson.databind.JsonNode params) {
         return elves.run(elf, command, params);

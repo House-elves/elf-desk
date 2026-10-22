@@ -111,7 +111,7 @@ class DeskElves extends LitElement {
         return items?.length ? html`<dt>${label}</dt><dd><ul>${items.map(x => html`<li>${x}</li>`)}</ul></dd>` : '';
     }
 
-    /** An installed elf without a tab: its settings, schedule, dry run, update and removal, in a pop-up from here. */
+    /** An installed elf without a tab: its settings, schedule, update and removal, in a pop-up from here. */
     _tabless(elf) {
         return html`<article class="panel elf" aria-labelledby="elf-${elf.name}">
             <div class="top">

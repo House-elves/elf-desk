@@ -8,11 +8,11 @@ import { ownSettings } from './elf-frame.js';
 
 /**
  * An elf's settings as a pop-up, the same as its tab's Settings: its settings, when it refreshes on its own, and a
- * dry run, its version and removing it. For the elves without a tab, the runner, and an elf's setup.
+ * its version and removing it. For the elves without a tab, the runner, and an elf's setup.
  *
  *   <elf-settings-dialog elf="mvnpm-dependabot"></elf-settings-dialog>, then .show()
  *
- * {@code manageOnly}: just the dry run, version and removing (the setup page shows the settings itself).
+ * {@code manageOnly}: just the version and removing (the setup page shows the settings itself).
  */
 class ElfSettingsDialog extends LitElement {
 

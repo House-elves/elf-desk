@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { shared, spinner, ago } from './shared.js';
+import { shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { installedElf, setInstalledElves, setCatalog } from './tabs.js';
 import './diff-view.js';
@@ -7,8 +7,7 @@ import './diff-view.js';
 const short = sha => (sha ?? '').slice(0, 7);
 
 /**
- * The rest of an elf's settings: a dry run, its version (with the changes to read before you update it) and removing
- * it. In each elf's settings, its setup, and on the add page for an elf without a tab.
+ * The rest of an elf's settings: its version (with the changes to read before you update it) and removing it. In each elf's settings, its setup, and on the add page for an elf without a tab.
  */
 class ElfManage extends LitElement {
 
@@ -18,7 +17,7 @@ class ElfManage extends LitElement {
         _latest: { state: true },       // its catalog entry: the newest commit, or null while looking
         _changes: { state: true },      // {from, to, commits, diff, truncated} being looked at
         _removing: { state: true },
-        _busy: { state: true },         // dry, changes, update or remove
+        _busy: { state: true },         // changes, update or remove
         _error: { state: true },
     };
 
@@ -30,9 +29,6 @@ class ElfManage extends LitElement {
         .hint { font-size: 13.5px; color: var(--muted); margin: 0; }
         .confirm { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 14px;
             padding: 10px 12px; border-radius: var(--r-control); background: var(--surface-2); }
-        pre.out { margin: 0; max-height: 16rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
-            font: 12.5px/1.5 var(--font-code); background: var(--surface-2); border: 1px solid var(--line);
-            border-radius: var(--r-control); padding: 10px 12px; }
         .commits { margin: 0; padding-left: 18px; font: 13px var(--font-code); }
         code { font: 13px var(--font-code); }
         .update { padding: 12px 14px; border-radius: var(--r-control); background: var(--warn-soft);
@@ -42,11 +38,6 @@ class ElfManage extends LitElement {
     connectedCallback() {
         super.connectedCallback();
         this._lookForUpdate();
-    }
-
-    disconnectedCallback() {
-        clearTimeout(this._poll);
-        super.disconnectedCallback();
     }
 
     async _lookForUpdate() {
@@ -75,27 +66,6 @@ class ElfManage extends LitElement {
         }
     }
 
-    async _dryRun(e) {
-        const r = await this._do('dry', desk => desk.runElf({ elf: e.name, command: e.dryRun, params: null }));
-        if (r) this._watch();
-    }
-
-    /** While the dry run goes, look again every few seconds, so its output shows when it ends. */
-    _watch() {
-        clearTimeout(this._poll);
-        this._poll = setTimeout(async () => {
-            try {
-                const elves = (await (await api()).elves()).elves ?? [];
-                setInstalledElves(elves);
-                this.requestUpdate();
-                const e = elves.find(x => x.name === this.elf);
-                if ((e?.runs ?? []).some(x => x.command === e.dryRun && x.running)) this._watch();
-            } catch {
-                // the next look says what's wrong
-            }
-        }, 4000);
-    }
-
     async _showChanges(e) {
         const r = await this._do('changes', desk => desk.elfChanges({ elf: e.name, commit: this._latest.commit }));
         if (r) this._changes = r;
@@ -121,14 +91,13 @@ class ElfManage extends LitElement {
     render() {
         const e = installedElf(this.elf);
         if (!e) return '';
-        const dry = (e.runs ?? []).find(r => r.command === e.dryRun);
         const behind = this._latest && this._latest.commit !== e.commit;
         const c = this._changes;
         if (this.only === 'update') return behind ? this._renderUpdate(e, c) : '';
         return html`
             ${behind && this.only !== 'rest' ? this._renderUpdate(e, c) : ''}
             ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : ''}
-            ${this._renderRest(e, dry, behind, c)}`;
+            ${this._renderRest(e, behind, c)}`;
     }
 
     _renderUpdate(e, c) {
@@ -159,18 +128,8 @@ class ElfManage extends LitElement {
                     </div>`;
     }
 
-    _renderRest(e, dry, behind, c) {
+    _renderRest(e, behind, c) {
         return html`
-            ${e.dryRun ? html`<section aria-label="Dry run">
-                <h3>Try it</h3>
-                <div class="row">
-                    <button class="sm" ?disabled=${!!this._busy || dry?.running} @click=${() => this._dryRun(e)}>
-                        ${dry?.running || this._busy === 'dry' ? html`${spinner} Dry run going` : 'Dry run'}</button>
-                    <span class="hint">Runs it on your own data, and sends nothing.</span>
-                </div>
-                ${dry?.output && !dry.running ? html`<p class="hint">${dry.failed ? 'The dry run failed' : 'Dry run done'}
-                    ${dry.at ? ago(dry.at) : ''}</p><pre class="out">${dry.output}</pre>` : ''}
-            </section>` : ''}
             <section aria-label="Version">
                 <h3>Version</h3>
                 <div class="row">

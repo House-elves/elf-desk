@@ -155,7 +155,7 @@ public class ElvesService {
         return ask(hub.message("elf.remove").put("elf", name(elf)), 60);
     }
 
-    /** Runs one of the commands the elf declares (its dry run, say), with the values it takes (checked by the runner). */
+    /** Runs one of the commands the elf declares (what its tab asks for, say), with the values it takes (checked by the runner). */
     public JsonNode run(String elf, String command, JsonNode params) {
         ObjectNode msg = hub.message("elf.run").put("elf", name(elf)).put("command", name(command));
         if (params != null && params.isObject()) msg.set("params", params);

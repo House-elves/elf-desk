@@ -58,7 +58,7 @@ class ElfTab extends LitElement {
             <elf-settings elf=${t.elf} heading="Its settings" @elf-settings-saved=${this._saved}
                 note="Only readable by you. Secrets are never shown again."></elf-settings>
             ${e?.refresh ? html`<div class="panel when"><elf-schedule .elf=${e}></elf-schedule></div>` : ''}
-            <div><button class="sm quiet" @click=${() => this.renderRoot.querySelector('elf-settings-dialog').show()}>Try it first, or remove it</button></div>
+            <div><button class="sm quiet" @click=${() => this.renderRoot.querySelector('elf-settings-dialog').show()}>Its version, or remove it</button></div>
             <elf-settings-dialog elf=${t.elf} manageOnly heading=${t.label}></elf-settings-dialog>
         </div>`;
     }
