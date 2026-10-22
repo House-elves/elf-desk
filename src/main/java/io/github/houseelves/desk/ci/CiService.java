@@ -258,7 +258,7 @@ public class CiService {
                 .append("\n\n");
         if (ci.failed().isEmpty()) sb.append("GitHub reports no failed checks right now (CI: ").append(ci.ci()).append(").\n");
         for (GitHub.FailedCheck f : ci.failed()) {
-            sb.append("- ").append(f.name()).append(": ").append(f.conclusion());
+            sb.append("- ").append(Prompts.quote(f.name())).append(": ").append(f.conclusion());
             if (f.url() != null) sb.append(" (").append(f.url()).append(')');
             sb.append('\n');
         }
@@ -266,7 +266,7 @@ public class CiService {
         for (GitHub.FailedCheck f : withLogs) {
             String log = github.jobLogTail(token, repo(itemKey), f.jobId(), LOG_TAIL_CHARS);
             if (log == null) continue;
-            sb.append("\n<log job=\"").append(f.name()).append("\" note=\"last ").append(LOG_TAIL_CHARS)
+            sb.append("\n<log job=\"").append(Prompts.quote(f.name()).replace("\"", "'")).append("\" note=\"last ").append(LOG_TAIL_CHARS)
                     .append(" characters\">\n").append(Prompts.quote(log)).append("\n</log>\n");
         }
         return sb.toString();

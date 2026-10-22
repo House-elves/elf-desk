@@ -93,6 +93,9 @@ class CiServiceTest {
         assertTrue(j.prompt.contains("SwaggerUiPathTest.relativeUrl"));
         assertTrue(j.prompt.contains("external-ci: FAILURE"));
         assertTrue(j.checkout.contains("\"reset\":true"));
+        // Anyone can put text in a PR's CI output: the safety check reads the logs and check names too.
+        assertTrue(j.untrusted.contains("SwaggerUiPathTest.relativeUrl"), j.untrusted);
+        assertTrue(j.untrusted.contains("Gradle Tests - JDK 25"), j.untrusted);
     }
 
     @Test

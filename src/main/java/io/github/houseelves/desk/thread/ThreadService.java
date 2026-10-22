@@ -182,8 +182,10 @@ public class ThreadService {
             String prompt = fresh
                     ? Prompts.start(action, ctx, login, question, material)
                     : Prompts.again(action, ctx, question, material, login);
-            // Every action sends the item's current text, which may have new comments since the last check.
-            String untrusted = java.util.Objects.requireNonNullElse(join(ctx.untrustedText(), blankToNull(extraUntrusted)), "");
+            // Every action sends the item's current text, which may have new comments since the last check, and what
+            // else the prompt carries from GitHub (CI logs, linked PRs' titles): anyone can write those.
+            String untrusted = java.util.Objects.requireNonNullElse(
+                    join(join(ctx.untrustedText(), blankToNull(extraUntrusted)), blankToNull(material)), "");
             ObjectNode checkout = (ObjectNode) mapper.readTree(checkout(ctx));
             checkout.put("reset", true); // a new action starts from the PR's current head
             if (Prompts.isOwn(ctx, login)) checkout.put("own", true); // your PR: reviews can only be COMMENT
@@ -675,7 +677,7 @@ public class ThreadService {
         for (GitHub.LinkedPr pr : prs) {
             sb.append("- ").append(pr.key()).append(pr.fixes() ? " (says it fixes this issue)" : " (mentions this issue)")
                     .append(pr.draft() ? ", draft" : "").append(", by @").append(pr.author()).append(": ")
-                    .append(pr.title()).append(" ").append(pr.url()).append('\n');
+                    .append(Prompts.quote(pr.title())).append(" ").append(pr.url()).append('\n');
         }
         return sb.toString();
     }
