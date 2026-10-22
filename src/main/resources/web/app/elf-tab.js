@@ -5,6 +5,7 @@ import { installedElf, setInstalledElves } from './tabs.js';
 import './elf-frame.js';
 import './elf-settings.js';
 import './elf-schedule.js';
+import './elf-manage.js';
 
 /**
  * An elf's tab on the desk. Until the settings it can't run without are filled in, the desk draws its setup here
@@ -23,6 +24,10 @@ class ElfTab extends LitElement {
         h1 { font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.022em; }
         .sub { margin: 6px 0 0; color: var(--muted); font-size: 15px; max-width: 44rem; }
         .when { padding: 16px 18px; }
+        ol.steps { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 4px; color: var(--muted); font-size: 14px; max-width: 44rem; }
+        ol.steps strong { color: var(--ink); font-weight: 600; }
+        details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+        details[open] summary { margin-bottom: 12px; }
         @media (max-width: 600px) { h1 { font-size: 26px; } }
     `];
 
@@ -43,12 +48,21 @@ class ElfTab extends LitElement {
         return html`<div class="setup">
             <div>
                 <h1>Set up ${t.label}</h1>
-                <p class="sub">${e?.description ?? ''} Fill in what it needs (marked Needed). Once that's saved,
-                    ${t.label} runs for the first time${t.refresh ? ' and fills this tab' : ''}.</p>
+                <p class="sub">${e?.description ?? ''}</p>
+                <ol class="steps">
+                    <li><strong>Fill in what it needs</strong>, marked Needed. The rest have a sensible default.
+                        Secrets are only ever written, never shown again.</li>
+                    ${e?.refresh ? html`<li><strong>Pick when it refreshes</strong> on its own, or leave it as it comes.</li>` : ''}
+                    <li><strong>Save.</strong> ${t.label} then runs for the first time${t.refresh ? ' and fills this tab' : ''}.</li>
+                </ol>
             </div>
             <elf-settings elf=${t.elf} heading="Its settings" @elf-settings-saved=${this._saved}
                 note="Only readable by you. Secrets are never shown again."></elf-settings>
             ${e?.refresh ? html`<div class="panel when"><elf-schedule .elf=${e}></elf-schedule></div>` : ''}
+            <details class="panel when">
+                <summary>Try it first, or remove it</summary>
+                <elf-manage elf=${t.elf}></elf-manage>
+            </details>
         </div>`;
     }
 }

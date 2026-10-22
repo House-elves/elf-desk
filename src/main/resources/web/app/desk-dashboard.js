@@ -223,7 +223,7 @@ class DeskDashboard extends LitElement {
                 <div class="tabs">
                     ${this._github()}
                     ${this._cards().map(t => this._elfCard(t))}
-                    ${!this._cards().length ? html`<p class="hint">Elves you add on the <a href="#elves">Elves</a> page show
+                    ${!this._cards().length ? html`<p class="hint">Elves you add with the <a href="#elves">+</a> at the end of the tabs show
                         what needs you here.</p>` : ''}
                 </div>
             </div>

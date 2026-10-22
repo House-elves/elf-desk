@@ -55,6 +55,7 @@ class ElfDesk extends LitElement {
         }
         nav a:hover { color: var(--ink); background: var(--surface-2); }
         nav a[aria-current="page"] { color: var(--ink); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+        nav a.add { font-size: 18px; line-height: 1; padding: 4px 11px 6px; margin-left: 4px; border: 1px dashed var(--line); }
         .right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
         .conn { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
         .conn.lost { color: var(--bad); }
@@ -106,7 +107,7 @@ class ElfDesk extends LitElement {
     connectedCallback() {
         super.connectedCallback();
         window.addEventListener('hashchange', this._onHash);
-        // Settings saved anywhere (a tab's dialog, the Elves page) may finish an elf's setup: its tab shows then.
+        // Settings saved anywhere (a tab's dialog or setup, the + page) may finish an elf's setup: its tab shows then.
         this.addEventListener('elf-settings-saved', () => this._loadElves());
         this._offTabs = onTabsChange(() => {
             this._tabsChanged = (this._tabsChanged ?? 0) + 1;
@@ -135,7 +136,7 @@ class ElfDesk extends LitElement {
 
     /**
      * Which elves are installed, so only their tabs show. On a new desk (none yet), the first visit goes to the
-     * Elves page: the setup wizard.
+     * + page: the setup wizard.
      */
     async _loadElves() {
         try {
@@ -197,7 +198,8 @@ class ElfDesk extends LitElement {
                         <a href="#" aria-current=${this._view === 'dashboard' ? 'page' : 'false'}>Dashboard</a>
                         ${tabs().map(t => html`
                             <a href="#${t.id}" aria-current=${this._current(t.id) ? 'page' : 'false'}>${t.label}</a>`)}
-                        <a href="#elves" aria-current=${this._view === 'elves' ? 'page' : 'false'}>Elves</a>
+                        <a href="#elves" class="add" aria-current=${this._view === 'elves' ? 'page' : 'false'}
+                           aria-label="Add an elf" title="Add an elf">+</a>
                     </nav>
                     <div class="right">
                         ${this._conn !== 'open' ? html`
@@ -224,8 +226,8 @@ class ElfDesk extends LitElement {
                 ${this._view === 'elves' ? html`<desk-elves></desk-elves>`
                     : this._view.startsWith('tab:') ? this._elfTab(findTab(this._view.slice(4)))
                     : this._view === 'waiting' ? html`<div class="skeleton" style="height:40vh"></div>`
-                    : this._view === 'no-tab' ? html`<p class="muted">No elf by that name is installed. Add elves on the
-                        <a href="#elves">Elves</a> page.</p>`
+                    : this._view === 'no-tab' ? html`<p class="muted">No elf by that name is installed. Add one with the
+                        <a href="#elves">+</a> at the end of the tabs.</p>`
                     : this._view === 'thread' ? html`<desk-thread .itemKey=${itemKeyFromHash(location.hash)}></desk-thread>`
                     : this._view === 'github' ? html`<desk-board ?settingsOpen=${location.hash === '#settings'}></desk-board>`
                     : html`<desk-dashboard></desk-dashboard>`}

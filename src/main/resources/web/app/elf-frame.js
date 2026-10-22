@@ -4,6 +4,7 @@ import { api, errorMessage, onPush } from './rpc.js';
 import { currentTheme } from './theme.js';
 import { installedElf } from './tabs.js';
 import './elf-settings.js';
+import './elf-manage.js';
 import './elf-schedule.js';
 
 /** What a frame may keep in this browser (elf.store): per elf, keys like these, values up to 200 K characters. */
@@ -200,6 +201,8 @@ class ElfFrame extends LitElement {
             ${s ? html`<elf-settings elf=${this.elf} .keys=${s.keys} heading=${s.heading}
                 note="Secrets are never shown."></elf-settings>
                 ${installedElf(this.elf)?.refresh ? html`<div class="when"><elf-schedule .elf=${installedElf(this.elf)}></elf-schedule></div>` : ''}
+                ${!s.keys ? html`<elf-manage class="when" elf=${this.elf}
+                    @elf-removed=${() => this.renderRoot.querySelector('dialog').close()}></elf-manage>` : ''}
                 <div class="close"><button @click=${() => this.renderRoot.querySelector('dialog').close()}>Close</button></div>` : ''}
         </dialog>`;
     }
