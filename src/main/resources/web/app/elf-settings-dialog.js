@@ -4,6 +4,7 @@ import { installedElf } from './tabs.js';
 import './elf-settings.js';
 import './elf-schedule.js';
 import './elf-manage.js';
+import { ownSettings } from './elf-frame.js';
 
 /**
  * An elf's settings as a pop-up, the same as its tab's Settings: its settings, when it refreshes on its own, and a
@@ -42,11 +43,14 @@ class ElfSettingsDialog extends LitElement {
 
     render() {
         const e = this.elf === 'elf-runner' ? null : installedElf(this.elf);
+        const own = e && !this.manageOnly && ownSettings(this.elf);
+        const heading = this.heading ?? `${e?.title ?? this.elf} settings`;
         return html`<dialog aria-label=${this.heading ?? `${e?.title ?? this.elf} settings`} @close=${() => { this._open = false; }}>
             ${this._open ? html`
                 ${e ? html`<elf-manage only="update" elf=${this.elf}></elf-manage>` : ''}
                 ${this.manageOnly ? html`<h2>${this.heading ?? `${e?.title ?? this.elf}`}</h2>` : html`
-                    <elf-settings elf=${this.elf} heading=${this.heading ?? `${e?.title ?? this.elf} settings`}
+                    ${own ? html`<h2>${heading}</h2><elf-frame elf=${this.elf} view="settings"></elf-frame>` : ''}
+                    <elf-settings elf=${this.elf} heading=${own ? 'Its setup' : heading}
                         note=${this.note ?? 'Only readable by you. Secrets are never shown.'}></elf-settings>
                     ${e?.refresh ? html`<div class="when"><elf-schedule .elf=${e}></elf-schedule></div>` : ''}`}
                 ${e ? html`<elf-manage class="when" only="rest" elf=${this.elf}

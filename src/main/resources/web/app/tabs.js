@@ -28,7 +28,7 @@ export function findTab(id) {
 }
 
 /** An elf's tab: from its elf.yaml's tab (a runner before 0.32 lists tabs, and the first is it). */
-function tabOf(e) {
+export function tabOf(e) {
     return e.tab ?? e.tabs?.[0] ?? null;
 }
 

@@ -16,13 +16,14 @@ export {
     shared, markdown, markdownHtml, markdownStyles, spinner, ago, runTime, took, calendarText, Ticking, copyText, copyHtml,
 } from '../app/shared.js';
 
-// ---- where it runs: /elf-frame/<elf>?view=tab|card ----
+// ---- where it runs: /elf-frame/<elf>?view=tab|card|settings ----
 
 const [, , name] = location.pathname.split('/');
 /** Kept for elves written when an elf had several tabs: now its one tab, named after the elf. */
 const tab = name;
 const query = new URLSearchParams(location.search);
-const view = query.get('view') === 'card' ? 'card' : 'tab';
+/** tab, card, or settings: its own settings, at the top of the desk's Settings pop-up (tab.settings in elf.yaml). */
+const view = ['card', 'settings'].includes(query.get('view')) ? query.get('view') : 'tab';
 /** The desk's key for this load of the frame: it answers only messages that carry it. */
 const key = query.get('key');
 /** The key the desk serves this elf's files under: in its page's own script's URL (/elf-files/<key>/ui/...). */

@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { shared } from './shared.js';
 import { api, errorMessage, onPush } from './rpc.js';
 import { currentTheme } from './theme.js';
-import { findTab, installedElf } from './tabs.js';
+import { findTab, installedElf, tabOf } from './tabs.js';
 import './elf-settings.js';
 import './elf-manage.js';
 import './elf-schedule.js';
@@ -21,7 +21,7 @@ class ElfFrame extends LitElement {
 
     static properties = {
         elf: {},
-        view: {},          // "tab" or "card"
+        view: {},          // "tab", "card", or "settings" (its own settings, in the desk's Settings pop-up)
         route: {},         // where in its tab the desk's link points (see go)
         _height: { state: true },
         _ask: { state: true },       // {action, label, text, params, resolve}
@@ -52,6 +52,8 @@ class ElfFrame extends LitElement {
         }
         dialog::backdrop { background: color-mix(in srgb, var(--ink) 35%, transparent); }
         dialog .close { display: flex; justify-content: flex-end; margin-top: 16px; }
+        dialog .title { margin: 0 0 4px; }
+        dialog > elf-frame { margin-bottom: 20px; }
         dialog .when { margin-top: 20px; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--r-panel); background: var(--surface); }
     `];
 
@@ -127,6 +129,7 @@ class ElfFrame extends LitElement {
             case 'act': return this._act(desk, String(args.action ?? ''), object(args.params) ?? {});
             case 'cancelAgent': return desk.cancelElfAgent({ elf, id: String(args.id ?? '') });
             case 'settings':
+                if (this.view === 'settings') return null; // already in them
                 this._settings = { keys: args.keys ? strings(args.keys) : null, heading: String(args.heading ?? `${installedElf(elf)?.title ?? elf} settings`).slice(0, 80) };
                 await this.updateComplete;
                 this.renderRoot.querySelector('dialog')?.showModal();
@@ -216,9 +219,11 @@ class ElfFrame extends LitElement {
 
     _settingsDialog() {
         const s = this._settings;
+        const own = !s?.keys && ownSettings(this.elf);
         return html`<dialog aria-label=${s?.heading ?? 'Settings'} @close=${() => { this._settings = null; this._send({ event: 'changed' }); }}>
             ${s ? html`${!s.keys ? html`<elf-manage only="update" elf=${this.elf} @elf-updated=${() => this._updated()}></elf-manage>` : ''}
-                <elf-settings elf=${this.elf} .keys=${s.keys} heading=${s.heading}
+                ${own ? html`<h2 class="title">${s.heading}</h2><elf-frame elf=${this.elf} view="settings"></elf-frame>` : ''}
+                <elf-settings elf=${this.elf} .keys=${s.keys} heading=${own ? 'Its setup' : s.heading}
                 note="Secrets are never shown."></elf-settings>
                 ${installedElf(this.elf)?.refresh ? html`<div class="when"><elf-schedule .elf=${installedElf(this.elf)}></elf-schedule></div>` : ''}
                 ${!s.keys ? html`<elf-manage class="when" only="rest" elf=${this.elf} @elf-updated=${() => this._updated()}
@@ -239,7 +244,8 @@ class ElfFrame extends LitElement {
         if (changed.has('elf') || changed.has('view') || !this._src) {
             const theme = currentTheme();
             this._key = crypto.randomUUID();
-            this._src = `/elf-frame/${encodeURIComponent(this.elf)}?view=${this.view === 'card' ? 'card' : 'tab'}`
+            const view = ['card', 'settings'].includes(this.view) ? this.view : 'tab';
+            this._src = `/elf-frame/${encodeURIComponent(this.elf)}?view=${view}`
                 + (theme === 'system' ? '' : `&theme=${theme}`) + (this.route ? `&route=${encodeURIComponent(this.route)}` : '')
                 + `&key=${this._key}`;
             this._sentRoute = this.route ?? '';
@@ -252,13 +258,19 @@ class ElfFrame extends LitElement {
 
     render() {
         return html`
-            <iframe src=${this._src} title=${installedElf(this.elf)?.title ?? this.elf} style="height:${this._height || (this.view === 'card' ? 60 : 400)}px"
+            <iframe src=${this._src} title=${installedElf(this.elf)?.title ?? this.elf} style="height:${this._height || { card: 60, settings: 24 }[this.view] || 400}px"
                     sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" allow="clipboard-write"
                     referrerpolicy="no-referrer"></iframe>
             ${this._askBar()}
             ${this._settingsDialog()}
         `;
     }
+}
+
+/** Its tab draws its own settings too (tab.settings): they go at the top of its Settings pop-up. */
+export function ownSettings(elf) {
+    const e = installedElf(elf);
+    return !!(e && tabOf(e)?.settings);
 }
 
 /** "Send the status to {target}?" with the values filled in. */

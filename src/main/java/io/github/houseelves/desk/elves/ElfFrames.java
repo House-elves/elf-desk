@@ -39,7 +39,7 @@ public class ElfFrames {
     static final Map<String, String> TYPES = Map.of("js", "text/javascript; charset=utf-8", "css", "text/css; charset=utf-8",
             "json", "application/json", "svg", "image/svg+xml", "png", "image/png", "jpg", "image/jpeg", "webp", "image/webp",
             "woff2", "font/woff2");
-    static final Set<String> VIEWS = Set.of("tab", "card");
+    static final Set<String> VIEWS = Set.of("tab", "card", "settings");
     static final String FONTS = "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700"
             + "&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap";
 
