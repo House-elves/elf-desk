@@ -3,7 +3,7 @@ import { keyed } from 'lit/directives/keyed.js';
 import { shared, itemKeyFromHash } from './shared.js';
 import { api, connectionState, onConnectionChange, onBusyChange, onPush } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
-import { tabs, findTab, onTabsChange, setInstalledElves, installedElves, githubElf } from './tabs.js';
+import { tabs, findTab, onTabsChange, setInstalledElves, installedElves, githubElf, setCatalog, updateFor } from './tabs.js';
 import './desk-board.js';
 import './desk-settings.js';
 import './desk-thread.js';
@@ -56,6 +56,10 @@ class ElfDesk extends LitElement {
         }
         nav a:hover { color: var(--ink); background: var(--surface-2); }
         nav a[aria-current="page"] { color: var(--ink); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+        nav a { position: relative; }
+        /* An update waiting: a small dot on the tab, as on an app with something new. */
+        .update-dot { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%;
+            background: var(--bobble); box-shadow: 0 0 0 2px var(--bg); }
         nav a.add { font-size: 18px; line-height: 1; padding: 4px 11px 6px; margin-left: 4px; border: 1px dashed var(--line); }
         .right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
         .conn { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
@@ -123,6 +127,9 @@ class ElfDesk extends LitElement {
         this._loadElves();
         this._loadVersions();
         this._offRunner = onPush('desk.runner', () => this._loadVersions());
+        // Which elves have an update waiting (their tabs get a mark): now, then every half hour.
+        this._lookForUpdates();
+        this._updatesTimer = setInterval(() => this._lookForUpdates(), 30 * 60 * 1000);
         // Show the bar only for calls that take a moment, so quick ones don't flicker.
         this._offBusy = onBusyChange(busy => {
             clearTimeout(this._busyTimer);
@@ -137,6 +144,7 @@ class ElfDesk extends LitElement {
         this._offConn?.();
         this._offBusy?.();
         this._offRunner?.();
+        clearInterval(this._updatesTimer);
         super.disconnectedCallback();
     }
 
@@ -157,6 +165,16 @@ class ElfDesk extends LitElement {
         } catch (e) {
             // No runner: only GitHub's tab, until it's back.
             if (installedElves() === null) setInstalledElves([]);
+        }
+    }
+
+    async _lookForUpdates() {
+        try {
+            const desk = await api();
+            if (installedElves() === null) setInstalledElves((await desk.elves()).elves ?? []);
+            setCatalog((await desk.elfCatalog()).elves);
+        } catch {
+            // GitHub or the runner didn't answer: no marks until the next look
         }
     }
 
@@ -194,6 +212,11 @@ class ElfDesk extends LitElement {
         if (githubElf() && itemKeyFromHash(location.hash)) return location.hash.slice(1);
         const [, ...rest] = location.hash.slice(1).split('/');
         return rest.join('/');
+    }
+
+    /** An installed elf without a tab has an update: the + page is where its settings are. */
+    _tablessUpdate() {
+        return (installedElves() ?? []).some(e => !findTab(e.name) && updateFor(e.name));
     }
 
     _current(tab) {
@@ -240,9 +263,13 @@ class ElfDesk extends LitElement {
                     <nav aria-label="Views">
                         <a href="#" aria-current=${this._view === 'dashboard' ? 'page' : 'false'}>Dashboard</a>
                         ${tabs().map(t => html`
-                            <a href="#${t.id}" aria-current=${this._current(t.id) ? 'page' : 'false'}>${t.label}</a>`)}
+                            <a href="#${t.id}" aria-current=${this._current(t.id) ? 'page' : 'false'}
+                               title=${updateFor(t.elf) ? `${t.label} has an update: in its settings` : ''}>${t.label}${updateFor(t.elf)
+                                ? html`<span class="update-dot" aria-label=", has an update"></span>` : ''}</a>`)}
                         <a href="#elves" class="add" aria-current=${this._view === 'elves' ? 'page' : 'false'}
-                           aria-label="Add an elf" title="Add an elf">+</a>
+                           aria-label="Add an elf${this._tablessUpdate() ? ', an elf without a tab has an update' : ''}"
+                           title=${this._tablessUpdate() ? 'Add an elf. An elf without a tab has an update.' : 'Add an elf'}>+${this._tablessUpdate()
+                                ? html`<span class="update-dot"></span>` : ''}</a>
                     </nav>
                     <div class="right">
                         ${this._conn !== 'open' ? html`

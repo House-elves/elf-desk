@@ -46,7 +46,37 @@ export function setInstalledElves(elves) {
         && JSON.stringify(elves) === JSON.stringify(installed);
     installed = elves ?? [];
     elfTabs = next;
+    recomputeUpdates();
     if (!same) window.dispatchEvent(new CustomEvent(EVENT));
+}
+
+/**
+ * Elves with an update waiting: name -> the newest commit of their repo (from the + page's catalog, which the
+ * shell asks for now and then). An elf only moves when you update it.
+ */
+let updates = {};
+let lastCatalog = [];
+
+export function setCatalog(catalog) {
+    lastCatalog = catalog ?? [];
+    recomputeUpdates();
+}
+
+/** Against the elves as installed now: an elf just updated loses its mark straight away. */
+function recomputeUpdates() {
+    const next = {};
+    for (const c of lastCatalog) {
+        const e = (installed ?? []).find(x => x.repo === c.repo);
+        if (e && c.commit && c.commit !== e.commit) next[e.name] = c.commit;
+    }
+    if (JSON.stringify(next) === JSON.stringify(updates)) return;
+    updates = next;
+    window.dispatchEvent(new CustomEvent(EVENT));
+}
+
+/** The newest commit of an installed elf's repo, if it's newer than the one installed; null if it's up to date. */
+export function updateFor(name) {
+    return updates[name] ?? null;
 }
 
 /** The installed elves, or null before the runner has said. */

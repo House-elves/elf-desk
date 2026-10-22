@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { shared, spinner, ago } from './shared.js';
 import { api, errorMessage } from './rpc.js';
-import { installedElf, setInstalledElves } from './tabs.js';
+import { installedElf, setInstalledElves, setCatalog } from './tabs.js';
 import './diff-view.js';
 
 const short = sha => (sha ?? '').slice(0, 7);
@@ -14,6 +14,7 @@ class ElfManage extends LitElement {
 
     static properties = {
         elf: {},                        // the installed elf's name
+        only: {},                       // "update": just the update waiting, if any (the top of a settings pop-up); "rest": all but that
         _latest: { state: true },       // its catalog entry: the newest commit, or null while looking
         _changes: { state: true },      // {from, to, commits, diff, truncated} being looked at
         _removing: { state: true },
@@ -34,6 +35,8 @@ class ElfManage extends LitElement {
             border-radius: var(--r-control); padding: 10px 12px; }
         .commits { margin: 0; padding-left: 18px; font: 13px var(--font-code); }
         code { font: 13px var(--font-code); }
+        .update { padding: 12px 14px; border-radius: var(--r-control); background: var(--warn-soft);
+            border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--line)); }
     `];
 
     connectedCallback() {
@@ -49,7 +52,9 @@ class ElfManage extends LitElement {
     async _lookForUpdate() {
         try {
             const e = installedElf(this.elf);
-            this._latest = ((await (await api()).elfCatalog()).elves ?? []).find(c => c.repo === e?.repo) ?? false;
+            const catalog = (await (await api()).elfCatalog()).elves ?? [];
+            setCatalog(catalog); // the tabs' update marks, while we're at it
+            this._latest = catalog.find(c => c.repo === e?.repo) ?? false;
         } catch {
             this._latest = false; // GitHub didn't answer: no update to offer now
         }
@@ -96,9 +101,13 @@ class ElfManage extends LitElement {
         if (r) this._changes = r;
     }
 
-    async _update(e) {
-        const r = await this._do('update', desk => desk.updateElf({ elf: e.name, commit: this._changes.to }));
-        if (r) this._changes = null;
+    async _update(e, commit) {
+        const r = await this._do('update', desk => desk.updateElf({ elf: e.name, commit }));
+        if (r) {
+            this._changes = null;
+            this._latest = { ...this._latest, commit };
+            this.dispatchEvent(new CustomEvent('elf-updated', { detail: e.name, bubbles: true, composed: true }));
+        }
     }
 
     async _remove(e) {
@@ -115,8 +124,43 @@ class ElfManage extends LitElement {
         const dry = (e.runs ?? []).find(r => r.command === e.dryRun);
         const behind = this._latest && this._latest.commit !== e.commit;
         const c = this._changes;
+        if (this.only === 'update') return behind ? this._renderUpdate(e, c) : '';
         return html`
+            ${behind && this.only !== 'rest' ? this._renderUpdate(e, c) : ''}
             ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : ''}
+            ${this._renderRest(e, dry, behind, c)}`;
+    }
+
+    _renderUpdate(e, c) {
+        return html`${this.only === 'update' && this._error ? html`<p class="error" role="alert">${this._error}</p>` : ''}
+            <section class="update" aria-label="Update">
+                <div class="row">
+                    <span><b>An update is waiting:</b> ${short(this._latest.commit)} of ${e.repo}.</span>
+                    <button class="primary sm" ?disabled=${!!this._busy} @click=${() => this._update(e, this._latest.commit)}>
+                        ${this._busy === 'update' ? spinner : ''}Update</button>
+                    ${!c ? html`<button class="sm quiet" ?disabled=${!!this._busy} @click=${() => this._showChanges(e)}>
+                        ${this._busy === 'changes' ? spinner : ''}See the changes first</button>` : ''}
+                </div>
+                ${this.only === 'update' && c ? this._renderChanges(e, c) : ''}
+            </section>`;
+    }
+
+    /** The commits since the installed one and their diff, with Update and Not now. */
+    _renderChanges(e, c) {
+        return html`
+                    <p class="hint">${c.commits.length} new commit${c.commits.length === 1 ? '' : 's'} since ${short(c.from)}.
+                        This is the code that will run on your machine.</p>
+                    <ul class="commits">${c.commits.map(x => html`<li>${x}</li>`)}</ul>
+                    <diff-view .diff=${c.diff} ?cut=${c.truncated} url="https://github.com/${e.repo}/compare/${c.from}...${c.to}"></diff-view>
+                    <div class="row">
+                        <button class="primary sm" ?disabled=${!!this._busy} @click=${() => this._update(e, c.to)}>
+                            ${this._busy === 'update' ? spinner : ''}Update to ${short(c.to)}</button>
+                        <button class="sm quiet" @click=${() => { this._changes = null; }}>Not now</button>
+                    </div>`;
+    }
+
+    _renderRest(e, dry, behind, c) {
+        return html`
             ${e.dryRun ? html`<section aria-label="Dry run">
                 <h3>Try it</h3>
                 <div class="row">
@@ -139,16 +183,7 @@ class ElfManage extends LitElement {
                             ${this._busy === 'changes' ? spinner : ''}${c ? 'Hide the changes' : `See the changes to ${short(this._latest.commit)}`}</button>`
                         : this._latest ? html`<span class="hint">Up to date.</span>` : ''}
                 </div>
-                ${c ? html`
-                    <p class="hint">${c.commits.length} new commit${c.commits.length === 1 ? '' : 's'} since ${short(c.from)}.
-                        This is the code that will run on your machine.</p>
-                    <ul class="commits">${c.commits.map(x => html`<li>${x}</li>`)}</ul>
-                    <diff-view .diff=${c.diff} ?cut=${c.truncated} url="https://github.com/${e.repo}/compare/${c.from}...${c.to}"></diff-view>
-                    <div class="row">
-                        <button class="primary sm" ?disabled=${!!this._busy} @click=${() => this._update(e)}>
-                            ${this._busy === 'update' ? spinner : ''}Update to ${short(c.to)}</button>
-                        <button class="sm quiet" @click=${() => { this._changes = null; }}>Not now</button>
-                    </div>` : ''}
+                ${c ? this._renderChanges(e, c) : ''}
             </section>
             <section aria-label="Remove">
                 <h3>Remove</h3>

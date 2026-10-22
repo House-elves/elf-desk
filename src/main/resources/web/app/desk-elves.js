@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { calendarText, shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
-import { setInstalledElves } from './tabs.js';
+import { setInstalledElves, setCatalog, updateFor } from './tabs.js';
 import './elf-settings.js';
 import './elf-schedule.js';
 import './elf-manage.js';
@@ -76,6 +76,7 @@ class DeskElves extends LitElement {
         }
         try {
             this._catalog = (await desk.elfCatalog()).elves;
+            setCatalog(this._catalog);
             this._catalogError = null;
         } catch (e) {
             this._catalogError = errorMessage(e);
@@ -115,7 +116,8 @@ class DeskElves extends LitElement {
         return html`<article class="panel elf" aria-labelledby="elf-${elf.name}">
             <div class="top">
                 <h3 id="elf-${elf.name}">${elf.title || elf.name} <code>${elf.name}</code></h3>
-                <div class="chips">${elf.missing?.length ? html`<span class="chip warn">Needs setting up</span>` : ''}</div>
+                <div class="chips">${elf.missing?.length ? html`<span class="chip warn">Needs setting up</span>` : ''}
+                    ${updateFor(elf.name) ? html`<span class="chip warn">Update waiting</span>` : ''}</div>
             </div>
             <p class="desc">${elf.description}</p>
             <div class="acts">

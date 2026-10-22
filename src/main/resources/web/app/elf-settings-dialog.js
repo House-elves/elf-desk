@@ -44,11 +44,12 @@ class ElfSettingsDialog extends LitElement {
         const e = this.elf === 'elf-runner' ? null : installedElf(this.elf);
         return html`<dialog aria-label=${this.heading ?? `${e?.title ?? this.elf} settings`} @close=${() => { this._open = false; }}>
             ${this._open ? html`
+                ${e ? html`<elf-manage only="update" elf=${this.elf}></elf-manage>` : ''}
                 ${this.manageOnly ? html`<h2>${this.heading ?? `${e?.title ?? this.elf}`}</h2>` : html`
                     <elf-settings elf=${this.elf} heading=${this.heading ?? `${e?.title ?? this.elf} settings`}
                         note=${this.note ?? 'Only readable by you. Secrets are never shown.'}></elf-settings>
                     ${e?.refresh ? html`<div class="when"><elf-schedule .elf=${e}></elf-schedule></div>` : ''}`}
-                ${e ? html`<elf-manage class="when" elf=${this.elf}
+                ${e ? html`<elf-manage class="when" only="rest" elf=${this.elf}
                     @elf-removed=${() => this.renderRoot.querySelector('dialog').close()}></elf-manage>` : ''}
                 <div class="close"><button @click=${() => this.renderRoot.querySelector('dialog').close()}>Close</button></div>` : ''}
         </dialog>`;

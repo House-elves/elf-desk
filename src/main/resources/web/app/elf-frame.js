@@ -217,13 +217,21 @@ class ElfFrame extends LitElement {
     _settingsDialog() {
         const s = this._settings;
         return html`<dialog aria-label=${s?.heading ?? 'Settings'} @close=${() => { this._settings = null; this._send({ event: 'changed' }); }}>
-            ${s ? html`<elf-settings elf=${this.elf} .keys=${s.keys} heading=${s.heading}
+            ${s ? html`${!s.keys ? html`<elf-manage only="update" elf=${this.elf} @elf-updated=${() => this._updated()}></elf-manage>` : ''}
+                <elf-settings elf=${this.elf} .keys=${s.keys} heading=${s.heading}
                 note="Secrets are never shown."></elf-settings>
                 ${installedElf(this.elf)?.refresh ? html`<div class="when"><elf-schedule .elf=${installedElf(this.elf)}></elf-schedule></div>` : ''}
-                ${!s.keys ? html`<elf-manage class="when" elf=${this.elf}
+                ${!s.keys ? html`<elf-manage class="when" only="rest" elf=${this.elf} @elf-updated=${() => this._updated()}
                     @elf-removed=${() => this.renderRoot.querySelector('dialog').close()}></elf-manage>` : ''}
                 <div class="close"><button @click=${() => this.renderRoot.querySelector('dialog').close()}>Close</button></div>` : ''}
         </dialog>`;
+    }
+
+    /** Updated from its settings: the tab loads the new version (its files have a new key). */
+    _updated() {
+        this.renderRoot.querySelector('dialog')?.close();
+        this._src = null;
+        this.requestUpdate();
     }
 
     willUpdate(changed) {
