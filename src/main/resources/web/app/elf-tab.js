@@ -5,7 +5,7 @@ import { installedElf, setInstalledElves } from './tabs.js';
 import './elf-frame.js';
 import './elf-settings.js';
 import './elf-schedule.js';
-import './elf-manage.js';
+import './elf-settings-dialog.js';
 
 /**
  * An elf's tab on the desk. Until the settings it can't run without are filled in, the desk draws its setup here
@@ -27,8 +27,6 @@ class ElfTab extends LitElement {
         .when { padding: 16px 18px; }
         ol.steps { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 4px; color: var(--muted); font-size: 14px; max-width: 44rem; }
         ol.steps strong { color: var(--ink); font-weight: 600; }
-        details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
-        details[open] summary { margin-bottom: 12px; }
         @media (max-width: 600px) { h1 { font-size: 26px; } }
     `];
 
@@ -60,10 +58,8 @@ class ElfTab extends LitElement {
             <elf-settings elf=${t.elf} heading="Its settings" @elf-settings-saved=${this._saved}
                 note="Only readable by you. Secrets are never shown again."></elf-settings>
             ${e?.refresh ? html`<div class="panel when"><elf-schedule .elf=${e}></elf-schedule></div>` : ''}
-            <details class="panel when">
-                <summary>Try it first, or remove it</summary>
-                <elf-manage elf=${t.elf}></elf-manage>
-            </details>
+            <div><button class="sm quiet" @click=${() => this.renderRoot.querySelector('elf-settings-dialog').show()}>Try it first, or remove it</button></div>
+            <elf-settings-dialog elf=${t.elf} manageOnly heading=${t.label}></elf-settings-dialog>
         </div>`;
     }
 }

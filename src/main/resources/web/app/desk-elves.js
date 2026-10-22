@@ -1,10 +1,11 @@
 import { LitElement, html, css } from 'lit';
-import { calendarText, shared, spinner, settingsToggle } from './shared.js';
+import { calendarText, shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { setInstalledElves } from './tabs.js';
 import './elf-settings.js';
 import './elf-schedule.js';
 import './elf-manage.js';
+import './elf-settings-dialog.js';
 
 const short = sha => (sha ?? '').slice(0, 7);
 
@@ -19,7 +20,6 @@ class DeskElves extends LitElement {
     static properties = {
         _installed: { state: true },
         _catalog: { state: true },
-        _open: { state: true },        // name of the tab-less elf whose settings are open
         _busy: { state: true },        // install:<repo> while adding it
         _error: { state: true },
         _catalogError: { state: true },
@@ -50,8 +50,6 @@ class DeskElves extends LitElement {
         code { font: 13px var(--font-code); background: var(--surface-2); padding: 2px 6px; border-radius: 5px; }
         .sk { height: 120px; }
         .when { padding: 16px 18px; }
-        details.elf summary { cursor: pointer; font-weight: 600; }
-        details.elf[open] summary { margin-bottom: 8px; }
         h3 code { font-weight: 400; color: var(--muted); margin-left: 6px; }
         a.chip { text-decoration: none; }
         @media (max-width: 600px) {
@@ -97,8 +95,10 @@ class DeskElves extends LitElement {
                 location.hash = `#${elf.name}`;
                 return;
             }
-            this._open = elf?.name;
-            this._load();
+            // No tab to set it up in: its settings open here.
+            await this._load();
+            await this.updateComplete;
+            this.renderRoot.querySelector(`elf-settings-dialog[elf="${elf?.name}"]`)?.show();
         } catch (e) {
             this._error = errorMessage(e);
         } finally {
@@ -110,20 +110,20 @@ class DeskElves extends LitElement {
         return items?.length ? html`<dt>${label}</dt><dd><ul>${items.map(x => html`<li>${x}</li>`)}</ul></dd>` : '';
     }
 
-    /** An installed elf without a tab: its settings, schedule, dry run, update and removal live here. */
+    /** An installed elf without a tab: its settings, schedule, dry run, update and removal, in a pop-up from here. */
     _tabless(elf) {
-        const open = this._open === elf.name;
         return html`<article class="panel elf" aria-labelledby="elf-${elf.name}">
             <div class="top">
                 <h3 id="elf-${elf.name}">${elf.title || elf.name} <code>${elf.name}</code></h3>
                 <div class="chips">${elf.missing?.length ? html`<span class="chip warn">Needs setting up</span>` : ''}</div>
             </div>
             <p class="desc">${elf.description}</p>
-            <div class="acts">${settingsToggle(open, () => { this._open = open ? null : elf.name; })}</div>
-            ${open ? html`<elf-settings elf=${elf.name} heading="Settings" @elf-settings-saved=${() => this._load()}
-                    note="In ~/.config/${elf.name}/config, only readable by you. Secrets are never shown."></elf-settings>
-                ${elf.refresh ? html`<div class="panel when"><elf-schedule .elf=${elf}></elf-schedule></div>` : ''}
-                <elf-manage elf=${elf.name} @elf-removed=${() => this._load()}></elf-manage>` : ''}
+            <div class="acts">
+                <button class="sm" @click=${e => e.target.closest('article').querySelector('elf-settings-dialog').show()}>Settings</button>
+            </div>
+            <elf-settings-dialog elf=${elf.name} heading="${elf.title || elf.name} settings"
+                note="In ~/.config/${elf.name}/config, only readable by you. Secrets are never shown."
+                @elf-settings-saved=${() => this._load()} @elf-removed=${() => this._load()}></elf-settings-dialog>
         </article>`;
     }
 
@@ -203,11 +203,11 @@ class DeskElves extends LitElement {
             <section aria-labelledby="runner-h">
                 <h2 id="runner-h">How agents run</h2>
                 <p class="hint">The runner's settings, for every elf that starts an agent (such as GitHub's).</p>
-                <details class="panel elf">
-                    <summary>The runner's settings</summary>
-                    <elf-settings elf="elf-runner" heading="Agents"
-                        note="In ~/.config/house-elves/runner.config, only readable by you. Most apply when the runner restarts."></elf-settings>
-                </details>
+                <div class="acts">
+                    <button class="sm" @click=${() => this.renderRoot.querySelector('#runner-settings').show()}>The runner's settings</button>
+                </div>
+                <elf-settings-dialog id="runner-settings" elf="elf-runner" heading="How agents run"
+                    note="In ~/.config/house-elves/runner.config, only readable by you. Most apply when the runner restarts."></elf-settings-dialog>
             </section>
         </div>`;
     }
