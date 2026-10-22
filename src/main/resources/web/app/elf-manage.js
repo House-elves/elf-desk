@@ -114,7 +114,7 @@ class ElfManage extends LitElement {
             </section>`;
     }
 
-    /** The commits since the installed one and their diff, with Update and Not now. */
+    /** The commits since the installed one and their diff, with Update and Hide the changes. */
     _renderChanges(e, c) {
         return html`
                     <p class="hint">${c.commits.length} new commit${c.commits.length === 1 ? '' : 's'} since ${short(c.from)}.
@@ -124,7 +124,7 @@ class ElfManage extends LitElement {
                     <div class="row">
                         <button class="primary sm" ?disabled=${!!this._busy} @click=${() => this._update(e, c.to)}>
                             ${this._busy === 'update' ? spinner : ''}Update to ${short(c.to)}</button>
-                        <button class="sm quiet" @click=${() => { this._changes = null; }}>Not now</button>
+                        <button class="sm quiet" @click=${() => { this._changes = null; }}>Hide the changes</button>
                     </div>`;
     }
 

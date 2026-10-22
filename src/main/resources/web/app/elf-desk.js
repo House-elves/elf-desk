@@ -3,11 +3,12 @@ import { keyed } from 'lit/directives/keyed.js';
 import { shared, itemKeyFromHash } from './shared.js';
 import { api, connectionState, onConnectionChange, onBusyChange, onPush, errorMessage } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
-import { tabs, findTab, onTabsChange, setInstalledElves, installedElves, githubElf, setCatalog, updateFor } from './tabs.js';
+import { tabs, findTab, onTabsChange, setInstalledElves, installedElves, installedElf, githubElf, setCatalog, updateFor } from './tabs.js';
 import './desk-board.js';
 import './desk-settings.js';
 import './desk-thread.js';
 import './elf-tab.js';
+import './elf-manage.js';
 import './desk-dashboard.js';
 import './desk-elves.js';
 
@@ -39,6 +40,8 @@ class ElfDesk extends LitElement {
         _busy: { state: true },
         _theme: { state: true },
         _tabsChanged: { state: true },
+        _elfUpdate: { state: true }, // the tab whose update pop-up is open
+        _reloads: { state: true },   // an elf updated from its pop-up: its tab loads again
     };
 
     static styles = [shared, css`
@@ -105,6 +108,8 @@ class ElfDesk extends LitElement {
         .update-dialog ul { margin: 0 0 12px; padding-left: 18px; }
         .update-dialog .acts { display: flex; gap: 10px; margin-top: 14px; }
         .update-dialog .hint { color: var(--muted); font-size: 14px; }
+        .update-dialog.elf { width: min(52rem, calc(100vw - 32px)); }
+        .update-dialog code { font: 13px var(--font-code); }
         .version { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; margin-left: -14px; }
         @media (max-width: 640px) {
             .bar { padding: 10px 16px; }
@@ -231,6 +236,37 @@ class ElfDesk extends LitElement {
             ${this._renderUpdateDialog()}`;
     }
 
+    /**
+     * The tab you're on has an update: clicking it again shows it, as the version does for Elf Desk. Deeper in the tab
+     * (a thread page), the click still takes you to the tab's top first.
+     */
+    _tabClick(e, t) {
+        if (!this._current(t.id) || location.hash !== `#${t.id}` || !updateFor(t.elf)
+                || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        e.preventDefault();
+        this._elfUpdate = t;
+        this.updateComplete.then(() => this.renderRoot.querySelector('.update-dialog.elf')?.showModal());
+    }
+
+    /** An elf's update: its version now and the newest, with Update and the changes to read first (elf-manage). */
+    _renderElfUpdate() {
+        const t = this._elfUpdate;
+        const e = t && installedElf(t.elf);
+        const close = () => this.renderRoot.querySelector('.update-dialog.elf')?.close();
+        return html`<dialog class="update-dialog elf" aria-label="Update ${t?.label ?? 'the elf'}" @close=${() => { this._elfUpdate = null; }}>
+            ${e ? html`
+                <h2>Update ${t.label}</h2>
+                <p class="hint">${e.version ? `Version ${e.version}, at` : 'At'} <code>${(e.commit ?? '').slice(0, 7)}</code> of
+                    <a href="https://github.com/${e.repo}" target="_blank" rel="noopener">${e.repo}</a>. Its settings, schedule and
+                    data stay as they are. It's also in its settings.</p>
+                <elf-manage only="update" elf=${t.elf} @elf-updated=${() => {
+                    this._reloads = { ...this._reloads, [t.elf]: (this._reloads?.[t.elf] ?? 0) + 1 };
+                    close();
+                }}></elf-manage>
+                <div class="acts"><button class="quiet" @click=${close}>Not now</button></div>` : ''}
+        </dialog>`;
+    }
+
     _renderUpdateDialog() {
         const u = this._update;
         const v = s => !s ? '?' : /^\d/.test(s) ? `v${s}` : s;
@@ -297,7 +333,7 @@ class ElfDesk extends LitElement {
 
     /** An elf's tab: its setup until it's set up, then what the elf draws. keyed: a different elf is a new frame. */
     _elfTab(t) {
-        return t ? keyed(t.elf, html`<elf-tab .tab=${t} .route=${this._route()}></elf-tab>`) : '';
+        return t ? keyed(`${t.elf}:${this._reloads?.[t.elf] ?? 0}`, html`<elf-tab .tab=${t} .route=${this._route()}></elf-tab>`) : '';
     }
 
     /** One button: the theme it is now; each click goes to the next (match system, light, dark). */
@@ -335,8 +371,9 @@ class ElfDesk extends LitElement {
                     <nav aria-label="Views">
                         <a href="#" aria-current=${this._view === 'dashboard' ? 'page' : 'false'}>Dashboard</a>
                         ${tabs().map(t => html`
-                            <a href="#${t.id}" aria-current=${this._current(t.id) ? 'page' : 'false'}
-                               title=${updateFor(t.elf) ? `${t.label} has an update: in its settings` : ''}>${t.label}${updateFor(t.elf)
+                            <a href="#${t.id}" aria-current=${this._current(t.id) ? 'page' : 'false'} @click=${e => this._tabClick(e, t)}
+                               title=${!updateFor(t.elf) ? '' : this._current(t.id) ? `${t.label} has an update: click to see it`
+                                   : `${t.label} has an update: click the tab again to see it`}>${t.label}${updateFor(t.elf)
                                 ? html`<span class="update-dot" aria-label=", has an update"></span>` : ''}</a>`)}
                         <a href="#elves" class="add" aria-current=${this._view === 'elves' ? 'page' : 'false'}
                            aria-label="Add an elf${this._tablessUpdate() ? ', an elf without a tab has an update' : ''}"
@@ -357,6 +394,7 @@ class ElfDesk extends LitElement {
                         If it still won't connect, open it again with <code>house-elves open</code>.
                     </div>` : ''}
             </header>
+            ${this._renderElfUpdate()}
             <main>
                 ${this._view === 'elves' ? html`<desk-elves></desk-elves>`
                     : this._view.startsWith('tab:') ? this._elfTab(findTab(this._view.slice(4)))
