@@ -25,6 +25,11 @@ const query = new URLSearchParams(location.search);
 const view = query.get('view') === 'card' ? 'card' : 'tab';
 /** The desk's key for this load of the frame: it answers only messages that carry it. */
 const key = query.get('key');
+/** The key the desk serves this elf's files under: in its page's own script's URL (/elf-files/<key>/ui/...). */
+const filesKey = (/\/elf-files\/([0-9a-f]{32})\//.exec(document.querySelector('script[type="module"]')?.src ?? '') ?? [])[1] ?? '';
+/** Where in the tab the desk's link pointed when it loaded: what follows #<elf>/ (see elf.go). */
+let route = query.get('route') ?? '';
+const routeListeners = new Set();
 
 // ---- the desk's look: the same tokens as the desk's index.html ----
 
@@ -91,6 +96,9 @@ window.addEventListener('message', e => {
         }
     } else if (m.event === 'changed') {
         changeListeners.forEach(l => l(m.what ?? null));
+    } else if (m.event === 'route') {
+        route = String(m.route ?? '');
+        routeListeners.forEach(l => l(route));
     } else if (m.event === 'theme') {
         if (m.data === 'light' || m.data === 'dark') document.documentElement.dataset.theme = m.data;
         else delete document.documentElement.dataset.theme;
@@ -144,6 +152,11 @@ export const elf = {
      * "agents" as it goes.
      */
     agent: id => elf.readJson('agents', `${id}.json`),
+    /**
+     * A URL for an image in one of its data folders (an agent's screenshot: agents/<id>--<name>), for an img's src.
+     * Only images (png, jpg, gif, webp), only from the folders its elf.yaml lists.
+     */
+    imageUrl: (folder, name) => `/elf-data/${filesKey}/${encodeURIComponent(folder)}/${encodeURIComponent(name)}`,
     /** Stops one of its agents. */
     cancelAgent: id => call('cancelAgent', { id }),
 
@@ -151,6 +164,21 @@ export const elf = {
     settings: (keys, heading) => call('settings', { keys, heading }),
     /** Its settings' values, secrets left out. */
     values: () => call('values'),
+    /**
+     * Places in its tab, as desk links (#<elf>/<route>), so Back and a shared link work: route() is where it is now,
+     * go(route) goes somewhere (replace: true, without a new history entry), and onRoute calls back when the desk
+     * goes somewhere else in it (Back, a link). A route is letters, digits and / - . _ ~ %.
+     */
+    route: () => route,
+    go: (to, { replace = false } = {}) => {
+        route = String(to ?? '');
+        return call('go', { route, replace });
+    },
+    onRoute(callback) {
+        routeListeners.add(callback);
+        return () => routeListeners.delete(callback);
+    },
+
     /** Goes to its tab on the desk (from its dashboard card, say). */
     open: () => call('open'),
 

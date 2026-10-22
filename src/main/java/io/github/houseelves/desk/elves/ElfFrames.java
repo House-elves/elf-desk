@@ -60,6 +60,7 @@ public class ElfFrames {
     void install(@Observes Router router) {
         router.get("/elf-frame/:elf").blockingHandler(this::frame);
         router.get("/elf-files/:key/*").blockingHandler(this::file);
+        router.get("/elf-data/:key/:folder/:name").blockingHandler(this::data);
         router.get("/elf-kit/1/kit.js").handler(this::kit);
     }
 
@@ -136,6 +137,49 @@ public class ElfFrames {
                 .putHeader("X-Content-Type-Options", "nosniff")
                 .putHeader("Content-Security-Policy", "default-src 'none'; sandbox")
                 .putHeader("Cache-Control", "private, max-age=3600")
+                .end(Buffer.buffer(data));
+    }
+
+    static final Pattern FOLDER = Pattern.compile("[a-z0-9][a-z0-9_-]{0,40}");
+    static final Pattern FILE = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,120}");
+    static final Map<String, String> IMAGES = Map.of("png", "image/png", "jpg", "image/jpeg", "jpeg", "image/jpeg",
+            "gif", "image/gif", "webp", "image/webp");
+    static final long MAX_IMAGE = 10L * 1024 * 1024;
+
+    /**
+     * An image in one of the folders the elf's elf.yaml lets its tab read (an agent's screenshot, say), for an img in
+     * its frame: only images, only a plain file in that folder, read here (the folder is ~/.config/<elf>/<folder>).
+     */
+    void data(RoutingContext rc) {
+        String[] open = KEY.matcher(rc.pathParam("key")).matches() ? opens.get(rc.pathParam("key")) : null;
+        String folder = rc.pathParam("folder"), name = rc.pathParam("name");
+        String ext = name == null ? "" : name.substring(name.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT);
+        byte[] data = null;
+        if (open != null && folder != null && FOLDER.matcher(folder).matches() && FILE.matcher(name).matches()
+                && IMAGES.containsKey(ext)) {
+            try {
+                if (elves.dataFolders(open[0]).contains(folder)) {
+                    java.nio.file.Path dir = java.nio.file.Path.of(System.getProperty("user.home"), ".config", open[0], folder);
+                    java.nio.file.Path f = dir.resolve(name);
+                    if (java.nio.file.Files.isRegularFile(f, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                            && java.nio.file.Files.size(f) <= MAX_IMAGE
+                            && f.toRealPath().getParent().equals(dir.toRealPath())) {
+                        data = java.nio.file.Files.readAllBytes(f);
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debugf("No %s/%s for %s: %s", folder, name, open[0], e.getMessage());
+            }
+        }
+        if (data == null) {
+            rc.response().setStatusCode(404).end();
+            return;
+        }
+        rc.response().putHeader("Content-Type", IMAGES.get(ext))
+                .putHeader("Access-Control-Allow-Origin", "*")
+                .putHeader("X-Content-Type-Options", "nosniff")
+                .putHeader("Content-Security-Policy", "default-src 'none'; sandbox")
+                .putHeader("Cache-Control", "private, max-age=600")
                 .end(Buffer.buffer(data));
     }
 

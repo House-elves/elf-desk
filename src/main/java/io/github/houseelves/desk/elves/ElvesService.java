@@ -189,6 +189,18 @@ public class ElvesService {
         return ask(msg, 180, RunnerHub.ELF_TABS_SINCE);
     }
 
+    /** The folders an installed elf's tab may read (its elf.yaml's data, and agents for one that starts them). */
+    public java.util.List<String> dataFolders(String elf) {
+        for (JsonNode e : installed().path("elves")) {
+            if (e.path("name").asText().equals(elf)) {
+                java.util.List<String> out = new java.util.ArrayList<>();
+                e.path("data").forEach(d -> out.add(d.asText()));
+                return out;
+            }
+        }
+        return java.util.List.of();
+    }
+
     /** Stops one of an elf's agents. */
     public JsonNode cancelAgent(String elf, String id) {
         if (id == null || !id.matches("[a-z0-9][a-z0-9-]{0,79}")) throw new IllegalArgumentException("Not an agent");

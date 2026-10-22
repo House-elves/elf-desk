@@ -1,5 +1,6 @@
 // Which tabs there are: GitHub, then one per installed elf that has a tab, named by its title (Mail, Zulip, Weekly
-// status), in the order you added them. Adding an elf adds its tab; removing it takes the tab away.
+// status), in the order you added them. Adding an elf adds its tab; removing it takes the tab away. GitHub is the
+// desk's own board until the github elf is installed: then that elf's tab is GitHub, first as before.
 
 const EVENT = 'elfdesk-tabs';
 
@@ -14,7 +15,12 @@ let elfTabs = [];
  * elf's name (#mail-triage). refresh: the command that brings it up to date; missing: settings it needs first.
  */
 export function tabs() {
-    return [GITHUB, ...elfTabs];
+    return githubElf() ? elfTabs : [GITHUB, ...elfTabs];
+}
+
+/** The github elf's tab, once it's installed: it takes the place of the desk's own board. */
+export function githubElf() {
+    return elfTabs.find(t => t.elf === GITHUB.id) ?? null;
 }
 
 export function findTab(id) {
@@ -29,8 +35,9 @@ function tabOf(e) {
 /** What the Elves page or the shell learnt is installed: the runner's list of elves. */
 export function setInstalledElves(elves) {
     const next = [...(elves ?? [])]
-        .filter(e => tabOf(e) && e.name !== GITHUB.id && e.name !== 'elves')
-        .sort((a, b) => (a.installedAt ?? '').localeCompare(b.installedAt ?? '') || a.name.localeCompare(b.name))
+        .filter(e => tabOf(e) && e.name !== 'elves')
+        .sort((a, b) => (b.name === GITHUB.id) - (a.name === GITHUB.id)
+            || (a.installedAt ?? '').localeCompare(b.installedAt ?? '') || a.name.localeCompare(b.name))
         .map(e => ({
             id: e.name, label: e.title || e.name, elf: e.name, card: !!tabOf(e).card,
             refresh: e.refresh?.command ?? tabOf(e).refresh ?? null, missing: e.missing ?? [],

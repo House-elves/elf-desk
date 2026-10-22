@@ -223,6 +223,10 @@ class HttpSecurityTest {
                 .body(containsString("export * from '/static/bundle/kit"));
         desk().when().get("/elf-files/0123456789abcdef0123456789abcdef/ui/email.js").then().statusCode(404);
         desk().when().get("/elf-files/nope/ui/email.js").then().statusCode(404);
+        // An elf's images: no cookie needed either, but nothing without a key the desk made, nor outside a data folder.
+        desk().when().get("/elf-data/0123456789abcdef0123456789abcdef/agents/a.png").then().statusCode(404);
+        desk().when().get("/elf-data/nope/agents/a.png").then().statusCode(404);
+        desk().when().get("/elf-data/0123456789abcdef0123456789abcdef/..%2F..%2F.ssh/id_rsa.png").then().statusCode(404);
         // The rest of the desk still needs the session.
         desk().when().get("/files/1").then().statusCode(302);
     }

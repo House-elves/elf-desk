@@ -16,6 +16,7 @@ class ElfTab extends LitElement {
 
     static properties = {
         tab: { attribute: false },   // from tabs.js: {id, label, elf, missing, …}
+        route: {},                   // where in the tab the desk's link points (#<elf>/<route>)
     };
 
     static styles = [shared, css`
@@ -43,7 +44,7 @@ class ElfTab extends LitElement {
     render() {
         const t = this.tab;
         if (!t) return '';
-        if (!t.missing?.length) return html`<elf-frame elf=${t.elf}></elf-frame>`;
+        if (!t.missing?.length) return html`<elf-frame elf=${t.elf} .route=${this.route ?? ''}></elf-frame>`;
         const e = installedElf(t.elf);
         return html`<div class="setup">
             <div>

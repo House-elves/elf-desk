@@ -22,6 +22,7 @@ class ElfFrame extends LitElement {
     static properties = {
         elf: {},
         view: {},          // "tab" or "card"
+        route: {},         // where in its tab the desk's link points (see go)
         _height: { state: true },
         _ask: { state: true },       // {action, label, text, params, resolve}
         _settings: { state: true },  // {keys, heading}
@@ -137,6 +138,16 @@ class ElfFrame extends LitElement {
             case 'open':
                 location.hash = `#${elf}`;
                 return null;
+            case 'go': {
+                // A place in its own tab, as the desk's link: #<elf>/<route>, so Back and a shared link work.
+                const route = String(args.route ?? '').slice(0, 500).replace(/^\/+/, '');
+                if (/[\s#?]/.test(route)) throw new Error('Not a place in the tab');
+                this._sentRoute = route;
+                const hash = route ? `#${elf}/${route}` : `#${elf}`;
+                if (args.replace) history.replaceState(null, '', hash);
+                else if (location.hash !== hash) history.pushState(null, '', hash);
+                return null;
+            }
             case 'store-get': return storage(elf, args.key);
             case 'store-set': {
                 const value = args.value == null ? null : String(args.value);
@@ -217,7 +228,13 @@ class ElfFrame extends LitElement {
             const theme = currentTheme();
             this._key = crypto.randomUUID();
             this._src = `/elf-frame/${encodeURIComponent(this.elf)}?view=${this.view === 'card' ? 'card' : 'tab'}`
-                + (theme === 'system' ? '' : `&theme=${theme}`) + `&key=${this._key}`;
+                + (theme === 'system' ? '' : `&theme=${theme}`) + (this.route ? `&route=${encodeURIComponent(this.route)}` : '')
+                + `&key=${this._key}`;
+            this._sentRoute = this.route ?? '';
+        } else if (changed.has('route') && (this.route ?? '') !== this._sentRoute) {
+            // A new place in the same tab (a link, Back): the elf goes there without reloading.
+            this._sentRoute = this.route ?? '';
+            this._send({ event: 'route', route: this._sentRoute });
         }
     }
 

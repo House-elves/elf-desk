@@ -3,7 +3,7 @@ import { keyed } from 'lit/directives/keyed.js';
 import { shared, itemKeyFromHash } from './shared.js';
 import { api, connectionState, onConnectionChange, onBusyChange } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
-import { tabs, findTab, onTabsChange, setInstalledElves, installedElves } from './tabs.js';
+import { tabs, findTab, onTabsChange, setInstalledElves, installedElves, githubElf } from './tabs.js';
 import './desk-board.js';
 import './desk-settings.js';
 import './desk-thread.js';
@@ -155,14 +155,24 @@ class ElfDesk extends LitElement {
     }
 
     _viewFromHash() {
+        // With the github elf installed, its tab is the board: GitHub's old links (its settings, a thread) go there.
+        if (githubElf() && (['#github', '#settings'].includes(location.hash) || itemKeyFromHash(location.hash))) return 'tab:github';
         if (location.hash === '#settings') return 'github'; // the board's settings now live under GitHub
         if (location.hash === '#github' || location.hash === '#elves') return location.hash.slice(1);
         if (itemKeyFromHash(location.hash)) return 'thread';
-        // An elf's tab: #mail-triage. Until the runner has said which elves there are, it waits.
-        let id = location.hash.slice(1);
+        // An elf's tab: #mail-triage, or a place in it: #github/thread/quarkusio/quarkus/123 (see _route). Until the
+        // runner has said which elves there are, it waits.
+        let id = location.hash.slice(1).split('/')[0];
         if (MOVED[id] && !findTab(id) && findTab(MOVED[id])) id = MOVED[id];
         if (/^[a-z0-9][a-z0-9-]*$/.test(id)) return findTab(id) ? `tab:${id}` : installedElves() === null ? 'waiting' : 'no-tab';
         return 'dashboard';
+    }
+
+    /** Where in an elf's tab the hash points: what follows #<elf>/, or a thread's own link for the github elf. */
+    _route() {
+        if (githubElf() && itemKeyFromHash(location.hash)) return location.hash.slice(1);
+        const [, ...rest] = location.hash.slice(1).split('/');
+        return rest.join('/');
     }
 
     _current(tab) {
@@ -171,7 +181,7 @@ class ElfDesk extends LitElement {
 
     /** An elf's tab: its setup until it's set up, then what the elf draws. keyed: a different elf is a new frame. */
     _elfTab(t) {
-        return t ? keyed(t.elf, html`<elf-tab .tab=${t}></elf-tab>`) : '';
+        return t ? keyed(t.elf, html`<elf-tab .tab=${t} .route=${this._route()}></elf-tab>`) : '';
     }
 
     _pickTheme(id) {

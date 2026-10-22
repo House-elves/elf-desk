@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { shared, ago, spinner, Ticking } from './shared.js';
 import { api, errorMessage, onPush, onConnectionChange } from './rpc.js';
 import { boardHeadline, lastBoard } from './desk-board.js';
-import { tabs, onTabsChange } from './tabs.js';
+import { tabs, onTabsChange, githubElf } from './tabs.js';
 import './elf-frame.js';
 
 const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -87,6 +87,7 @@ class DeskDashboard extends LitElement {
     }
 
     async _loadBoard() {
+        if (githubElf()) return; // the github elf's card shows the board
         try {
             const desk = await api();
             this._board = await desk.board({ refresh: false });
@@ -138,8 +139,9 @@ class DeskDashboard extends LitElement {
         const elves = this._refreshable().filter(t => !this._refreshing(t)).map(t =>
             desk.runElf({ elf: t.elf, command: t.refresh, params: null })
                 .catch(e => problems.push(`${t.label}: ${errorMessage(e)}`)));
-        this._fetching = true;
-        const github = desk.board({ refresh: true })
+        // With the github elf installed, it's one of the elves above; otherwise the desk's own board is fetched.
+        this._fetching = !githubElf();
+        const github = githubElf() ? Promise.resolve() : desk.board({ refresh: true })
             .then(b => { this._board = b; this._errors = { ...this._errors, github: null }; })
             .catch(e => problems.push(`GitHub: ${errorMessage(e)}`))
             .finally(() => { this._fetching = false; });
@@ -199,7 +201,7 @@ class DeskDashboard extends LitElement {
 
     /** What Refresh everything does. */
     _refreshHint() {
-        const parts = ['fetches GitHub', ...this._refreshable().map(t => `runs ${t.label}`)];
+        const parts = [...(githubElf() ? [] : ['fetches GitHub']), ...this._refreshable().map(t => `runs ${t.label}`)];
         const text = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
         return `${text[0].toUpperCase()}${text.slice(1)}.`;
     }
@@ -221,7 +223,7 @@ class DeskDashboard extends LitElement {
                 </div>
                 ${this._refreshError ? html`<p class="error" role="alert">${this._refreshError}</p>` : ''}
                 <div class="tabs">
-                    ${this._github()}
+                    ${githubElf() ? '' : this._github()}
                     ${this._cards().map(t => this._elfCard(t))}
                     ${!this._cards().length ? html`<p class="hint">Elves you add with the <a href="#elves">+</a> at the end of the tabs show
                         what needs you here.</p>` : ''}
