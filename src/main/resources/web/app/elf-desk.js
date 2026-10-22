@@ -29,7 +29,7 @@ class ElfDesk extends LitElement {
     static properties = {
         _view: { state: true },
         _conn: { state: true },
-        _versions: { state: true },  // {desk, runner, runnerProtocol}: what's running, at the bottom of the page
+        _versions: { state: true },  // {desk, runner, runnerProtocol}: what's running; the desk's shows by its name
         _busy: { state: true },
         _theme: { state: true },
         _tabsChanged: { state: true },
@@ -60,15 +60,12 @@ class ElfDesk extends LitElement {
         .right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
         .conn { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
         .conn.lost { color: var(--bad); }
-        .themes {
-            display: inline-flex; padding: 2px; border-radius: 999px;
+        .theme {
+            display: inline-flex; padding: 6px; border-radius: 999px; color: var(--muted);
             background: var(--surface-2); border: 1px solid var(--line);
         }
-        .themes button {
-            border: 0; background: transparent; padding: 5px; border-radius: 999px; color: var(--muted);
-        }
-        .themes button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
-        .themes svg { width: 16px; height: 16px; display: block; }
+        .theme:hover { color: var(--ink); }
+        .theme svg { width: 16px; height: 16px; display: block; }
         /* The loader: a thin bar along the header's bottom edge while any call is in flight. */
         .progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; pointer-events: none; }
         .progress span {
@@ -86,15 +83,12 @@ class ElfDesk extends LitElement {
         .lost {
             background: var(--bad-soft); color: var(--bad); padding: 9px 24px; text-align: center; font-size: 14px;
         }
-        main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 48px; }
-        .versions { max-width: 1180px; margin: 0 auto; padding: 0 24px 32px; display: flex; flex-wrap: wrap; gap: 4px 18px;
-            font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-        .versions a { color: inherit; text-decoration: none; }
-        .versions a:hover { color: var(--ink); text-decoration: underline; }
+        main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+        /* Its version, quietly, right after the name (the bar's gap would push it away). */
+        .version { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; margin-left: -14px; }
         @media (max-width: 640px) {
             .bar { padding: 10px 16px; }
-            main { padding: 22px 16px 40px; }
-            .versions { padding: 0 16px 24px; }
+            main { padding: 22px 16px 64px; }
         }
     `];
 
@@ -121,9 +115,13 @@ class ElfDesk extends LitElement {
         });
         this._offConn = onConnectionChange(s => {
             this._conn = s;
-            if (s === 'open') this._loadElves();
+            if (s === 'open') {
+                this._loadElves();
+                this._loadVersions(); // the desk's own, so not waiting on the runner
+            }
         });
         this._loadElves();
+        this._loadVersions();
         this._offRunner = onPush('desk.runner', () => this._loadVersions());
         // Show the bar only for calls that take a moment, so quick ones don't flicker.
         this._offBusy = onBusyChange(busy => {
@@ -150,7 +148,6 @@ class ElfDesk extends LitElement {
         try {
             const r = await (await api()).elves();
             setInstalledElves(r.elves ?? []);
-            this._loadVersions();
             let welcomed = true;
             try { welcomed = !!localStorage.getItem(WELCOMED); } catch { /* no storage: never redirect */ }
             if (!r.elves?.length && !welcomed && this._view === 'dashboard') {
@@ -171,11 +168,11 @@ class ElfDesk extends LitElement {
         }
     }
 
-    /** Which Elf Desk this is (each elf shows its own version in its settings). */
+    /** Which Elf Desk this is, next to its name (each elf shows its own version in its settings). */
     _renderVersions() {
         const v = this._versions?.desk;
         if (!v) return '';
-        return html`<footer class="versions">Elf Desk ${v.includes('SNAPSHOT') ? 'local build' : `v${v}`}</footer>`;
+        return html`<span class="version" title="Elf Desk's version">${v.includes('SNAPSHOT') ? 'local build' : `v${v}`}</span>`;
     }
 
     _viewFromHash() {
@@ -208,6 +205,17 @@ class ElfDesk extends LitElement {
         return t ? keyed(t.elf, html`<elf-tab .tab=${t} .route=${this._route()}></elf-tab>`) : '';
     }
 
+    /** One button: the theme it is now; each click goes to the next (match system, light, dark). */
+    _renderTheme() {
+        const i = Math.max(0, THEMES.findIndex(t => t.id === this._theme));
+        const now = THEMES[i], next = THEMES[(i + 1) % THEMES.length];
+        return html`<button class="theme" title="${now.label}. Click for ${next.label.toLowerCase()}."
+                aria-label="Theme: ${now.label}. Switch to ${next.label.toLowerCase()}" @click=${() => this._pickTheme(next.id)}>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${now.icon}</svg>
+        </button>`;
+    }
+
     _pickTheme(id) {
         this._theme = id;
         setTheme(id);
@@ -228,6 +236,7 @@ class ElfDesk extends LitElement {
                         </svg>
                         <span>Elf Desk</span>
                     </a>
+                    ${this._renderVersions()}
                     <nav aria-label="Views">
                         <a href="#" aria-current=${this._view === 'dashboard' ? 'page' : 'false'}>Dashboard</a>
                         ${tabs().map(t => html`
@@ -238,14 +247,7 @@ class ElfDesk extends LitElement {
                     <div class="right">
                         ${this._conn !== 'open' ? html`
                             <span class="conn ${this._conn}">${this._conn === 'lost' ? 'Disconnected' : 'Connecting…'}</span>` : ''}
-                        <div class="themes" role="group" aria-label="Theme">
-                            ${THEMES.map(t => html`
-                                <button title=${t.label} aria-label=${t.label} aria-pressed=${this._theme === t.id ? 'true' : 'false'}
-                                        @click=${() => this._pickTheme(t.id)}>
-                                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-                                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${t.icon}</svg>
-                                </button>`)}
-                        </div>
+                        ${this._renderTheme()}
                     </div>
                 </div>
                 <div class="progress ${this._busy ? 'on' : ''}" role="progressbar" aria-label="Loading"
@@ -266,7 +268,6 @@ class ElfDesk extends LitElement {
                     : this._view === 'github' ? html`<desk-board ?settingsOpen=${location.hash === '#settings'}></desk-board>`
                     : html`<desk-dashboard></desk-dashboard>`}
             </main>
-            ${this._renderVersions()}
         `;
     }
 }
