@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { calendarText, shared, spinner } from './shared.js';
+import { calendarText, settingsToggle, shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { BUILTIN, setInstalledElves, setCatalog, updateFor } from './tabs.js';
 import './diff-view.js';
@@ -269,11 +269,14 @@ class DeskElves extends LitElement {
         this._maker = maker;
         const fresh = installed && !installed.some(e => e.name !== BUILTIN);
         return html`<div class="page">
-            <div>
+            <div class="page-top"><div>
                 <h1>Add an elf</h1>
                 <p class="intro">Each elf does one job, on a schedule or when you refresh it, here on this machine and as you.
                     Anything that sends or posts still waits for your click. Each elf you add gets its own tab.</p>
-            </div>
+            </div>${settingsToggle(false, () => this.renderRoot.querySelector('#sources').show())}</div>
+            <elf-settings-dialog id="sources" elf="elf-runner" .keys=${['ELF_SOURCES']} heading="Where elves come from"
+                note="Besides House-elves and your own account. Only readable by you."
+                @elf-settings-saved=${() => this._load()}></elf-settings-dialog>
             ${fresh ? html`<section aria-labelledby="setup-h">
                 <h2 id="setup-h">Set up your desk</h2>
                 <ol class="steps">
@@ -300,7 +303,8 @@ class DeskElves extends LitElement {
             </section>` : ''}
             <section aria-labelledby="available-h">
                 <h2 id="available-h">Elves you can add</h2>
-                <p class="hint">Repos with the <code>house-elf</code> topic: House-elves' own, and your private ones.</p>
+                <p class="hint">Repos with the <code>house-elf</code> topic: House-elves' own, your own (private ones too), and
+                    those from the places in Settings.</p>
                 ${this._catalogError ? html`<p class="error" role="alert">${this._catalogError}</p>` : ''}
                 ${!this._catalog ? html`<div class="skeleton sk"></div>`
                     : available.length ? available.map(c => this._available(c))

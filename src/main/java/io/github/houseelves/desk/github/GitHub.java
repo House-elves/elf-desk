@@ -233,13 +233,25 @@ public class GitHub {
      * Each comes with its elf.yaml at the newest commit of its default branch.
      */
     public List<ElfRepo> elfRepos(String token, String login) {
+        return elfRepos(token, login, List.of());
+    }
+
+    /**
+     * The same, and those from the places you said elves may also come from (sources: GitHub accounts and owner/name
+     * repos, the runner's ELF_SOURCES). A single repo is looked up directly, and has to be tagged house-elf too.
+     */
+    public List<ElfRepo> elfRepos(String token, String login, List<String> sources) {
         Map<String, Object> vars = new HashMap<>();
         vars.put("pub", "topic:house-elf org:House-elves archived:false");
         vars.put("mine", "topic:house-elf user:" + login + " archived:false");
+        // Several user: qualifiers are any of them; with none, a query that finds nothing.
+        String owners = sources.stream().filter(x -> !x.contains("/")).map(x -> "user:" + x).collect(java.util.stream.Collectors.joining(" "));
+        vars.put("more", owners.isEmpty() ? "topic:house-elf repo:House-elves/none-at-all" : "topic:house-elf archived:false " + owners);
         JsonNode data = call(token, """
-                query($pub: String!, $mine: String!) {
+                query($pub: String!, $mine: String!, $more: String!) {
                   pub: search(query: $pub, type: REPOSITORY, first: 50) { nodes { ...elf } }
                   mine: search(query: $mine, type: REPOSITORY, first: 50) { nodes { ...elf } }
+                  more: search(query: $more, type: REPOSITORY, first: 50) { nodes { ...elf } }
                 }
                 fragment elf on Repository {
                   nameWithOwner description isPrivate url viewerPermission
@@ -247,7 +259,7 @@ public class GitHub {
                   manifest: object(expression: "HEAD:elf.yaml") { ... on Blob { text } }
                 }""", vars);
         Map<String, ElfRepo> repos = new java.util.TreeMap<>();
-        for (String list : List.of("pub", "mine")) {
+        for (String list : List.of("pub", "mine", "more")) {
             for (JsonNode n : data.path(list).path("nodes")) {
                 String commit = n.path("defaultBranchRef").path("target").path("oid").asText(null);
                 if (!n.hasNonNull("nameWithOwner") || commit == null) continue;
@@ -256,17 +268,34 @@ public class GitHub {
                         n.path("manifest").path("text").asText(null), canPush(n)));
             }
         }
+        for (String one : sources) {
+            if (!one.contains("/") || repos.containsKey(one)) continue;
+            try {
+                ElfRepo r = elfRepo(token, login, one, sources);
+                if (r != null) repos.put(r.repo(), r);
+            } catch (RuntimeException e) {
+                // a repo that's gone or not tagged: it just isn't listed
+            }
+        }
         return List.copyOf(repos.values());
+    }
+
+    public ElfRepo elfRepo(String token, String login, String repo) {
+        return elfRepo(token, login, repo, List.of());
     }
 
     /**
      * One elf repo, looked up directly: search takes a while to list a repo that was just tagged (one Elf Maker just
-     * published). The same rules as elfRepos: in House-elves or your own account, tagged house-elf, not archived.
+     * published). The same rules as elfRepos: in House-elves, your own account or your sources, tagged house-elf, not
+     * archived.
      * Null if it isn't one.
      */
-    public ElfRepo elfRepo(String token, String login, String repo) {
+    public ElfRepo elfRepo(String token, String login, String repo, List<String> sources) {
         String[] parts = repo.split("/", 2);
-        if (parts.length != 2 || !(parts[0].equals("House-elves") || parts[0].equalsIgnoreCase(login))) return null;
+        if (parts.length != 2) return null;
+        boolean allowed = parts[0].equals("House-elves") || parts[0].equalsIgnoreCase(login)
+                || sources.stream().anyMatch(x -> x.equalsIgnoreCase(parts[0]) || x.equalsIgnoreCase(repo));
+        if (!allowed) return null;
         Map<String, Object> vars = new HashMap<>();
         vars.put("owner", parts[0]);
         vars.put("name", parts[1]);

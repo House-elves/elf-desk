@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { shared, closeX } from './shared.js';
 import { api, errorMessage, onPush } from './rpc.js';
 import { currentTheme } from './theme.js';
-import { BUILTIN, findTab, installedElf, tabOf } from './tabs.js';
+import { BUILTIN, findTab, installedElf, installedElves, setInstalledElves, tabOf } from './tabs.js';
 import './elf-settings.js';
 import './elf-manage.js';
 import './elf-schedule.js';
@@ -152,6 +152,33 @@ class ElfFrame extends LitElement {
                 if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/.test(repo)) throw new Error('Not a repo');
                 location.hash = `#elves/${repo}`;
                 return null;
+            }
+            case 'installed': {
+                // Only Elf Maker: which elves are on this desk, to offer Open, Update or Remove instead of Add.
+                if (elf !== BUILTIN) throw new Error('Only Elf Maker reads which elves are added');
+                return (installedElves() ?? []).filter(e => e.name !== BUILTIN).map(e => ({ name: e.name, title: e.title ?? e.name,
+                    repo: e.repo, commit: e.commit, version: e.version ?? null }));
+            }
+            case 'remove-elf': {
+                // Only Elf Maker, and only after you confirm it in the desk's own bar. Its settings stay.
+                if (elf !== BUILTIN) throw new Error('Only Elf Maker removes elves');
+                const target = installedElf(String(args.elf ?? ''));
+                if (!target || target.name === BUILTIN) throw new Error('That elf isn\'t on your desk');
+                const title = target.title || target.name;
+                const yes = await new Promise(resolve => {
+                    this._ask?.resolve(false);
+                    this._ask = { action: { label: `Remove ${title}` }, text: `Remove ${title} from your desk? Its tab goes; its settings stay, for if you add it again.`,
+                        params: {}, resolve };
+                });
+                this._ask = null;
+                if (!yes) {
+                    const e = new Error('Cancelled');
+                    e.cancelled = true;
+                    throw e;
+                }
+                const r = await desk.removeElf({ elf: target.name });
+                if (r?.elves) setInstalledElves(r.elves);
+                return { removed: target.name };
             }
             case 'go': {
                 // A place in its own tab, as the desk's link: #<elf>/<route>, so Back and a shared link work.

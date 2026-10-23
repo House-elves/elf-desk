@@ -187,6 +187,10 @@ export const elf = {
      * what the elf reads and writes and add it, or update it if it's added already.
      */
     addElf: repo => call('add-elf', { repo }),
+    /** Elf Maker only: the elves on this desk, [{name, title, repo, commit, version}]. */
+    installed: () => call('installed'),
+    /** Elf Maker only: removes an elf from the desk, after you confirm it in the desk's bar. Its settings stay. */
+    removeElf: name => call('remove-elf', { elf: name }),
 
     /** Goes to its tab on the desk (from its dashboard card, say). */
     open: () => call('open'),

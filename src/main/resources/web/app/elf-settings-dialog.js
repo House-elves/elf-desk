@@ -21,6 +21,7 @@ class ElfSettingsDialog extends LitElement {
         heading: {},
         note: {},
         manageOnly: { type: Boolean },
+        keys: { attribute: false },   // only these settings (default: all)
         _open: { state: true },
     };
 
@@ -50,7 +51,7 @@ class ElfSettingsDialog extends LitElement {
                 ${e ? html`<elf-manage only="update" elf=${this.elf}></elf-manage>` : ''}
                 ${this.manageOnly ? html`<h2>${this.heading ?? `${e?.title ?? this.elf}`}</h2>` : html`
                     ${own ? html`<h2>${heading}</h2><elf-frame elf=${this.elf} view="settings"></elf-frame>` : ''}
-                    <elf-settings elf=${this.elf} heading=${own ? 'Its setup' : heading}
+                    <elf-settings elf=${this.elf} .keys=${this.keys} heading=${own ? 'Its setup' : heading}
                         note=${this.note ?? 'Only readable by you. Secrets are never shown.'}></elf-settings>
                     ${e?.refresh ? html`<div class="when"><elf-schedule .elf=${e}></elf-schedule></div>` : ''}`}
                 ${e ? html`<elf-manage class="when" only="rest" elf=${this.elf}

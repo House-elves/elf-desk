@@ -67,11 +67,32 @@ public class ElvesService {
         }
         ObjectNode out = mapper.createObjectNode();
         ArrayNode list = out.putArray("elves");
-        for (GitHub.ElfRepo r : github.elfRepos(token, login)) {
+        for (GitHub.ElfRepo r : github.elfRepos(token, login, sources())) {
             if (r.repo().equals(BUILTIN_REPO)) continue; // it comes with the desk
             list.add(entry(r, installed.get(r.repo())));
         }
         return out;
+    }
+
+    @Inject
+    io.github.houseelves.desk.settings.ElfSettings settings;
+
+    /**
+     * Where else elves may come from: the runner's ELF_SOURCES (the + page's Settings), GitHub accounts and
+     * owner/name repos. The runner checks the same list when it installs one. Empty if the runner can't say.
+     */
+    List<String> sources() {
+        if (!hub.connected()) return List.of();
+        try {
+            for (JsonNode s : settings.get("elf-runner").path("settings")) {
+                if (!s.path("key").asText().equals("ELF_SOURCES")) continue;
+                return java.util.Arrays.stream(s.path("value").asText("").split(",")).map(String::strip)
+                        .filter(x -> x.matches("[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(/[A-Za-z0-9._-]{1,100})?")).toList();
+            }
+        } catch (RuntimeException e) {
+            // an older runner, without the setting
+        }
+        return List.of();
     }
 
     /** One elf repo as the catalog shows it, looked up directly (an elf Elf Maker just published); null if it isn't one. */
@@ -79,8 +100,8 @@ public class ElvesService {
         if (repo == null || !repo.matches("[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}") || repo.equals(BUILTIN_REPO)) {
             throw new IllegalArgumentException("Not an elf repo");
         }
-        GitHub.ElfRepo r = github.elfRepo(token, login, repo);
-        if (r == null) throw new IllegalArgumentException(repo + " isn't an elf you can add here: it's in House-elves or your account, tagged house-elf");
+        GitHub.ElfRepo r = github.elfRepo(token, login, repo, sources());
+        if (r == null) throw new IllegalArgumentException(repo + " isn't an elf you can add here: it's in House-elves, your account or the + page's Settings, tagged house-elf");
         JsonNode i = null;
         if (hub.connected()) {
             for (JsonNode e : installed().path("elves")) if (e.path("repo").asText().equals(r.repo())) i = e;
@@ -161,7 +182,7 @@ public class ElvesService {
      */
     public JsonNode install(String login, String token, String repo, String commit) {
         if (repo == null || commit == null || !COMMIT.matcher(commit).matches()) throw new IllegalArgumentException("Bad repo or commit");
-        if (github.elfRepo(token, login, repo) == null) throw new IllegalArgumentException(repo + " isn't an elf you can install here");
+        if (github.elfRepo(token, login, repo, sources()) == null) throw new IllegalArgumentException(repo + " isn't an elf you can install here");
         return ask(hub.message("elf.install").put("repo", repo).put("commit", commit), 300);
     }
 

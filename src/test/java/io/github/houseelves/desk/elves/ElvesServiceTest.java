@@ -60,12 +60,13 @@ class ElvesServiceTest {
         elves.mapper = mapper;
         elves.hub = mock(RunnerHub.class);
         elves.github = mock(GitHub.class);
+        elves.settings = mock(io.github.houseelves.desk.settings.ElfSettings.class);
         when(elves.hub.message(any())).thenAnswer(i -> mapper.createObjectNode().put("type", (String) i.getArgument(0)));
     }
 
     @Test
     void theCatalogSaysWhatEachElfDoesAndWhichAreInstalled() throws Exception {
-        when(elves.github.elfRepos("token", "me")).thenReturn(List.of(
+        when(elves.github.elfRepos(eq("token"), eq("me"), any())).thenReturn(List.of(
                 new GitHub.ElfRepo("House-elves/weekly-status", "", false, "https://github.com/House-elves/weekly-status", COMMIT, YAML),
                 new GitHub.ElfRepo("me/expenses", "Mine", true, "https://github.com/me/expenses", COMMIT, null)));
         when(elves.hub.connected()).thenReturn(true);
@@ -96,8 +97,19 @@ class ElvesServiceTest {
     }
 
     @Test
+    void elvesAlsoComeFromYourSources() throws Exception {
+        when(elves.hub.connected()).thenReturn(true);
+        when(elves.settings.get("elf-runner")).thenReturn(mapper.readTree(
+                "{\"settings\": [{\"key\": \"ELF_SOURCES\", \"value\": \"colleague, other/one, not a source\"}]}"));
+        when(elves.hub.request(any(), eq(RunnerHub.ELVES_SINCE))).thenReturn(CompletableFuture.completedFuture(
+                mapper.readTree("{\"status\": 200, \"body\": \"{\\\"elves\\\": []}\"}")));
+        elves.catalog("me", "token");
+        verify(elves.github).elfRepos("token", "me", List.of("colleague", "other/one"));
+    }
+
+    @Test
     void elfMakerComesWithTheDesk() throws Exception {
-        when(elves.github.elfRepos("token", "me")).thenReturn(List.of(
+        when(elves.github.elfRepos(eq("token"), eq("me"), any())).thenReturn(List.of(
                 new GitHub.ElfRepo("House-elves/elf-maker", "", false, "", COMMIT, YAML),
                 new GitHub.ElfRepo("House-elves/weekly-status", "", false, "", COMMIT, YAML)));
         var list = elves.catalog("me", "token").path("elves");
@@ -110,7 +122,7 @@ class ElvesServiceTest {
     @Test
     void onlyAnElfFromTheCatalogInstalls() throws Exception {
         // Looked up directly (search is slow to list a repo just tagged): a repo GitHub doesn't say is an elf is null.
-        when(elves.github.elfRepo("token", "me", "House-elves/weekly-status")).thenReturn(
+        when(elves.github.elfRepo(eq("token"), eq("me"), eq("House-elves/weekly-status"), any())).thenReturn(
                 new GitHub.ElfRepo("House-elves/weekly-status", "", false, "", COMMIT, YAML));
         assertThrows(IllegalArgumentException.class, () -> elves.install("me", "token", "someone/evil", COMMIT));
         assertThrows(IllegalArgumentException.class, () -> elves.install("me", "token", "House-elves/weekly-status", "main"));
