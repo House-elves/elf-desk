@@ -194,8 +194,11 @@ export const elf = {
 
     /** Goes to its tab on the desk (from its dashboard card, say). */
     open: () => call('open'),
-    /** Goes to another installed elf's tab (by its name, e.g. mvnpm-dependabot); rejects if it has none. */
-    openElf: name => call('open', { elf: name }),
+    /**
+     * Goes to another installed elf's tab (by its name, e.g. mvnpm-dependabot); rejects if it has none. With a route,
+     * to that page of its tab (the GitHub elf's thread of a PR, say: 'thread/quarkusio/quarkus/123').
+     */
+    openElf: (name, route) => call('open', route == null ? { elf: name } : { elf: name, route }),
 
     /** A little memory for the tab (unsent edits, say), kept by the desk in this browser. Values are strings. */
     store: {
