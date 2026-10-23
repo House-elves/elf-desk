@@ -96,9 +96,22 @@ class ElvesServiceTest {
     }
 
     @Test
-    void onlyAnElfFromTheCatalogInstalls() throws Exception {
+    void elfMakerComesWithTheDesk() throws Exception {
         when(elves.github.elfRepos("token", "me")).thenReturn(List.of(
+                new GitHub.ElfRepo("House-elves/elf-maker", "", false, "", COMMIT, YAML),
                 new GitHub.ElfRepo("House-elves/weekly-status", "", false, "", COMMIT, YAML)));
+        var list = elves.catalog("me", "token").path("elves");
+        assertEquals(1, list.size());
+        assertEquals("House-elves/weekly-status", list.get(0).path("repo").asText());
+        assertThrows(IllegalArgumentException.class, () -> elves.remove("elf-maker"));
+        assertThrows(IllegalArgumentException.class, () -> elves.elfRepo("me", "token", "House-elves/elf-maker"));
+    }
+
+    @Test
+    void onlyAnElfFromTheCatalogInstalls() throws Exception {
+        // Looked up directly (search is slow to list a repo just tagged): a repo GitHub doesn't say is an elf is null.
+        when(elves.github.elfRepo("token", "me", "House-elves/weekly-status")).thenReturn(
+                new GitHub.ElfRepo("House-elves/weekly-status", "", false, "", COMMIT, YAML));
         assertThrows(IllegalArgumentException.class, () -> elves.install("me", "token", "someone/evil", COMMIT));
         assertThrows(IllegalArgumentException.class, () -> elves.install("me", "token", "House-elves/weekly-status", "main"));
         verify(elves.hub, never()).request(any(), any());
