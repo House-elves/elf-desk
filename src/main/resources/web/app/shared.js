@@ -53,7 +53,8 @@ export const shared = css`
     button:disabled { opacity: 0.55; cursor: default; }
     button.sm, .btn.sm { padding: 6px 11px; font-size: 13px; }
 
-    input[type="text"], select, textarea {
+    input[type="text"], input[type="number"], input[type="password"], input[type="email"], input[type="time"],
+    input[type="url"], input[type="search"], select, textarea {
         font: 15px/1.5 var(--font); color: var(--ink); background: var(--surface);
         border: 1px solid var(--line); border-radius: var(--r-control); padding: 8px 12px;
     }
@@ -98,8 +99,10 @@ export const shared = css`
         border-radius: 8px; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
     button.dialog-x:hover { color: var(--ink); background: var(--surface-2); }
     button.dialog-x svg { width: 16px; height: 16px; }
-    /* What comes first in the pop-up keeps clear of it. */
-    button.dialog-x + * { margin-right: 36px; }
+    /* What comes first in the pop-up keeps its text clear of it, but not its box: boxes line up with the ones below.
+       A heading right after it makes room; a component reads --dialog-x-room for its own heading (it inherits). */
+    button.dialog-x + h1, button.dialog-x + h2, button.dialog-x + h3 { margin-right: 36px; }
+    button.dialog-x + * { --dialog-x-room: 36px; }
 `;
 
 /** The Settings button in a tab's title row: opens that tab's settings above its content. */

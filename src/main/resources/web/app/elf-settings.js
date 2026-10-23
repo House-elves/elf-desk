@@ -26,7 +26,7 @@ class ElfSettings extends LitElement {
     static styles = [shared, css`
         :host { display: block; }
         section { display: grid; gap: 12px; }
-        .head { display: grid; gap: 2px; }
+        .head { display: grid; gap: 2px; padding-right: var(--dialog-x-room, 0px); }
         h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
         .hint { font-size: 14px; color: var(--muted); margin: 0; }
         code { font: 13px var(--font-code); background: var(--surface-2); padding: 2px 6px; border-radius: 5px; }

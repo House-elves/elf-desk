@@ -31,6 +31,7 @@ class ElfManage extends LitElement {
             padding: 10px 12px; border-radius: var(--r-control); background: var(--surface-2); }
         .commits { margin: 0; padding-left: 18px; font: 13px var(--font-code); }
         code { font: 13px var(--font-code); }
+        .update > .row:first-child { padding-right: var(--dialog-x-room, 0px); }
         .update { padding: 12px 14px; border-radius: var(--r-control); background: var(--warn-soft);
             border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--line)); }
     `];
