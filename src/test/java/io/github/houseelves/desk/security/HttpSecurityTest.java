@@ -208,7 +208,9 @@ class HttpSecurityTest {
         // No runner in tests, so no such elf; the page is sandboxed and only framed by the desk all the same.
         var r = desk().cookie(cookie(), s.session()).when().get("/elf-frame/mail-triage").then().statusCode(404).extract();
         String csp = r.header("Content-Security-Policy");
-        assertTrue(csp.contains("sandbox allow-scripts allow-popups"), csp);
+        assertTrue(csp.contains("sandbox allow-scripts allow-forms allow-popups"), csp);
+        // Forms submit to the elf's own script only: never to a URL.
+        assertTrue(csp.contains("form-action 'none'"), csp);
         assertFalse(csp.contains("allow-same-origin"), csp);
         assertTrue(csp.contains("connect-src 'none'"), csp);
         assertTrue(csp.contains("frame-ancestors http://elf-desk.localhost:" + RestAssured.port), csp);

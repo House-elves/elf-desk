@@ -91,11 +91,12 @@ public class ElfFrames {
                 .putHeader("Cache-Control", "no-store")
                 .putHeader("Referrer-Policy", "no-referrer")
                 .putHeader("X-Content-Type-Options", "nosniff")
-                // The sandbox here too, so the page is never more than this, however it's opened.
+                // The sandbox here too, so the page is never more than this, however it's opened. Forms may submit,
+                // so an elf's form reaches its own script (Enter in a field), but form-action 'none' sends them nowhere.
                 .putHeader("Content-Security-Policy", "default-src 'none'; script-src " + origin
                         + "; style-src " + origin + " 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
                         + "; img-src " + origin + " data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'"
-                        + "; frame-ancestors " + origin + "; sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox");
+                        + "; frame-ancestors " + origin + "; sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox");
         if (t == null) {
             rc.response().setStatusCode(404).end("""
                     <!doctype html><meta charset="utf-8"><body style="font: 15px system-ui; color: #56635b">

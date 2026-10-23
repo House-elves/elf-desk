@@ -294,7 +294,7 @@ class ElfFrame extends LitElement {
     render() {
         return html`
             <iframe src=${this._src} title=${installedElf(this.elf)?.title ?? this.elf} style="height:${this._height || { card: 60, settings: 24 }[this.view] || 400}px"
-                    sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" allow="clipboard-write"
+                    sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox" allow="clipboard-write"
                     referrerpolicy="no-referrer"></iframe>
             ${this._askBar()}
             ${this._settingsDialog()}
