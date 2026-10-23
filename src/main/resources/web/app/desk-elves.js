@@ -254,6 +254,8 @@ class DeskElves extends LitElement {
                 <div class="acts">
                     <button class="primary" ?disabled=${!!this._busy} @click=${() => this._install(c)}>
                         ${this._busy === `install:${c.repo}` ? spinner : ''}Add ${m.title || m.name}</button>
+                    ${c.canChange && this._maker ? html`<button class="quiet" @click=${() => { location.hash = `#${BUILTIN}/change/${c.repo}`; }}>
+                        Change it</button>` : ''}
                     <span class="hint">${m.tab ? 'Then its new tab helps you set it up.' : 'Then set it up below.'}</span>
                 </div>`}
         </article>`;
@@ -264,6 +266,7 @@ class DeskElves extends LitElement {
         const available = (this._catalog ?? []).filter(c => !c.installed);
         const tabless = (installed ?? []).filter(e => !e.tab && !e.tabs?.length);
         const maker = (installed ?? []).some(e => e.name === BUILTIN);
+        this._maker = maker;
         const fresh = installed && !installed.some(e => e.name !== BUILTIN);
         return html`<div class="page">
             <div>
@@ -287,9 +290,12 @@ class DeskElves extends LitElement {
             ${maker ? html`<section aria-labelledby="make-h">
                 <h2 id="make-h">Make your own</h2>
                 <div class="panel make">
-                    <p>Can't find the elf you want? Say what it should do, and Elf Maker works out how it would work, builds it,
-                        and adds it here once you've read it.</p>
-                    <button class="primary" @click=${() => { location.hash = `#${BUILTIN}`; }}>Create an elf</button>
+                    <p>Can't find the elf you want? Say what it should do, and Elf Maker works out how it would work and builds it.
+                        It changes the elves you have too: you ask, and read each version before it's published.</p>
+                    <div class="acts">
+                        <button class="primary" @click=${() => { location.hash = `#${BUILTIN}`; }}>Create an elf</button>
+                        <button @click=${() => { location.hash = `#${BUILTIN}/mine`; }}>Change your elves</button>
+                    </div>
                 </div>
             </section>` : ''}
             <section aria-labelledby="available-h">

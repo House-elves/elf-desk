@@ -219,7 +219,13 @@ public class GitHub {
     }
 
     /** A repo that holds an elf: its name, description, newest commit, and its elf.yaml at that commit. */
-    public record ElfRepo(String repo, String description, boolean isPrivate, String url, String commit, String manifest) {
+    /** @param canPush you can push to it, so Elf Maker can change it for you */
+    public record ElfRepo(String repo, String description, boolean isPrivate, String url, String commit, String manifest,
+            boolean canPush) {
+        public ElfRepo(String repo, String description, boolean isPrivate, String url, String commit, String manifest) {
+            this(repo, description, isPrivate, url, commit, manifest, false);
+        }
+
     }
 
     /**
@@ -236,7 +242,7 @@ public class GitHub {
                   mine: search(query: $mine, type: REPOSITORY, first: 50) { nodes { ...elf } }
                 }
                 fragment elf on Repository {
-                  nameWithOwner description isPrivate url
+                  nameWithOwner description isPrivate url viewerPermission
                   defaultBranchRef { target { oid } }
                   manifest: object(expression: "HEAD:elf.yaml") { ... on Blob { text } }
                 }""", vars);
@@ -247,7 +253,7 @@ public class GitHub {
                 if (!n.hasNonNull("nameWithOwner") || commit == null) continue;
                 repos.put(n.path("nameWithOwner").asText(), new ElfRepo(n.path("nameWithOwner").asText(),
                         n.path("description").asText(""), n.path("isPrivate").asBoolean(), n.path("url").asText(""), commit,
-                        n.path("manifest").path("text").asText(null)));
+                        n.path("manifest").path("text").asText(null), canPush(n)));
             }
         }
         return List.copyOf(repos.values());
@@ -267,7 +273,7 @@ public class GitHub {
         JsonNode n = call(token, """
                 query($owner: String!, $name: String!) {
                   repository(owner: $owner, name: $name) {
-                    nameWithOwner description isPrivate url isArchived
+                    nameWithOwner description isPrivate url isArchived viewerPermission
                     repositoryTopics(first: 20) { nodes { topic { name } } }
                     defaultBranchRef { target { oid } }
                     manifest: object(expression: "HEAD:elf.yaml") { ... on Blob { text } }
@@ -279,7 +285,11 @@ public class GitHub {
         String commit = n.path("defaultBranchRef").path("target").path("oid").asText(null);
         if (!tagged || commit == null) return null;
         return new ElfRepo(n.path("nameWithOwner").asText(), n.path("description").asText(""), n.path("isPrivate").asBoolean(),
-                n.path("url").asText(""), commit, n.path("manifest").path("text").asText(null));
+                n.path("url").asText(""), commit, n.path("manifest").path("text").asText(null), canPush(n));
+    }
+
+    static boolean canPush(JsonNode repo) {
+        return List.of("ADMIN", "MAINTAIN", "WRITE").contains(repo.path("viewerPermission").asText());
     }
 
     /** How many commits a PR has. */

@@ -91,7 +91,7 @@ public class ElvesService {
     ObjectNode entry(GitHub.ElfRepo r, JsonNode installed) {
         ObjectNode n = mapper.createObjectNode().put("repo", r.repo()).put("description", r.description())
                 .put("private", r.isPrivate()).put("official", r.repo().startsWith(OFFICIAL)).put("url", r.url())
-                .put("commit", r.commit());
+                .put("commit", r.commit()).put("canChange", r.canPush());
         try {
             n.set("manifest", preview(r.manifest()));
         } catch (Exception e) {
