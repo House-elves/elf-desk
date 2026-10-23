@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
-import { installedElf, setInstalledElves, setCatalog } from './tabs.js';
+import { BUILTIN, installedElf, setInstalledElves, setCatalog } from './tabs.js';
 import './diff-view.js';
 
 const short = sha => (sha ?? '').slice(0, 7);
@@ -144,7 +144,7 @@ class ElfManage extends LitElement {
                 </div>
                 ${c ? this._renderChanges(e, c) : ''}
             </section>
-            <section aria-label="Remove">
+            ${e.name === BUILTIN ? html`<p class="hint">Elf Maker comes with the desk, and updates with it.</p>` : html`<section aria-label="Remove">
                 <h3>Remove</h3>
                 ${this._removing ? html`<div class="confirm" role="group" aria-label="Remove ${e.title || e.name}">
                     Remove ${e.title || e.name}${e.tab ? ' and its tab' : ''}? Its settings stay, for if you add it again.
@@ -154,7 +154,7 @@ class ElfManage extends LitElement {
                 </div>` : html`<div class="row">
                     <button class="sm quiet danger" ?disabled=${!!this._busy} @click=${() => { this._removing = true; }}>Remove ${e.title || e.name}</button>
                 </div>`}
-            </section>`;
+            </section>`}`;
     }
 }
 

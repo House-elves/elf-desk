@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { shared, closeX } from './shared.js';
 import { api, errorMessage, onPush } from './rpc.js';
 import { currentTheme } from './theme.js';
-import { findTab, installedElf, tabOf } from './tabs.js';
+import { BUILTIN, findTab, installedElf, tabOf } from './tabs.js';
 import './elf-settings.js';
 import './elf-manage.js';
 import './elf-schedule.js';
@@ -143,6 +143,14 @@ class ElfFrame extends LitElement {
                 const to = args.elf == null ? elf : String(args.elf);
                 if (to !== elf && !findTab(to)) throw new Error(`There's no ${to} tab`);
                 location.hash = `#${to}`;
+                return null;
+            }
+            case 'add-elf': {
+                // Only Elf Maker, which comes with the desk: the + page for the repo it published, where you decide.
+                if (elf !== BUILTIN) throw new Error('Only Elf Maker adds elves');
+                const repo = String(args.repo ?? '');
+                if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/.test(repo)) throw new Error('Not a repo');
+                location.hash = `#elves/${repo}`;
                 return null;
             }
             case 'go': {

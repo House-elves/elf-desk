@@ -3,7 +3,7 @@ import { keyed } from 'lit/directives/keyed.js';
 import { shared, itemKeyFromHash, closeX } from './shared.js';
 import { api, connectionState, onConnectionChange, onBusyChange, onPush, errorMessage } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
-import { tabs, findTab, onTabsChange, setInstalledElves, installedElves, installedElf, githubElf, setCatalog, updateFor } from './tabs.js';
+import { BUILTIN, tabs, shownTabs, findTab, onTabsChange, setInstalledElves, installedElves, installedElf, githubElf, setCatalog, updateFor } from './tabs.js';
 import './desk-settings.js';
 import './elf-tab.js';
 import './elf-manage.js';
@@ -187,7 +187,7 @@ class ElfDesk extends LitElement {
             setInstalledElves(r.elves ?? []);
             let welcomed = true;
             try { welcomed = !!localStorage.getItem(WELCOMED); } catch { /* no storage: never redirect */ }
-            if (!r.elves?.length && !welcomed && this._view === 'dashboard') {
+            if (!(r.elves ?? []).some(e => e.name !== BUILTIN) && !welcomed && this._view === 'dashboard') {
                 try { localStorage.setItem(WELCOMED, '1'); } catch { /* no storage */ }
                 location.hash = '#elves';
             }
@@ -313,7 +313,7 @@ class ElfDesk extends LitElement {
         if (['#github', '#settings'].includes(location.hash) || itemKeyFromHash(location.hash)) {
             return githubElf() ? 'tab:github' : installedElves() === null ? 'waiting' : 'no-tab';
         }
-        if (location.hash === '#elves') return 'elves';
+        if (location.hash === '#elves' || location.hash.startsWith('#elves/')) return 'elves';
         // An elf's tab: #mail-triage, or a place in it: #github/thread/quarkusio/quarkus/123 (see _route). Until the
         // runner has said which elves there are, it waits.
         let id = location.hash.slice(1).split('/')[0];
@@ -377,12 +377,12 @@ class ElfDesk extends LitElement {
                     ${this._renderVersions()}
                     <nav aria-label="Views">
                         <a href="#" aria-current=${this._view === 'dashboard' ? 'page' : 'false'}>Dashboard</a>
-                        ${tabs().map(t => html`
+                        ${shownTabs().map(t => html`
                             <a href="#${t.id}" aria-current=${this._current(t.id) ? 'page' : 'false'} @click=${e => this._tabClick(e, t)}
                                title=${!updateFor(t.elf) ? '' : this._current(t.id) ? `${t.label} has an update: click to see it`
                                    : `${t.label} has an update: click the tab again to see it`}>${t.label}${updateFor(t.elf)
                                 ? html`<span class="update-dot" aria-label=", has an update"></span>` : ''}</a>`)}
-                        <a href="#elves" class="add" aria-current=${this._view === 'elves' ? 'page' : 'false'}
+                        <a href="#elves" class="add" aria-current=${this._view === 'elves' || this._view === `tab:${BUILTIN}` ? 'page' : 'false'}
                            aria-label="Add an elf${this._tablessUpdate() ? ', an elf without a tab has an update' : ''}"
                            title=${this._tablessUpdate() ? 'Add an elf. An elf without a tab has an update.' : 'Add an elf'}>+${this._tablessUpdate()
                                 ? html`<span class="update-dot"></span>` : ''}</a>

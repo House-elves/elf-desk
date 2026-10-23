@@ -1,7 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { calendarText, shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
-import { setInstalledElves, setCatalog, updateFor } from './tabs.js';
+import { BUILTIN, setInstalledElves, setCatalog, updateFor } from './tabs.js';
+import './diff-view.js';
 import './elf-settings.js';
 import './elf-schedule.js';
 import './elf-manage.js';
@@ -23,6 +24,10 @@ class DeskElves extends LitElement {
         _busy: { state: true },        // install:<repo> while adding it
         _error: { state: true },
         _catalogError: { state: true },
+        _focus: { state: true },       // #elves/<owner>/<name>: the elf Elf Maker just published, looked up directly
+        _focused: { state: true },
+        _focusError: { state: true },
+        _changes: { state: true },
     };
 
     static styles = [shared, css`
@@ -52,6 +57,10 @@ class DeskElves extends LitElement {
         .when { padding: 16px 18px; }
         h3 code { font-weight: 400; color: var(--muted); margin-left: 6px; }
         a.chip { text-decoration: none; }
+        .make { padding: 18px 20px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; }
+        .make p { margin: 0; max-width: 40rem; }
+        .focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .commits { margin: 0; padding-left: 18px; font: 13px var(--font-code); }
         @media (max-width: 600px) {
             h1 { font-size: 26px; }
             dl { grid-template-columns: minmax(0, 1fr); }
@@ -59,9 +68,90 @@ class DeskElves extends LitElement {
         }
     `];
 
+    constructor() {
+        super();
+        this._onHash = () => this._readFocus();
+    }
+
     connectedCallback() {
         super.connectedCallback();
+        window.addEventListener('hashchange', this._onHash);
+        this._readFocus();
         this._load();
+    }
+
+    disconnectedCallback() {
+        window.removeEventListener('hashchange', this._onHash);
+        super.disconnectedCallback();
+    }
+
+    /** #elves/<owner>/<name>: Elf Maker sent you here to add (or update) the elf it just published. */
+    async _readFocus() {
+        const m = /^#elves\/([A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100})$/.exec(location.hash);
+        const repo = m?.[1] ?? null;
+        if (repo === this._focus) return;
+        this._focus = repo;
+        this._focused = null;
+        this._focusError = null;
+        this._changes = null;
+        if (!repo) return;
+        try {
+            this._focused = await (await api()).elfRepo({ repo });
+        } catch (e) {
+            this._focusError = errorMessage(e);
+        }
+    }
+
+    async _focusChanges(f) {
+        this._busy = 'changes';
+        this._error = null;
+        try {
+            this._changes = await (await api()).elfChanges({ elf: f.installed.name, commit: f.commit });
+        } catch (e) {
+            this._error = errorMessage(e);
+        } finally {
+            this._busy = null;
+        }
+    }
+
+    async _focusUpdate(f) {
+        this._busy = 'update';
+        this._error = null;
+        try {
+            const r = await (await api()).updateElf({ elf: f.installed.name, commit: f.commit });
+            setInstalledElves(r.elves ?? []);
+            location.hash = `#${f.installed.name}`;
+        } catch (e) {
+            this._error = errorMessage(e);
+        } finally {
+            this._busy = null;
+        }
+    }
+
+    /** The elf Elf Maker published: Add it, or (added already) its update, with the changes to read first. */
+    _focusSection() {
+        const f = this._focused;
+        if (this._focusError) return html`<p class="error" role="alert">${this._focusError}</p>`;
+        if (!f) return html`<div class="skeleton sk"></div>`;
+        if (!f.installed) return html`<div class="focus" style="border-radius:var(--r-panel)">${this._available(f)}</div>`;
+        const m = f.manifest ?? {};
+        const c = this._changes;
+        const current = f.installed.commit === f.commit;
+        return html`<article class="panel elf focus" aria-labelledby="focus-h">
+            <div class="top"><h3 id="focus-h">${m.title || m.name || f.repo}${m.version ? html` <code>version ${m.version}</code>` : ''}</h3></div>
+            ${current ? html`<p class="desc">You have this version. <a href="#${f.installed.name}">Open ${m.title || f.installed.name}</a></p>`
+                : html`<p class="desc">A new version of ${m.title || f.installed.name} is published: ${short(f.commit)} of
+                    <a href=${f.url} target="_blank" rel="noopener">${f.repo}</a>.</p>
+                ${c ? html`<p class="hint">This is the code that will run on your machine.</p>
+                    <ul class="commits">${(c.commits ?? []).map(x => html`<li>${x}</li>`)}</ul>
+                    <diff-view .diff=${c.diff} ?cut=${c.truncated} url="https://github.com/${f.repo}/compare/${c.from}...${c.to}"></diff-view>` : ''}
+                <div class="acts">
+                    <button class="primary" ?disabled=${!!this._busy} @click=${() => this._focusUpdate(f)}>
+                        ${this._busy === 'update' ? spinner : ''}Update ${m.title || f.installed.name}</button>
+                    ${c ? '' : html`<button class="quiet" ?disabled=${!!this._busy} @click=${() => this._focusChanges(f)}>
+                        ${this._busy === 'changes' ? spinner : ''}See the changes first</button>`}
+                </div>`}
+        </article>`;
     }
 
     async _load() {
@@ -173,7 +263,8 @@ class DeskElves extends LitElement {
         const installed = this._installed;
         const available = (this._catalog ?? []).filter(c => !c.installed);
         const tabless = (installed ?? []).filter(e => !e.tab && !e.tabs?.length);
-        const fresh = installed && !installed.length;
+        const maker = (installed ?? []).some(e => e.name === BUILTIN);
+        const fresh = installed && !installed.some(e => e.name !== BUILTIN);
         return html`<div class="page">
             <div>
                 <h1>Add an elf</h1>
@@ -189,6 +280,18 @@ class DeskElves extends LitElement {
                 </ol>
             </section>` : ''}
             ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : ''}
+            ${this._focus ? html`<section aria-labelledby="made-h">
+                <h2 id="made-h">From Elf Maker</h2>
+                ${this._focusSection()}
+            </section>` : ''}
+            ${maker ? html`<section aria-labelledby="make-h">
+                <h2 id="make-h">Make your own</h2>
+                <div class="panel make">
+                    <p>Can't find the elf you want? Say what it should do, and Elf Maker works out how it would work, builds it,
+                        and adds it here once you've read it.</p>
+                    <button class="primary" @click=${() => { location.hash = `#${BUILTIN}`; }}>Create an elf</button>
+                </div>
+            </section>` : ''}
             <section aria-labelledby="available-h">
                 <h2 id="available-h">Elves you can add</h2>
                 <p class="hint">Repos with the <code>house-elf</code> topic: House-elves' own, and your private ones.</p>

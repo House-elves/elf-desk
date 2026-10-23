@@ -147,7 +147,9 @@ export const elf = {
 
     /**
      * Agents, for an elf whose elf.yaml says agents: true. One of its actions starts one by answering with
-     * {agent: {id, checkout: {repo, number, kind: PR | ISSUE}, prompt, untrusted, schema, session}}; the runner runs
+     * {agent: {id, checkout: {repo, number, kind: PR | ISSUE | REPO}, prompt, untrusted, schema, session, readOnly,
+     * web}} (REPO: a repo's default branch, number 0; readOnly: it only reads; web: it also reads the web, see
+     * elf-template's AGENTS.md); the runner runs
      * it in its sandbox and reports in agents/<id>.json: {id, status: queued | running | done | failed | cancelled,
      * lines, output, session, git, files, error, worktree, created, started, finished}. onChange calls back with
      * "agents" as it goes.
@@ -179,6 +181,12 @@ export const elf = {
         routeListeners.add(callback);
         return () => routeListeners.delete(callback);
     },
+
+    /**
+     * Elf Maker only: opens the desk's own Add page for an elf repo it just published (owner/name), where you read
+     * what the elf reads and writes and add it, or update it if it's added already.
+     */
+    addElf: repo => call('add-elf', { repo }),
 
     /** Goes to its tab on the desk (from its dashboard card, say). */
     open: () => call('open'),

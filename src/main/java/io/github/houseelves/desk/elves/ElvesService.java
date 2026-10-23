@@ -31,6 +31,12 @@ public class ElvesService {
     /** A file in an elf's data folder: a plain name, as the runner checks it too. */
     static final Pattern FILE = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,120}");
     static final String OFFICIAL = "House-elves/";
+    /**
+     * Elf Maker comes with the desk: never on the + page, never removed, and kept at House-elves/elf-maker's newest
+     * commit by the desk itself, once for each version of the desk (so it updates when the desk does).
+     */
+    public static final String BUILTIN = "elf-maker";
+    public static final String BUILTIN_REPO = "House-elves/elf-maker";
 
     @Inject
     RunnerHub hub;
@@ -62,18 +68,37 @@ public class ElvesService {
         ObjectNode out = mapper.createObjectNode();
         ArrayNode list = out.putArray("elves");
         for (GitHub.ElfRepo r : github.elfRepos(token, login)) {
-            ObjectNode n = list.addObject().put("repo", r.repo()).put("description", r.description())
-                    .put("private", r.isPrivate()).put("official", r.repo().startsWith(OFFICIAL)).put("url", r.url())
-                    .put("commit", r.commit());
-            try {
-                n.set("manifest", preview(r.manifest()));
-            } catch (Exception e) {
-                n.put("problem", e.getMessage());
-            }
-            JsonNode i = installed.get(r.repo());
-            if (i != null) n.putObject("installed").put("name", i.path("name").asText()).put("commit", i.path("commit").asText());
+            if (r.repo().equals(BUILTIN_REPO)) continue; // it comes with the desk
+            list.add(entry(r, installed.get(r.repo())));
         }
         return out;
+    }
+
+    /** One elf repo as the catalog shows it, looked up directly (an elf Elf Maker just published); null if it isn't one. */
+    public JsonNode elfRepo(String login, String token, String repo) {
+        if (repo == null || !repo.matches("[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}") || repo.equals(BUILTIN_REPO)) {
+            throw new IllegalArgumentException("Not an elf repo");
+        }
+        GitHub.ElfRepo r = github.elfRepo(token, login, repo);
+        if (r == null) throw new IllegalArgumentException(repo + " isn't an elf you can add here: it's in House-elves or your account, tagged house-elf");
+        JsonNode i = null;
+        if (hub.connected()) {
+            for (JsonNode e : installed().path("elves")) if (e.path("repo").asText().equals(r.repo())) i = e;
+        }
+        return entry(r, i);
+    }
+
+    ObjectNode entry(GitHub.ElfRepo r, JsonNode installed) {
+        ObjectNode n = mapper.createObjectNode().put("repo", r.repo()).put("description", r.description())
+                .put("private", r.isPrivate()).put("official", r.repo().startsWith(OFFICIAL)).put("url", r.url())
+                .put("commit", r.commit());
+        try {
+            n.set("manifest", preview(r.manifest()));
+        } catch (Exception e) {
+            n.put("problem", e.getMessage());
+        }
+        if (installed != null) n.putObject("installed").put("name", installed.path("name").asText()).put("commit", installed.path("commit").asText());
+        return n;
     }
 
     /**
@@ -136,9 +161,7 @@ public class ElvesService {
      */
     public JsonNode install(String login, String token, String repo, String commit) {
         if (repo == null || commit == null || !COMMIT.matcher(commit).matches()) throw new IllegalArgumentException("Bad repo or commit");
-        if (github.elfRepos(token, login).stream().noneMatch(r -> r.repo().equals(repo))) {
-            throw new IllegalArgumentException(repo + " isn't an elf you can install here");
-        }
+        if (github.elfRepo(token, login, repo) == null) throw new IllegalArgumentException(repo + " isn't an elf you can install here");
         return ask(hub.message("elf.install").put("repo", repo).put("commit", commit), 300);
     }
 
@@ -152,6 +175,7 @@ public class ElvesService {
     }
 
     public JsonNode remove(String elf) {
+        if (BUILTIN.equals(elf)) throw new IllegalArgumentException("Elf Maker comes with the desk");
         return ask(hub.message("elf.remove").put("elf", name(elf)), 60);
     }
 
@@ -160,6 +184,27 @@ public class ElvesService {
         ObjectNode msg = hub.message("elf.run").put("elf", name(elf)).put("command", name(command));
         if (params != null && params.isObject()) msg.set("params", params);
         return ask(msg, 60);
+    }
+
+    /**
+     * Elf Maker, installed and up to date: when the runner connects, it's installed if it isn't, and updated to
+     * House-elves/elf-maker's newest commit once for each version of the desk. Quietly: the desk works without it.
+     */
+    public void keepBuiltin(String login, String token, String deskVersion, java.nio.file.Path marker) {
+        try {
+            JsonNode mine = null;
+            for (JsonNode e : installed().path("elves")) if (e.path("name").asText().equals(BUILTIN)) mine = e;
+            String done = java.nio.file.Files.exists(marker) ? java.nio.file.Files.readString(marker).strip() : "";
+            if (mine != null && done.equals(deskVersion)) return;
+            GitHub.ElfRepo r = github.elfRepo(token, login, BUILTIN_REPO);
+            if (r == null) return; // not published yet
+            if (mine == null) ask(hub.message("elf.install").put("repo", BUILTIN_REPO).put("commit", r.commit()), 300);
+            else if (!mine.path("commit").asText().equals(r.commit())) update(BUILTIN, r.commit());
+            java.nio.file.Files.writeString(marker, deskVersion);
+            org.jboss.logging.Logger.getLogger(ElvesService.class).infof("Elf Maker is at %s", r.commit().substring(0, 7));
+        } catch (Exception e) {
+            org.jboss.logging.Logger.getLogger(ElvesService.class).warnf("Couldn't install or update Elf Maker: %s", e.getMessage());
+        }
     }
 
     // ---- an elf's own tab ----

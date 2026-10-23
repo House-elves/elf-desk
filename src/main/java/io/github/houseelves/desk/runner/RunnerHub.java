@@ -53,6 +53,16 @@ public class RunnerHub {
     @Inject
     Instance<MvnpmRuns> mvnpmRuns;
 
+    /** Lazy too: the Elves service asks this hub. */
+    @Inject
+    Instance<io.github.houseelves.desk.elves.ElvesService> elves;
+
+    @Inject
+    io.github.houseelves.desk.security.GhAccount account;
+
+    @ConfigProperty(name = "elfdesk.data-dir")
+    java.nio.file.Path dataDir;
+
     /** Lazy, for the same reason. */
 
     private volatile WebSocketConnection runner;
@@ -287,6 +297,16 @@ public class RunnerHub {
         LOG.infof("Runner connected (%s), it holds jobs %s", msg.path("version").asText("?"), known);
         live.runner(true);
         threads.runnerConnected(known);
+        // Elf Maker comes with the desk: installed, and up to date with this version of it.
+        String desk = org.eclipse.microprofile.config.ConfigProvider.getConfig()
+                .getOptionalValue("quarkus.application.version", String.class).orElse("");
+        Thread.ofVirtual().start(() -> {
+            try {
+                elves.get().keepBuiltin(account.login(), account.token(), desk, dataDir.resolve("elf-maker.desk-version"));
+            } catch (RuntimeException e) {
+                LOG.warnf("Couldn't look after Elf Maker: %s", e.getMessage());
+            }
+        });
     }
 
     void onClose(WebSocketConnection c) {

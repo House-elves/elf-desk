@@ -6,6 +6,9 @@ const EVENT = 'elfdesk-tabs';
 
 export const GITHUB = { id: 'github', label: 'GitHub' };
 
+/** Elf Maker comes with the desk: its page opens from the + page, not from a tab of its own. */
+export const BUILTIN = 'elf-maker';
+
 /** The installed elves (as the runner lists them), once known; null until then. */
 let installed = null;
 let elfTabs = [];
@@ -16,6 +19,11 @@ let elfTabs = [];
  */
 export function tabs() {
     return elfTabs;
+}
+
+/** The tabs in the bar and on the dashboard: all but Elf Maker's. */
+export function shownTabs() {
+    return elfTabs.filter(t => !t.hidden);
 }
 
 /** The github elf's tab, once it's installed. */
@@ -40,7 +48,7 @@ export function setInstalledElves(elves) {
             || (a.installedAt ?? '').localeCompare(b.installedAt ?? '') || a.name.localeCompare(b.name))
         .map(e => ({
             id: e.name, label: e.title || e.name, elf: e.name, card: !!tabOf(e).card,
-            refresh: e.refresh?.command ?? tabOf(e).refresh ?? null, missing: e.missing ?? [],
+            refresh: e.refresh?.command ?? tabOf(e).refresh ?? null, missing: e.missing ?? [], hidden: e.name === BUILTIN,
         }));
     const same = installed && JSON.stringify(next) === JSON.stringify(elfTabs)
         && JSON.stringify(elves) === JSON.stringify(installed);

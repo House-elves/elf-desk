@@ -253,6 +253,35 @@ public class GitHub {
         return List.copyOf(repos.values());
     }
 
+    /**
+     * One elf repo, looked up directly: search takes a while to list a repo that was just tagged (one Elf Maker just
+     * published). The same rules as elfRepos: in House-elves or your own account, tagged house-elf, not archived.
+     * Null if it isn't one.
+     */
+    public ElfRepo elfRepo(String token, String login, String repo) {
+        String[] parts = repo.split("/", 2);
+        if (parts.length != 2 || !(parts[0].equals("House-elves") || parts[0].equalsIgnoreCase(login))) return null;
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("owner", parts[0]);
+        vars.put("name", parts[1]);
+        JsonNode n = call(token, """
+                query($owner: String!, $name: String!) {
+                  repository(owner: $owner, name: $name) {
+                    nameWithOwner description isPrivate url isArchived
+                    repositoryTopics(first: 20) { nodes { topic { name } } }
+                    defaultBranchRef { target { oid } }
+                    manifest: object(expression: "HEAD:elf.yaml") { ... on Blob { text } }
+                  }
+                }""", vars).path("repository");
+        if (!n.hasNonNull("nameWithOwner") || n.path("isArchived").asBoolean()) return null;
+        boolean tagged = false;
+        for (JsonNode t : n.path("repositoryTopics").path("nodes")) tagged |= t.path("topic").path("name").asText().equals("house-elf");
+        String commit = n.path("defaultBranchRef").path("target").path("oid").asText(null);
+        if (!tagged || commit == null) return null;
+        return new ElfRepo(n.path("nameWithOwner").asText(), n.path("description").asText(""), n.path("isPrivate").asBoolean(),
+                n.path("url").asText(""), commit, n.path("manifest").path("text").asText(null));
+    }
+
     /** How many commits a PR has. */
     public int commitCount(String token, String repo, int number) {
         String[] parts = repo.split("/", 2);
