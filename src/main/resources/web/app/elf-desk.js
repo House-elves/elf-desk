@@ -214,7 +214,14 @@ class ElfDesk extends LitElement {
 
     async _loadVersions() {
         try {
-            this._versions = await (await api()).versions();
+            const v = await (await api()).versions();
+            // The desk was updated while this page was open (from another tab, or house-elves install): this page is
+            // the old one, which may call what the new desk no longer has. Load the new one.
+            if (this._versions?.desk && v?.desk && v.desk !== this._versions.desk) {
+                location.reload();
+                return;
+            }
+            this._versions = v;
         } catch {
             // an older desk, or it's restarting: the next connection tries again
         }
