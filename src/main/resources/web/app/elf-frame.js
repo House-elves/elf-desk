@@ -224,11 +224,13 @@ class ElfFrame extends LitElement {
         if (!action) throw new Error(`Not one of ${this.elf}'s actions: ${name}`);
         // Asks unless its elf.yaml says ask: false.
         if (action.ask !== false) {
+            // A newer ask replaces this one (it's cancelled): only this ask's own bar is cleared after it.
+            let mine;
             const yes = await new Promise(resolve => {
                 this._ask?.resolve(false);
-                this._ask = { action, text: fill(action.confirm || action.label, params), params, resolve };
+                this._ask = mine = { action, text: fill(action.confirm || action.label, params), params, resolve };
             });
-            this._ask = null;
+            if (this._ask === mine) this._ask = null;
             if (!yes) {
                 const e = new Error('Cancelled');
                 e.cancelled = true;
