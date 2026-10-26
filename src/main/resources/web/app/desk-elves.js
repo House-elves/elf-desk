@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { calendarText, settingsToggle, shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { BUILTIN, setInstalledElves, setCatalog, updateFor } from './tabs.js';
-import './diff-view.js';
+import './elf-changes.js';
 import './elf-settings.js';
 import './elf-schedule.js';
 import './elf-manage.js';
@@ -60,7 +60,6 @@ class DeskElves extends LitElement {
         .make { padding: 18px 20px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; }
         .make p { margin: 0; max-width: 40rem; }
         .focus { outline: 2px solid var(--accent); outline-offset: 2px; }
-        .commits { margin: 0; padding-left: 18px; font: 13px var(--font-code); }
         @media (max-width: 600px) {
             h1 { font-size: 26px; }
             dl { grid-template-columns: minmax(0, 1fr); }
@@ -142,9 +141,7 @@ class DeskElves extends LitElement {
             ${current ? html`<p class="desc">You have this version. <a href="#${f.installed.name}">Open ${m.title || f.installed.name}</a></p>`
                 : html`<p class="desc">A new version of ${m.title || f.installed.name} is published: ${short(f.commit)} of
                     <a href=${f.url} target="_blank" rel="noopener">${f.repo}</a>.</p>
-                ${c ? html`<p class="hint">This is the code that will run on your machine.</p>
-                    <ul class="commits">${(c.commits ?? []).map(x => html`<li>${x}</li>`)}</ul>
-                    <diff-view .diff=${c.diff} ?cut=${c.truncated} url="https://github.com/${f.repo}/compare/${c.from}...${c.to}"></diff-view>` : ''}
+                ${c ? html`<elf-changes .changes=${c} repo=${f.repo}></elf-changes>` : ''}
                 <div class="acts">
                     <button class="primary" ?disabled=${!!this._busy} @click=${() => this._focusUpdate(f)}>
                         ${this._busy === 'update' ? spinner : ''}Update ${m.title || f.installed.name}</button>

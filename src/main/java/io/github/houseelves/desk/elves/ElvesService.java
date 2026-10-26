@@ -186,7 +186,7 @@ public class ElvesService {
         return ask(hub.message("elf.install").put("repo", repo).put("commit", commit), 300);
     }
 
-    /** What updating would change: {commits, diff, truncated}. */
+    /** What updating would change: {commits, diff, truncated, notes}, notes being the new sections of its CHANGES.md. */
     public JsonNode changes(String elf, String commit) {
         return ask(hub.message("elf.changes").put("elf", name(elf)).put("commit", commit(commit)), 120);
     }

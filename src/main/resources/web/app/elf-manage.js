@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
 import { BUILTIN, installedElf, setInstalledElves, setCatalog } from './tabs.js';
-import './diff-view.js';
+import './elf-changes.js';
 
 const short = sha => (sha ?? '').slice(0, 7);
 
@@ -15,7 +15,7 @@ class ElfManage extends LitElement {
         elf: {},                        // the installed elf's name
         only: {},                       // "update": just the update waiting, if any (the top of a settings pop-up); "rest": all but that
         _latest: { state: true },       // its catalog entry: the newest commit, or null while looking
-        _changes: { state: true },      // {from, to, commits, diff, truncated} being looked at
+        _changes: { state: true },      // {from, to, commits, diff, truncated, notes} being looked at
         _removing: { state: true },
         _busy: { state: true },         // changes, update or remove
         _error: { state: true },
@@ -29,7 +29,6 @@ class ElfManage extends LitElement {
         .hint { font-size: 13.5px; color: var(--muted); margin: 0; }
         .confirm { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 14px;
             padding: 10px 12px; border-radius: var(--r-control); background: var(--surface-2); }
-        .commits { margin: 0; padding-left: 18px; font: 13px var(--font-code); }
         code { font: 13px var(--font-code); }
         .update > .row:first-child { padding-right: var(--dialog-x-room, 0px); }
         .update { padding: 12px 14px; border-radius: var(--r-control); background: var(--warn-soft);
@@ -115,13 +114,10 @@ class ElfManage extends LitElement {
             </section>`;
     }
 
-    /** The commits since the installed one and their diff, with Update and Hide the changes. */
+    /** What's new since the installed one, and its code, with Update and Hide the changes. */
     _renderChanges(e, c) {
         return html`
-                    <p class="hint">${c.commits.length} new commit${c.commits.length === 1 ? '' : 's'} since ${short(c.from)}.
-                        This is the code that will run on your machine.</p>
-                    <ul class="commits">${c.commits.map(x => html`<li>${x}</li>`)}</ul>
-                    <diff-view .diff=${c.diff} ?cut=${c.truncated} url="https://github.com/${e.repo}/compare/${c.from}...${c.to}"></diff-view>
+                    <elf-changes .changes=${c} repo=${e.repo}></elf-changes>
                     <div class="row">
                         <button class="primary sm" ?disabled=${!!this._busy} @click=${() => this._update(e, c.to)}>
                             ${this._busy === 'update' ? spinner : ''}Update to ${short(c.to)}</button>
