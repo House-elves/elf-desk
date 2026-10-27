@@ -269,7 +269,8 @@ class ElfFrame extends LitElement {
                 note="Secrets are never shown."></elf-settings>
                 ${installedElf(this.elf)?.refresh ? html`<div class="when"><elf-schedule .elf=${installedElf(this.elf)}></elf-schedule></div>` : ''}
                 ${!s.keys ? html`<elf-manage class="when" only="rest" elf=${this.elf} @elf-updated=${() => this._updated()}
-                    @elf-removed=${() => this.renderRoot.querySelector('dialog').close()}></elf-manage>` : ''}
+                    @elf-removed=${() => this.renderRoot.querySelector('dialog').close()}
+                    @elf-leaving=${() => this.renderRoot.querySelector('dialog').close()}></elf-manage>` : ''}
                 <div class="close"><button @click=${() => this.renderRoot.querySelector('dialog').close()}>Close</button></div>` : ''}
         </dialog>`;
     }

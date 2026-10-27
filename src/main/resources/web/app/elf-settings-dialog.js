@@ -55,7 +55,8 @@ class ElfSettingsDialog extends LitElement {
                         note=${this.note ?? 'Only readable by you. Secrets are never shown.'}></elf-settings>
                     ${e?.refresh ? html`<div class="when"><elf-schedule .elf=${e}></elf-schedule></div>` : ''}`}
                 ${e ? html`<elf-manage class="when" only="rest" elf=${this.elf}
-                    @elf-removed=${() => this.renderRoot.querySelector('dialog').close()}></elf-manage>` : ''}
+                    @elf-removed=${() => this.renderRoot.querySelector('dialog').close()}
+                    @elf-leaving=${() => this.renderRoot.querySelector('dialog').close()}></elf-manage>` : ''}
                 <div class="close"><button @click=${() => this.renderRoot.querySelector('dialog').close()}>Close</button></div>` : ''}
         </dialog>`;
     }

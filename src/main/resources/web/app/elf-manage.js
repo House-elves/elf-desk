@@ -7,7 +7,9 @@ import './elf-changes.js';
 const short = sha => (sha ?? '').slice(0, 7);
 
 /**
- * The rest of an elf's settings: its version (with the changes to read before you update it) and removing it. In each elf's settings, its setup, and on the add page for an elf without a tab.
+ * The rest of an elf's settings: its version (with the changes to read before you update it), changing it in Elf Maker
+ * (an elf whose repo you can push to) and removing it. In each elf's settings, its setup, and on the add page for an
+ * elf without a tab.
  */
 class ElfManage extends LitElement {
 
@@ -80,6 +82,12 @@ class ElfManage extends LitElement {
         }
     }
 
+    /** Elf Maker's page for this elf, where you say what to change. The settings pop-up it's in closes (elf-leaving). */
+    _change(e) {
+        this.dispatchEvent(new CustomEvent('elf-leaving', { detail: e.name, bubbles: true, composed: true }));
+        location.hash = `#${BUILTIN}/change/${e.repo}`;
+    }
+
     async _remove(e) {
         const r = await this._do('remove', desk => desk.removeElf({ elf: e.name }));
         if (r) {
@@ -141,6 +149,13 @@ class ElfManage extends LitElement {
                 </div>
                 ${c ? this._renderChanges(e, c) : ''}
             </section>
+            ${e.name !== BUILTIN && this._latest?.canChange && installedElf(BUILTIN) ? html`<section aria-label="Change it">
+                <h3>Change it</h3>
+                <div class="row">
+                    <button class="sm" ?disabled=${!!this._busy} @click=${() => this._change(e)}>Change ${e.title || e.name} in Elf Maker</button>
+                    <span class="hint">Say what to change. You read the new version before it's published.</span>
+                </div>
+            </section>` : ''}
             ${e.name === BUILTIN ? html`<p class="hint">Elf Maker comes with the desk, and updates with it.</p>` : html`<section aria-label="Remove">
                 <h3>Remove</h3>
                 ${this._removing ? html`<div class="confirm" role="group" aria-label="Remove ${e.title || e.name}">
