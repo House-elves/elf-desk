@@ -173,11 +173,17 @@ class HttpSecurityTest {
     }
 
     @Test
-    void aRemoteNameIsTheDesksToo() {
+    void aRemoteNameIsTheDesksToo() throws Exception {
         // Its pages are served there, not sent to the desk's local name.
         given().redirects().follow(false).header("Host", "desk.tailnet.test").when().get("/welcome").then().statusCode(200);
         given().redirects().follow(false).header("Host", "desk.tailnet.test").when().get("/").then().statusCode(302)
                 .header("Location", org.hamcrest.Matchers.endsWith("/welcome"));
+        // Signing in there: a Secure __Host- cookie of its own, never the local one.
+        String code = code();
+        String setCookie = given().redirects().follow(false).header("Host", "desk.tailnet.test").when().get("/open?code=" + code)
+                .then().statusCode(200).extract().header("Set-Cookie");
+        org.junit.jupiter.api.Assertions.assertTrue(setCookie.startsWith("__Host-elfdesk-session=") && setCookie.contains("Secure")
+                && setCookie.contains("Path=/") && !setCookie.contains("Domain"), setCookie);
         // Only the name set, nothing like it.
         given().header("Host", "evil.tailnet.test").when().get("/welcome").then().statusCode(403);
         given().header("Host", "desk.tailnet.test.evil.example").when().get("/welcome").then().statusCode(403);

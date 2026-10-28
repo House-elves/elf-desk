@@ -44,10 +44,14 @@ public class LocalOnly {
     @ConfigProperty(name = "elfdesk.remote-hosts")
     java.util.Optional<List<String>> remoteHosts;
 
+    /** The remote names, for the sign-in cookie's name (see {@link DeskSignIn#cookie}). */
+    static volatile List<String> remoteNames = List.of();
+
     @Inject
     DeskSessions sessions;
 
     void install(@Observes Router router) {
+        remoteNames = remoteHosts.orElse(List.of());
         router.route().order(Integer.MIN_VALUE).handler(rc -> {
             // The authority is the Host header in HTTP/1.1 and :authority in HTTP/2 (which has no Host header).
             var authority = rc.request().authority();
@@ -75,8 +79,10 @@ public class LocalOnly {
                 rc.redirect("/welcome?expired");
                 return;
             }
+            // On a remote name it only ever comes over HTTPS (through the proxy): Secure, and __Host- keeps it to exactly
+            // this name and path, so nothing else served at that name, on any port, is sent it.
             rc.response().addCookie(Cookie.cookie(DeskSignIn.cookie(rc), opened.token()).setHttpOnly(true)
-                    .setPath("/").setSameSite(CookieSameSite.STRICT).setMaxAge(DeskSessions.LIFETIME.toSeconds()));
+                    .setSecure(isRemote(rc)).setPath("/").setSameSite(CookieSameSite.STRICT).setMaxAge(DeskSessions.LIFETIME.toSeconds()));
             // The page key goes in this origin's storage (rpc.js), which another port can't read. Only whoever
             // redeemed the code ever sees this response.
             rc.response().putHeader("Content-Type", "text/html; charset=utf-8").putHeader("Cache-Control", "no-store")
@@ -89,6 +95,12 @@ public class LocalOnly {
         router.get("/welcome").handler(rc -> rc.response().putHeader("Content-Type", "text/html; charset=utf-8")
                 .putHeader("Cache-Control", "no-store")
                 .end(welcome(rc.request().getParam("expired") != null, deskHost)));
+    }
+
+    /** The request came by a remote name: through the HTTPS proxy, so with no port of its own. */
+    static boolean isRemote(RoutingContext rc) {
+        var a = rc.request().authority();
+        return a != null && a.port() == -1 && allowed(a.host(), remoteNames);
     }
 
     /** A name you reach the desk by from your other devices (elfdesk.remote-hosts). */

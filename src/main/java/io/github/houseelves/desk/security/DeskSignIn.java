@@ -37,6 +37,8 @@ public class DeskSignIn implements HttpAuthenticationMechanism {
      * own name: two desks on one machine (another instance, dev mode) don't overwrite each other's.
      */
     public static String cookie(RoutingContext rc) {
+        // By a remote name (HTTPS, through the proxy): its own name, never the local one, with __Host-'s rules.
+        if (LocalOnly.isRemote(rc)) return "__Host-elfdesk-session";
         var authority = rc.request().authority();
         int port = authority == null || authority.port() == -1 ? 80 : authority.port();
         return "elfdesk-session-" + port;
