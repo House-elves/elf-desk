@@ -52,6 +52,9 @@ public class ElfFrames {
     @ConfigProperty(name = "elfdesk.host")
     String deskHost;
 
+    @ConfigProperty(name = "elfdesk.remote-hosts")
+    java.util.Optional<java.util.List<String>> remoteHosts;
+
     private final SecureRandom random = new SecureRandom();
     /** Key for elf@commit, and what each key opens. */
     private final Map<String, String> keys = new ConcurrentHashMap<>();
@@ -193,8 +196,12 @@ public class ElfFrames {
                 .end("export * from '" + bundle.script("kit") + "';\n");
     }
 
+    /** The desk's page's origin: its own name here, or, reached from another device, that name over HTTPS. */
     private String origin(RoutingContext rc) {
         var a = rc.request().authority();
+        if (a != null && remoteHosts.isPresent() && io.github.houseelves.desk.security.LocalOnly.allowed(a.host(), remoteHosts.get())) {
+            return "https://" + a.host().toLowerCase(java.util.Locale.ROOT) + (a.port() == -1 ? "" : ":" + a.port());
+        }
         return "http://" + deskHost + (a == null || a.port() == -1 ? "" : ":" + a.port());
     }
 }

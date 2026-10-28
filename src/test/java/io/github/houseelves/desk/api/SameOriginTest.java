@@ -21,5 +21,10 @@ class SameOriginTest {
         assertFalse(SameOrigin.sameAuthority("https://evil.example", desk));
         assertFalse(SameOrigin.sameAuthority("null", desk));
         assertFalse(SameOrigin.sameAuthority("http://elf-desk.localhost:7777", null));
+        // Through tailscale serve: HTTPS, and the request has no port.
+        HostAndPort proxied = HostAndPort.create("desk.tailnet.test", -1);
+        assertTrue(SameOrigin.sameAuthority("https://desk.tailnet.test", proxied));
+        assertFalse(SameOrigin.sameAuthority("https://evil.tailnet.test", proxied));
+        assertFalse(SameOrigin.sameAuthority("https://desk.tailnet.test:8443", proxied));
     }
 }

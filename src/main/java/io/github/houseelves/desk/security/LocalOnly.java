@@ -24,6 +24,12 @@ import jakarta.inject.Inject;
  * agent's dev mode. Health checks and the runner may still use any local name.
  *
  * <p>
+ * <p>
+ * A name in {@code elfdesk.remote-hosts} is the desk's too, for reaching it from your other devices through a private
+ * network that proxies to it here, such as {@code tailscale serve} at {@code https://<machine>.<tailnet>.ts.net}: the
+ * desk still only listens on 127.0.0.1, and that network decides who gets that far. Empty unless you set it.
+ *
+ * <p>
  * {@code /open?code=...} swaps a one-time code for a session (see {@link DeskSessions}); {@code /welcome} is
  * where you land without one. No other site may show the desk in a frame.
  */
@@ -35,6 +41,9 @@ public class LocalOnly {
     @ConfigProperty(name = "elfdesk.allowed-hosts")
     List<String> allowedHosts;
 
+    @ConfigProperty(name = "elfdesk.remote-hosts")
+    java.util.Optional<List<String>> remoteHosts;
+
     @Inject
     DeskSessions sessions;
 
@@ -42,12 +51,12 @@ public class LocalOnly {
         router.route().order(Integer.MIN_VALUE).handler(rc -> {
             // The authority is the Host header in HTTP/1.1 and :authority in HTTP/2 (which has no Host header).
             var authority = rc.request().authority();
-            if (authority == null
-                    || !(authority.host().equalsIgnoreCase(deskHost) || allowed(authority.host(), allowedHosts))) {
+            boolean own = authority != null && (authority.host().equalsIgnoreCase(deskHost) || remote(authority.host()));
+            if (authority == null || !(own || allowed(authority.host(), allowedHosts))) {
                 rc.response().setStatusCode(403).end("The desk only answers on localhost");
                 return;
             }
-            if (!authority.host().equalsIgnoreCase(deskHost) && !anyName(rc.normalizedPath())) {
+            if (!own && !anyName(rc.normalizedPath())) {
                 String desk = "http://" + deskHost + (authority.port() == -1 ? "" : ":" + authority.port());
                 if (page(rc)) {
                     rc.redirect(desk + rc.request().uri());
@@ -82,6 +91,11 @@ public class LocalOnly {
                 .end(welcome(rc.request().getParam("expired") != null, deskHost)));
     }
 
+    /** A name you reach the desk by from your other devices (elfdesk.remote-hosts). */
+    boolean remote(String host) {
+        return remoteHosts.isPresent() && allowed(host, remoteHosts.get());
+    }
+
     /** Health checks and the runner's socket: for programs on this machine, which may use any local name. */
     static boolean anyName(String path) {
         return path.equals("/runner") || path.equals("/runner/") || path.equals("/q/health") || path.startsWith("/q/health/");
@@ -95,7 +109,7 @@ public class LocalOnly {
     }
 
     /** The request's host name (without the port) is one of the allowed names. IPv6 hosts come in brackets or not. */
-    static boolean allowed(String host, List<String> names) {
+    public static boolean allowed(String host, List<String> names) {
         if (host == null) return false;
         String name = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
         return names.stream().anyMatch(n -> n.strip().equalsIgnoreCase(name.toLowerCase(Locale.ROOT)));

@@ -31,7 +31,12 @@ public class SameOrigin {
         if (authority == null) return false;
         try {
             URI o = URI.create(origin);
-            if (o.getHost() == null || !"http".equals(o.getScheme())) return false;
+            if (o.getHost() == null) return false;
+            if ("https".equals(o.getScheme())) {
+                // A page over HTTPS reaches the desk only through a proxy (tailscale serve), which sends no port.
+                return (o.getPort() == -1 || o.getPort() == 443) && authority.port() == -1 && o.getHost().equalsIgnoreCase(authority.host());
+            }
+            if (!"http".equals(o.getScheme())) return false;
             int port = o.getPort() == -1 ? 80 : o.getPort();
             int expected = authority.port() == -1 ? 80 : authority.port();
             return o.getHost().equalsIgnoreCase(authority.host()) && port == expected;

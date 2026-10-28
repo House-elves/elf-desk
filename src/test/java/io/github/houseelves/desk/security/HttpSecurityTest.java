@@ -173,6 +173,17 @@ class HttpSecurityTest {
     }
 
     @Test
+    void aRemoteNameIsTheDesksToo() {
+        // Its pages are served there, not sent to the desk's local name.
+        given().redirects().follow(false).header("Host", "desk.tailnet.test").when().get("/welcome").then().statusCode(200);
+        given().redirects().follow(false).header("Host", "desk.tailnet.test").when().get("/").then().statusCode(302)
+                .header("Location", org.hamcrest.Matchers.endsWith("/welcome"));
+        // Only the name set, nothing like it.
+        given().header("Host", "evil.tailnet.test").when().get("/welcome").then().statusCode(403);
+        given().header("Host", "desk.tailnet.test.evil.example").when().get("/welcome").then().statusCode(403);
+    }
+
+    @Test
     void onlyLocalNamesAreAnswered() {
         given().header("Host", "evil.example:7777").when().get("/welcome").then().statusCode(403);
         given().header("Host", "elf-desk.localhost.evil.example").when().get("/welcome").then().statusCode(403);

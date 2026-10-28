@@ -16,6 +16,14 @@ Design doc: <https://claude.ai/artifact/HBSU81qqwHHQVUZ7v1VD3E>
 - **Diffs**: a PR's page has **Show files changed** (GitHub's diff), and every draft that pushes code (commits to push, a fix to open as a PR) has **Show the change**, the runner's diff of exactly what would be pushed, so you can read it before confirming.
 - **One tab per elf**: every other tab belongs to an elf, named by its `title`: mail-triage's **Mail**, zulip-digest's **Zulip**, weekly-status's **Weekly status** and quarterly-review's **Quarterly review**. The **+** after the last tab adds an elf, and its new tab helps you set it up; removing it (in its settings) takes the tab away. Drag a tab to move it (or Alt+Shift+arrow on it); the desk keeps that order, and the dashboard's cards follow it. A tab you never moved comes after, in the order you added it. See [Elf tabs](#elf-tabs).
 
+## From your phone or another computer
+
+The desk only listens on this machine. To reach it from your other devices, put them on a private network with this
+machine, such as [Tailscale](https://tailscale.com), and have it pass the desk on: `tailscale serve --bg --https=443
+http://127.0.0.1:7777` makes it `https://<machine>.<tailnet>.ts.net`, for your devices only. Tell the desk that name
+in `~/.config/house-elves/desk.properties`: `elfdesk.remote-hosts=<machine>.<tailnet>.ts.net`, and restart it. Sign
+in there with a one-time link, as on this machine: the open code from `house-elves open --print`, at that name.
+
 ## Elves
 
 The **+** after the last tab adds elves; each elf's own settings update and remove it. The + page is also the setup wizard: on a new desk with no elves, the first visit goes there.
