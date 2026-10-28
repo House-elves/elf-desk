@@ -17,6 +17,13 @@ const STORE_MAX = 200_000;
  * only what its elf.yaml declares: its runs, the folders it may read, its commands and actions, its settings (in
  * the desk's own dialog, so secrets never reach it). An action that asks waits for your click in the desk's own bar.
  */
+
+/** The page is in the dark theme: picked, or following a dark system. */
+function pageIsDark() {
+    const picked = document.documentElement.dataset.theme;
+    return picked === 'dark' || (picked !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+}
+
 class ElfFrame extends LitElement {
 
     static properties = {
@@ -38,6 +45,18 @@ class ElfFrame extends LitElement {
             box-shadow: 0 10px 36px color-mix(in srgb, var(--ink) 22%, transparent);
             padding: 16px 18px; display: grid; gap: 12px;
         }
+        /* The bar is in the other theme's colours, so it stands out from the page: light on a dark page, dark on a light one. */
+        .ask.on-dark {
+            --surface: #ffffff; --surface-2: #edf1ea; --ink: #17201b; --muted: #56635b; --line: #dde3da;
+            --accent: #24533f; --accent-ink: #ffffff; --accent-soft: #e2eee6; --bad: #c3352a; --bad-soft: #fbe8e6;
+            color-scheme: light; box-shadow: 0 10px 40px rgb(0 0 0 / 0.55);
+        }
+        .ask.on-light {
+            --surface: #161d19; --surface-2: #1d2621; --ink: #e6ece7; --muted: #94a39a; --line: #27322c;
+            --accent: #7db68a; --accent-ink: #0e1f15; --accent-soft: #1a2d22; --bad: #ff7d72; --bad-soft: #351816;
+            color-scheme: dark; box-shadow: 0 10px 40px rgb(23 32 27 / 0.35);
+        }
+        .ask { color: var(--ink); }
         .ask .from { font-size: 12.5px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
         .ask .from svg { width: 14px; height: 14px; color: var(--accent); }
         .ask .text { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
@@ -244,7 +263,7 @@ class ElfFrame extends LitElement {
         const a = this._ask;
         if (!a) return '';
         const entries = Object.entries(a.params ?? {});
-        return html`<div class="ask" role="alertdialog" aria-labelledby="ask-text">
+        return html`<div class="ask ${pageIsDark() ? 'on-dark' : 'on-light'}" role="alertdialog" aria-labelledby="ask-text">
             <span class="from"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                 <path d="M8 1.5 2.5 4v4c0 3.2 2.3 5.6 5.5 6.5 3.2-.9 5.5-3.3 5.5-6.5V4z"/></svg>
                 The desk asks, for ${installedElf(this.elf)?.title ?? this.elf}</span>
