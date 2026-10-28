@@ -311,7 +311,7 @@ class ElfDesk extends LitElement {
         setTabOrder(all);
         this._orderError = null;
         try {
-            setTabOrder(await (await api()).setTabOrder(all));
+            setTabOrder(await (await api()).setTabOrder({ names: all }));
         } catch (err) {
             setTabOrder(before);
             this._orderError = `Couldn't keep the tabs in that order: ${err.message}`;
