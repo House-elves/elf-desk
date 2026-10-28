@@ -3,7 +3,7 @@ import { keyed } from 'lit/directives/keyed.js';
 import { shared, itemKeyFromHash, closeX } from './shared.js';
 import { api, connectionState, onConnectionChange, onBusyChange, onPush, errorMessage } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
-import { BUILTIN, tabs, shownTabs, findTab, onTabsChange, setInstalledElves, installedElves, installedElf, githubElf, setCatalog, updateFor } from './tabs.js';
+import { BUILTIN, tabs, shownTabs, findTab, onTabsChange, setInstalledElves, installedElves, installedElf, githubElf, setCatalog, updateFor, setTabOrder, tabOrder } from './tabs.js';
 import './desk-settings.js';
 import './elf-tab.js';
 import './elf-manage.js';
@@ -38,6 +38,9 @@ class ElfDesk extends LitElement {
         _busy: { state: true },
         _theme: { state: true },
         _tabsChanged: { state: true },
+        _drag: { state: true },      // the tab being dragged, by id
+        _dropAt: { state: true },    // where it would land: {id, after}
+        _orderError: { state: true },
         _elfUpdate: { state: true }, // the tab whose update pop-up is open
         _reloads: { state: true },   // an elf updated from its pop-up: its tab loads again
     };
@@ -64,6 +67,10 @@ class ElfDesk extends LitElement {
         nav a:hover { color: var(--ink); background: var(--surface-2); }
         nav a[aria-current="page"] { color: var(--ink); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
         nav a { position: relative; }
+        /* Dragging a tab: it fades, and a line shows where it lands. */
+        nav a.dragging { opacity: 0.4; }
+        nav a.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+        nav a.drop-after { box-shadow: inset -2px 0 0 var(--accent); }
         /* An update waiting: a small dot on the tab, as on an app with something new. */
         .update-dot { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%;
             background: var(--bobble); box-shadow: 0 0 0 2px var(--bg); }
@@ -183,6 +190,12 @@ class ElfDesk extends LitElement {
      */
     async _loadElves() {
         try {
+            // The order you dragged the tabs to, before they're drawn.
+            setTabOrder(await (await api()).tabOrder());
+        } catch {
+            // An older desk, or it didn't answer: the tabs keep their own order.
+        }
+        try {
             const r = await (await api()).elves();
             setInstalledElves(r.elves ?? []);
             let welcomed = true;
@@ -245,6 +258,66 @@ class ElfDesk extends LitElement {
      * The tab you're on has an update: clicking it again shows it, as the version does for Elf Desk. Deeper in the tab
      * (a thread page), the click still takes you to the tab's top first.
      */
+    // ---- moving a tab: drag it, or Alt+Shift+arrow on it ----
+
+    _dragStart(e, t) {
+        this._drag = t.id;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/x-elf-tab', t.id);
+    }
+
+    _dragOver(e, t) {
+        if (!this._drag) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const r = e.currentTarget.getBoundingClientRect();
+        const after = e.clientX > r.left + r.width / 2;
+        if (this._dropAt?.id !== t.id || this._dropAt?.after !== after) this._dropAt = { id: t.id, after };
+    }
+
+    _drop(e, t) {
+        if (!this._drag) return;
+        e.preventDefault();
+        const moving = this._drag, after = this._dropAt?.id === t.id ? this._dropAt.after : false;
+        this._dragEnd();
+        if (moving === t.id) return;
+        const ids = shownTabs().map(x => x.id).filter(id => id !== moving);
+        ids.splice(ids.indexOf(t.id) + (after ? 1 : 0), 0, moving);
+        this._keepOrder(ids);
+    }
+
+    _dragEnd() {
+        this._drag = null;
+        this._dropAt = null;
+    }
+
+    /** Alt+Shift+Left or Right moves the focused tab one place, for when a mouse isn't to hand. */
+    _tabKey(e, t) {
+        if (!e.altKey || !e.shiftKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+        e.preventDefault();
+        const ids = shownTabs().map(x => x.id);
+        const i = ids.indexOf(t.id), j = i + (e.key === 'ArrowLeft' ? -1 : 1);
+        if (i < 0 || j < 0 || j >= ids.length) return;
+        [ids[i], ids[j]] = [ids[j], ids[i]];
+        this._keepOrder(ids);
+        this.updateComplete.then(() => this.renderRoot.querySelector(`nav a[href="#${t.id}"]`)?.focus());
+    }
+
+    /** Shows the tabs in this order at once and has the desk keep it; puts them back if it couldn't. */
+    async _keepOrder(shown) {
+        const before = tabOrder();
+        // The tabs not in the bar (Elf Maker's) keep their place after the ones you see.
+        const all = [...shown, ...before.filter(id => !shown.includes(id))];
+        setTabOrder(all);
+        this._orderError = null;
+        try {
+            setTabOrder(await (await api()).setTabOrder(all));
+        } catch (err) {
+            setTabOrder(before);
+            this._orderError = `Couldn't keep the tabs in that order: ${err.message}`;
+        }
+    }
+
     _tabClick(e, t) {
         if (!this._current(t.id) || location.hash !== `#${t.id}` || !updateFor(t.elf)
                 || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -379,7 +452,12 @@ class ElfDesk extends LitElement {
                         <a href="#" aria-current=${this._view === 'dashboard' ? 'page' : 'false'}>Dashboard</a>
                         ${shownTabs().map(t => html`
                             <a href="#${t.id}" aria-current=${this._current(t.id) ? 'page' : 'false'} @click=${e => this._tabClick(e, t)}
-                               title=${!updateFor(t.elf) ? '' : this._current(t.id) ? `${t.label} has an update: click to see it`
+                               draggable="true" class=${[this._drag === t.id ? 'dragging' : '',
+                                   this._dropAt?.id === t.id && this._drag !== t.id ? (this._dropAt.after ? 'drop-after' : 'drop-before') : ''].join(' ')}
+                               @dragstart=${e => this._dragStart(e, t)} @dragover=${e => this._dragOver(e, t)}
+                               @drop=${e => this._drop(e, t)} @dragend=${() => this._dragEnd()} @keydown=${e => this._tabKey(e, t)}
+                               aria-keyshortcuts="Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
+                               title=${!updateFor(t.elf) ? 'Drag to move it, or Alt+Shift+arrow' : this._current(t.id) ? `${t.label} has an update: click to see it`
                                    : `${t.label} has an update: click the tab again to see it`}>${t.label}${updateFor(t.elf)
                                 ? html`<span class="update-dot" aria-label=", has an update"></span>` : ''}</a>`)}
                         <a href="#elves" class="add" aria-current=${this._view === 'elves' || this._view === `tab:${BUILTIN}` ? 'page' : 'false'}
@@ -400,6 +478,8 @@ class ElfDesk extends LitElement {
                         Lost the connection to the desk. It may have restarted: <a href="${location.pathname}">reload</a>.
                         If it still won't connect, open it again with <code>house-elves open</code>.
                     </div>` : ''}
+                ${this._orderError ? html`<div class="lost" role="alert">${this._orderError}
+                    <button class="sm quiet" @click=${() => { this._orderError = null; }}>Close</button></div>` : ''}
             </header>
             ${this._renderElfUpdate()}
             <main>

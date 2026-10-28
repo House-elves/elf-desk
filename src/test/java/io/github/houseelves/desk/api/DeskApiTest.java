@@ -121,9 +121,24 @@ class DeskApiTest {
     }
 
     @Test
+    @TestSecurity(user = "phillip-kruger", roles = "owner")
+    void tabsKeepTheOrderYouDraggedThemTo() {
+        api.setTabOrder(List.of());
+        assertEquals(List.of(), api.tabOrder());
+        assertEquals(List.of("mail-triage", "calendar", "github"), api.setTabOrder(List.of("mail-triage", "calendar", "github", "calendar")));
+        assertEquals(List.of("mail-triage", "calendar", "github"), api.tabOrder());
+        assertThrows(IllegalArgumentException.class, () -> api.setTabOrder(List.of("mail-triage", "../etc")));
+        assertThrows(IllegalArgumentException.class, () -> api.setTabOrder(List.of("Mail\nTriage")));
+        assertEquals(List.of("mail-triage", "calendar", "github"), api.tabOrder());
+        api.setTabOrder(List.of());
+        assertEquals(List.of(), api.tabOrder());
+    }
+
+    @Test
     @TestSecurity(user = "phillipkruger", roles = "user")
     void otherAccountsAreRefused() {
         assertThrows(ForbiddenException.class, () -> api.board(false));
         assertThrows(ForbiddenException.class, () -> api.watch("quarkusio"));
+        assertThrows(ForbiddenException.class, () -> api.setTabOrder(List.of("github")));
     }
 }

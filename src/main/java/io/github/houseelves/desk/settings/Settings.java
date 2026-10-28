@@ -14,6 +14,30 @@ public class Settings {
     static final int DEFAULT_REFRESH_MINUTES = 5;
     static final String MVNPM_ENABLED = "mvnpm.enabled";
     static final String ALWAYS_INVOLVED = "board.always-involved";
+    static final String TAB_ORDER = "desk.tab-order";
+
+    /** The elves' tabs in the order you dragged them to, by elf name; empty until you have. */
+    @Transactional
+    public List<String> tabOrder() {
+        Setting s = Setting.findById(TAB_ORDER);
+        if (s == null) return List.of();
+        return Arrays.stream(s.value.split("\n")).map(String::strip).filter(n -> !n.isEmpty()).toList();
+    }
+
+    @Transactional
+    public void setTabOrder(List<String> names) {
+        Setting s = Setting.findById(TAB_ORDER);
+        if (names.isEmpty()) {
+            if (s != null) s.delete();
+            return;
+        }
+        if (s == null) {
+            s = new Setting();
+            s.key = TAB_ORDER;
+        }
+        s.value = String.join("\n", names);
+        s.persist();
+    }
 
     /** Repos you maintain (owner/repo, lower case): every open PR and issue in them is on the board. */
     @Transactional

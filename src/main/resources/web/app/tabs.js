@@ -1,5 +1,6 @@
 // Which tabs there are: one per installed elf that has a tab, named by its title (GitHub, Mail, Zulip, Weekly
-// status), the github elf first and then in the order you added them. Adding an elf adds its tab; removing it takes
+// status), in the order you dragged them to; one you never moved goes after, the github elf first and then in the
+// order you added them. Adding an elf adds its tab; removing it takes
 // the tab away. The desk's own GitHub board is gone: GitHub is the github elf's tab.
 
 const EVENT = 'elfdesk-tabs';
@@ -12,6 +13,8 @@ export const BUILTIN = 'elf-maker';
 /** The installed elves (as the runner lists them), once known; null until then. */
 let installed = null;
 let elfTabs = [];
+/** The order you dragged the tabs to, by elf name, as the desk keeps it. */
+let order = [];
 
 /**
  * Every tab: each installed elf's, as {id, label, elf, card, refresh, missing}. A tab's id is its
@@ -42,9 +45,13 @@ export function tabOf(e) {
 
 /** What the Elves page or the shell learnt is installed: the runner's list of elves. */
 export function setInstalledElves(elves) {
+    const placed = name => {
+        const i = order.indexOf(name);
+        return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+    };
     const next = [...(elves ?? [])]
         .filter(e => tabOf(e) && e.name !== 'elves')
-        .sort((a, b) => (b.name === GITHUB.id) - (a.name === GITHUB.id)
+        .sort((a, b) => placed(a.name) - placed(b.name) || (b.name === GITHUB.id) - (a.name === GITHUB.id)
             || (a.installedAt ?? '').localeCompare(b.installedAt ?? '') || a.name.localeCompare(b.name))
         .map(e => ({
             id: e.name, label: e.title || e.name, elf: e.name, card: !!tabOf(e).card,
@@ -56,6 +63,17 @@ export function setInstalledElves(elves) {
     elfTabs = next;
     recomputeUpdates();
     if (!same) window.dispatchEvent(new CustomEvent(EVENT));
+}
+
+/** The order the desk keeps, once it's loaded or you moved a tab: the tabs follow it straight away. */
+export function setTabOrder(names) {
+    order = [...(names ?? [])];
+    if (installed) setInstalledElves(installed);
+}
+
+/** The tabs' order now, by elf name, for saving after a move. */
+export function tabOrder() {
+    return elfTabs.map(t => t.elf);
 }
 
 /**

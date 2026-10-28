@@ -487,6 +487,25 @@ public class DeskApi {
 
     // ---- settings ----
 
+    /** An elf's name, as its tab knows it. */
+    static final java.util.regex.Pattern ELF_NAME = java.util.regex.Pattern.compile("[a-z0-9][a-z0-9-]{0,40}");
+
+    /** The elves' tabs in the order you dragged them to: elf names, the rest after them as they come. */
+    public List<String> tabOrder() {
+        return settings.tabOrder();
+    }
+
+    /** Keeps the tabs in this order (elf names, each once); answers it as kept. */
+    public List<String> setTabOrder(List<String> names) {
+        if (names == null || names.size() > 200) throw new IllegalArgumentException("That isn't a list of tabs.");
+        List<String> kept = names.stream().distinct().toList();
+        if (kept.stream().anyMatch(n -> n == null || !ELF_NAME.matcher(n).matches())) {
+            throw new IllegalArgumentException("That isn't a list of tabs.");
+        }
+        settings.setTabOrder(kept);
+        return settings.tabOrder();
+    }
+
     public record ScopeRow(long id, String kind, String name, String mode) {
     }
 
