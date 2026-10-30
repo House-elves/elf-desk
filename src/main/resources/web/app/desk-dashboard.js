@@ -7,7 +7,7 @@ import './elf-frame.js';
 const DATE = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
 
 /**
- * The start page: one sentence per tab on what needs you there. GitHub's is the desk's own; every other card is
+ * The start page: a card per tab on what needs you there, up to three across. GitHub's is the desk's own; every other card is
  * drawn by its elf (the card view of its tab, in a sandboxed frame), in a panel the desk draws around it. An elf that
  * isn't set up yet gets a line saying so instead.
  */
@@ -22,16 +22,16 @@ class DeskDashboard extends LitElement {
     };
 
     static styles = [shared, css`
-        .page { display: grid; gap: 34px; max-width: 52rem; }
+        .page { display: grid; gap: 34px; }
         .top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px 24px; }
         .refresh { display: grid; gap: 6px; justify-items: end; }
         .refresh .hint { font-size: 13px; color: var(--muted); margin: 0; text-align: right; }
         @media (max-width: 600px) { .refresh { justify-items: start; } .refresh .hint { text-align: left; } }
         .date { color: var(--muted); font-size: 15px; }
         h1 { font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.022em; margin-top: 8px; }
-        .tabs { display: grid; gap: 14px; }
-        .tabs > .hint { margin: 0; color: var(--muted); font-size: 15px; }
-        section { padding: 20px 22px; display: grid; gap: 8px; min-width: 0; }
+        .tabs { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); }
+        .tabs > .hint { margin: 0; color: var(--muted); font-size: 15px; grid-column: 1 / -1; }
+        section { padding: 20px 22px; display: grid; gap: 8px; min-width: 0; align-content: start; }
         section.attention { box-shadow: inset 3px 0 0 var(--accent); }
         .head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; }
         h2 { font-size: 15px; font-weight: 600; color: var(--muted); }
