@@ -37,6 +37,7 @@ class ElfSettings extends LitElement {
         .field { display: grid; gap: 5px; min-width: 0; }
         .field input[type="text"], .field input[type="password"], .field input[type="number"] { width: 100%; box-sizing: border-box; }
         .field input[type="number"] { max-width: 8rem; }
+        .field select { max-width: 100%; }
         .help { font-size: 13px; color: var(--muted); margin: 0; }
         .wrong { font-size: 13px; color: var(--bad); margin: 0; }
         .secret { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding-top: 4px; }
@@ -137,6 +138,17 @@ class ElfSettings extends LitElement {
             return html`<div class="row"><span class="name">${s.label}${needed}</span><div class="field">
                 <label class="check"><input type="checkbox" id=${id} aria-describedby="${id}-help" .checked=${value === 'true'}
                     @change=${e => this._set(s.key, e.target.checked ? 'true' : 'false')}>${value === 'true' ? 'On' : 'Off'}</label>
+                ${help}</div></div>`;
+        }
+        if (s.kind === 'agent') {
+            // A coding agent: the ones not installed here are listed, but say so.
+            const options = s.options ?? [];
+            const current = options.some(o => o.value === value) ? value : (options[0]?.value ?? '');
+            return html`<div class="row"><label for=${id}>${s.label}${needed}</label><div class="field">
+                <select id=${id} aria-describedby="${id}-help" @change=${e => this._set(s.key, e.target.value)}>
+                    ${options.map(o => html`<option value=${o.value} ?selected=${o.value === current}>
+                        ${o.label}${o.installed ? '' : ' (not installed)'}</option>`)}
+                </select>
                 ${help}</div></div>`;
         }
         if (s.kind === 'secret') {
