@@ -147,8 +147,8 @@ export const elf = {
 
     /**
      * Agents, for an elf whose elf.yaml says agents: true. One of its actions starts one by answering with
-     * {agent: {id, checkout: {repo, number, kind: PR | ISSUE | REPO}, prompt, untrusted, schema, session, readOnly,
-     * web}} (REPO: a repo's default branch, number 0; readOnly: it only reads; web: it also reads the web, see
+     * {agent: {id, checkout: {repo, number, kind: PR | ISSUE | REPO | WEB}, prompt, untrusted, schema, session, readOnly,
+     * web}} (REPO: a repo's default branch, number 0; WEB: no repo, only the web; readOnly: it only reads; web: it also reads the web, see
      * elf-template's AGENTS.md); the runner runs
      * it in its sandbox and reports in agents/<id>.json: {id, status: queued | running | done | failed | cancelled,
      * lines, output, session, git, files, error, worktree, created, started, finished}. onChange calls back with
