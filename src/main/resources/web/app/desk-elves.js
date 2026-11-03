@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { calendarText, settingsToggle, shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
-import { BUILTIN, setInstalledElves, setCatalog, updateFor } from './tabs.js';
+import { BUILTIN, WITH_DESK, setInstalledElves, setCatalog, updateFor } from './tabs.js';
 import './elf-changes.js';
 import './elf-settings.js';
 import './elf-schedule.js';
@@ -264,7 +264,7 @@ class DeskElves extends LitElement {
         const tabless = (installed ?? []).filter(e => !e.tab && !e.tabs?.length);
         const maker = (installed ?? []).some(e => e.name === BUILTIN);
         this._maker = maker;
-        const fresh = installed && !installed.some(e => e.name !== BUILTIN);
+        const fresh = installed && !installed.some(e => !WITH_DESK.includes(e.name));
         return html`<div class="page">
             <div class="page-top"><div>
                 <h1>Add an elf</h1>

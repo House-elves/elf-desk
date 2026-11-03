@@ -147,6 +147,7 @@ class ElfFrame extends LitElement {
                 return this._state(await desk.elvesState());
             case 'act': return this._act(desk, String(args.action ?? ''), object(args.params) ?? {});
             case 'cancelAgent': return desk.cancelElfAgent({ elf, id: String(args.id ?? '') });
+            case 'removeSlot': return desk.removeElfSlot({ elf, repo: String(args.repo ?? ''), slot: String(args.slot ?? '') });
             case 'settings':
                 if (this.view === 'settings') return null; // already in them
                 this._settings = { keys: args.keys ? strings(args.keys) : null, heading: String(args.heading ?? `${installedElf(elf)?.title ?? elf} settings`).slice(0, 80) };

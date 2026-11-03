@@ -105,6 +105,8 @@ public class RunnerHub {
     public static final String ELF_AGENTS_SINCE = "0.33.0";
     /** house.update: the runner updates Elf Desk and itself. */
     public static final String HOUSE_UPDATE_SINCE = "0.35.0";
+    /** elf.agentSlotRemove, and agents with a slot, a goal or no schema (Sessions). */
+    public static final String ELF_SLOTS_SINCE = "0.46.0";
     static final String PR_SINCE = "0.15.0";
     static final String READY_PR_SINCE = "0.21.0";
 
@@ -297,14 +299,14 @@ public class RunnerHub {
         LOG.infof("Runner connected (%s), it holds jobs %s", msg.path("version").asText("?"), known);
         live.runner(true);
         threads.runnerConnected(known);
-        // Elf Maker comes with the desk: installed, and up to date with this version of it.
+        // Elf Maker and Sessions come with the desk: installed, and up to date with this version of it.
         String desk = org.eclipse.microprofile.config.ConfigProvider.getConfig()
                 .getOptionalValue("quarkus.application.version", String.class).orElse("");
         Thread.ofVirtual().start(() -> {
             try {
-                elves.get().keepBuiltin(account.login(), account.token(), desk, dataDir.resolve("elf-maker.desk-version"));
+                elves.get().keepBuiltin(account.login(), account.token(), desk, dataDir);
             } catch (RuntimeException e) {
-                LOG.warnf("Couldn't look after Elf Maker: %s", e.getMessage());
+                LOG.warnf("Couldn't look after the elves that come with the desk: %s", e.getMessage());
             }
         });
     }

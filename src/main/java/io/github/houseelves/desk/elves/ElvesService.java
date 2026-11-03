@@ -37,6 +37,13 @@ public class ElvesService {
      */
     public static final String BUILTIN = "elf-maker";
     public static final String BUILTIN_REPO = "House-elves/elf-maker";
+    /**
+     * The elves that come with the desk, each name with its repo: Elf Maker and Sessions. Like Elf Maker, none is on
+     * the + page or can be removed, and the desk keeps each at its repo's newest commit, once per desk version.
+     */
+    public static final Map<String, String> WITH_DESK = new java.util.LinkedHashMap<>(Map.of(
+            BUILTIN, BUILTIN_REPO,
+            "sessions", "House-elves/sessions"));
 
     @Inject
     RunnerHub hub;
@@ -68,7 +75,7 @@ public class ElvesService {
         ObjectNode out = mapper.createObjectNode();
         ArrayNode list = out.putArray("elves");
         for (GitHub.ElfRepo r : github.elfRepos(token, login, sources())) {
-            if (r.repo().equals(BUILTIN_REPO)) continue; // it comes with the desk
+            if (WITH_DESK.containsValue(r.repo())) continue; // it comes with the desk
             list.add(entry(r, installed.get(r.repo())));
         }
         return out;
@@ -97,7 +104,7 @@ public class ElvesService {
 
     /** One elf repo as the catalog shows it, looked up directly (an elf Elf Maker just published); null if it isn't one. */
     public JsonNode elfRepo(String login, String token, String repo) {
-        if (repo == null || !repo.matches("[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}") || repo.equals(BUILTIN_REPO)) {
+        if (repo == null || !repo.matches("[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}") || WITH_DESK.containsValue(repo)) {
             throw new IllegalArgumentException("Not an elf repo");
         }
         GitHub.ElfRepo r = github.elfRepo(token, login, repo, sources());
@@ -196,7 +203,7 @@ public class ElvesService {
     }
 
     public JsonNode remove(String elf) {
-        if (BUILTIN.equals(elf)) throw new IllegalArgumentException("Elf Maker comes with the desk");
+        if (WITH_DESK.containsKey(elf)) throw new IllegalArgumentException("It comes with the desk");
         return ask(hub.message("elf.remove").put("elf", name(elf)), 60);
     }
 
@@ -208,23 +215,37 @@ public class ElvesService {
     }
 
     /**
-     * Elf Maker, installed and up to date: when the runner connects, it's installed if it isn't, and updated to
-     * House-elves/elf-maker's newest commit once for each version of the desk. Quietly: the desk works without it.
+     * The elves that come with the desk (WITH_DESK), installed and up to date: when the runner connects, each is
+     * installed if it isn't, and updated to its repo's newest commit once for each version of the desk (marked in
+     * {@code <name>.desk-version} in the desk's data dir). Quietly: the desk works without them.
      */
-    public void keepBuiltin(String login, String token, String deskVersion, java.nio.file.Path marker) {
+    public void keepBuiltin(String login, String token, String deskVersion, java.nio.file.Path dataDir) {
+        JsonNode installed;
+        try {
+            installed = installed().path("elves");
+        } catch (RuntimeException e) {
+            org.jboss.logging.Logger.getLogger(ElvesService.class).warnf("Couldn't list the elves: %s", e.getMessage());
+            return;
+        }
+        WITH_DESK.forEach((name, repo) -> keepBuiltin(installed, name, repo, login, token, deskVersion,
+                dataDir.resolve(name + ".desk-version")));
+    }
+
+    void keepBuiltin(JsonNode installed, String name, String repo, String login, String token, String deskVersion,
+            java.nio.file.Path marker) {
         try {
             JsonNode mine = null;
-            for (JsonNode e : installed().path("elves")) if (e.path("name").asText().equals(BUILTIN)) mine = e;
+            for (JsonNode e : installed) if (e.path("name").asText().equals(name)) mine = e;
             String done = java.nio.file.Files.exists(marker) ? java.nio.file.Files.readString(marker).strip() : "";
             if (mine != null && done.equals(deskVersion)) return;
-            GitHub.ElfRepo r = github.elfRepo(token, login, BUILTIN_REPO);
+            GitHub.ElfRepo r = github.elfRepo(token, login, repo);
             if (r == null) return; // not published yet
-            if (mine == null) ask(hub.message("elf.install").put("repo", BUILTIN_REPO).put("commit", r.commit()), 300);
-            else if (!mine.path("commit").asText().equals(r.commit())) update(BUILTIN, r.commit());
+            if (mine == null) ask(hub.message("elf.install").put("repo", repo).put("commit", r.commit()), 300);
+            else if (!mine.path("commit").asText().equals(r.commit())) update(name, r.commit());
             java.nio.file.Files.writeString(marker, deskVersion);
-            org.jboss.logging.Logger.getLogger(ElvesService.class).infof("Elf Maker is at %s", r.commit().substring(0, 7));
+            org.jboss.logging.Logger.getLogger(ElvesService.class).infof("%s is at %s", name, r.commit().substring(0, 7));
         } catch (Exception e) {
-            org.jboss.logging.Logger.getLogger(ElvesService.class).warnf("Couldn't install or update Elf Maker: %s", e.getMessage());
+            org.jboss.logging.Logger.getLogger(ElvesService.class).warnf("Couldn't install or update %s: %s", name, e.getMessage());
         }
     }
 
@@ -281,6 +302,17 @@ public class ElvesService {
         if (id == null || !id.matches("[a-z0-9][a-z0-9-]{0,79}")) throw new IllegalArgumentException("Not an agent");
         // "agent", not "id": a request's id is the desk's own, to match the answer.
         return ask(hub.message("elf.agentCancel").put("elf", name(elf)).put("agent", id), 30, RunnerHub.ELF_AGENTS_SINCE);
+    }
+
+    /**
+     * Removes one of an elf's slots (the clone a session of its kept, when you delete the session): the runner
+     * removes only that elf's own, and not while its agent works there.
+     */
+    public JsonNode removeSlot(String elf, String repo, String slot) {
+        if (repo == null || !repo.matches("[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}")) throw new IllegalArgumentException("Not a repo");
+        if (slot == null || !slot.matches("[a-z0-9][a-z0-9-]{0,39}")) throw new IllegalArgumentException("Not a slot");
+        return ask(hub.message("elf.agentSlotRemove").put("elf", name(elf)).put("repo", repo).put("slot", slot), 60,
+                RunnerHub.ELF_SLOTS_SINCE);
     }
 
     /** When an elf refreshes on its own: a calendar time, null for never, or "default" for its elf.yaml's. */

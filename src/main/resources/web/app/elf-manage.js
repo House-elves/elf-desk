@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
-import { BUILTIN, installedElf, setInstalledElves, setCatalog } from './tabs.js';
+import { BUILTIN, WITH_DESK, installedElf, setInstalledElves, setCatalog } from './tabs.js';
 import './elf-changes.js';
 
 const short = sha => (sha ?? '').slice(0, 7);
@@ -149,14 +149,14 @@ class ElfManage extends LitElement {
                 </div>
                 ${c ? this._renderChanges(e, c) : ''}
             </section>
-            ${e.name !== BUILTIN && this._latest?.canChange && installedElf(BUILTIN) ? html`<section aria-label="Change it">
+            ${!WITH_DESK.includes(e.name) && this._latest?.canChange && installedElf(BUILTIN) ? html`<section aria-label="Change it">
                 <h3>Change it</h3>
                 <div class="row">
                     <button class="sm" ?disabled=${!!this._busy} @click=${() => this._change(e)}>Change ${e.title || e.name} in Elf Maker</button>
                     <span class="hint">Say what to change. You read the new version before it's published.</span>
                 </div>
             </section>` : ''}
-            ${e.name === BUILTIN ? html`<p class="hint">Elf Maker comes with the desk, and updates with it.</p>` : html`<section aria-label="Remove">
+            ${WITH_DESK.includes(e.name) ? html`<p class="hint">${e.title || e.name} comes with the desk, and updates with it.</p>` : html`<section aria-label="Remove">
                 <h3>Remove</h3>
                 ${this._removing ? html`<div class="confirm" role="group" aria-label="Remove ${e.title || e.name}">
                     Remove ${e.title || e.name}${e.tab ? ' and its tab' : ''}? Its settings stay, for if you add it again.

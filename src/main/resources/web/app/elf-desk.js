@@ -3,7 +3,7 @@ import { keyed } from 'lit/directives/keyed.js';
 import { shared, itemKeyFromHash, closeX } from './shared.js';
 import { api, connectionState, onConnectionChange, onBusyChange, onPush, errorMessage } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
-import { BUILTIN, tabs, shownTabs, findTab, onTabsChange, setInstalledElves, installedElves, installedElf, githubElf, setCatalog, updateFor, setTabOrder, tabOrder } from './tabs.js';
+import { BUILTIN, WITH_DESK, tabs, shownTabs, findTab, onTabsChange, setInstalledElves, installedElves, installedElf, githubElf, setCatalog, updateFor, setTabOrder, tabOrder } from './tabs.js';
 import './desk-settings.js';
 import './elf-tab.js';
 import './elf-manage.js';
@@ -200,7 +200,7 @@ class ElfDesk extends LitElement {
             setInstalledElves(r.elves ?? []);
             let welcomed = true;
             try { welcomed = !!localStorage.getItem(WELCOMED); } catch { /* no storage: never redirect */ }
-            if (!(r.elves ?? []).some(e => e.name !== BUILTIN) && !welcomed && this._view === 'dashboard') {
+            if (!(r.elves ?? []).some(e => !WITH_DESK.includes(e.name)) && !welcomed && this._view === 'dashboard') {
                 try { localStorage.setItem(WELCOMED, '1'); } catch { /* no storage */ }
                 location.hash = '#elves';
             }

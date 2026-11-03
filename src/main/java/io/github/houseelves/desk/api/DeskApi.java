@@ -294,6 +294,11 @@ public class DeskApi {
         return elves.action(elf, action, params);
     }
 
+    /** Removes one of an elf's slots: a session's clone, when the session is deleted. */
+    public com.fasterxml.jackson.databind.JsonNode removeElfSlot(String elf, String repo, String slot) {
+        return elves.removeSlot(elf, repo, slot);
+    }
+
     /** Stops one of an elf's agents (its tab's Stop). */
     public com.fasterxml.jackson.databind.JsonNode cancelElfAgent(String elf, String id) {
         return elves.cancelAgent(elf, id);

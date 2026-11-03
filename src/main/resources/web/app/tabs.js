@@ -9,6 +9,8 @@ export const GITHUB = { id: 'github', label: 'GitHub' };
 
 /** Elf Maker comes with the desk: its page opens from the + page, not from a tab of its own. */
 export const BUILTIN = 'elf-maker';
+/** The elves that come with the desk: never on the + page, never removed, and not elves you added. */
+export const WITH_DESK = [BUILTIN, 'sessions'];
 
 /** The installed elves (as the runner lists them), once known; null until then. */
 let installed = null;
