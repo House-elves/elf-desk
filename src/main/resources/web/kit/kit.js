@@ -229,6 +229,12 @@ export const elf = {
      * to that page of its tab (the GitHub elf's thread of a PR, say: 'thread/quarkusio/quarkus/123').
      */
     openElf: (name, route) => call('open', route == null ? { elf: name } : { elf: name, route }),
+    /**
+     * Fills the rest of the desk's window (on its tab): the frame is as tall as what's left below it, and the desk's
+     * page doesn't scroll, so the tab lays itself out in 100vh and scrolls inside (a chat). fill(false) goes back to
+     * growing with its content. Desk 0.6.38 and later.
+     */
+    fill: (on = true) => call('fill', { on }),
     /** Whether another elf with a tab is on this desk (by its name), to offer a link to it only when it is. */
     hasElf: name => call('has-elf', { elf: name }),
 

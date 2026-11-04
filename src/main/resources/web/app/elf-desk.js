@@ -30,6 +30,7 @@ class ElfDesk extends LitElement {
 
     static properties = {
         _view: { state: true },
+        _fill: { state: true },      // an elf's tab fills the window (elf.fill): no room kept under it
         _conn: { state: true },
         _update: { state: true },    // {desk, deskLatest, runner, runnerLatest, available}: a newer Elf Desk is out
         _updating: { state: true },  // the update was asked for: the desk restarts
@@ -102,6 +103,7 @@ class ElfDesk extends LitElement {
             background: var(--bad-soft); color: var(--bad); padding: 9px 24px; text-align: center; font-size: 14px;
         }
         main { padding: 32px 24px 80px; }
+        main.fill { padding-bottom: 0; }
         /* Its version, quietly, right after the name (the bar's gap would push it away). */
         button.version { position: relative; border: 0; background: none; padding: 2px 12px 2px 0; cursor: pointer; }
         button.version .update-dot { top: 0; right: 2px; }
@@ -119,6 +121,7 @@ class ElfDesk extends LitElement {
         @media (max-width: 640px) {
             .bar { padding: 10px 16px; }
             main { padding: 22px 16px 64px; }
+            main.fill { padding-bottom: 0; }
         }
     `];
 
@@ -482,7 +485,7 @@ class ElfDesk extends LitElement {
                     <button class="sm quiet" @click=${() => { this._orderError = null; }}>Close</button></div>` : ''}
             </header>
             ${this._renderElfUpdate()}
-            <main>
+            <main class=${this._fill && this._view.startsWith('tab:') ? 'fill' : ''} @elf-fill=${e => { this._fill = e.detail.on; }}>
                 ${this._view === 'elves' ? html`<desk-elves></desk-elves>`
                     : this._view.startsWith('tab:') ? this._elfTab(findTab(this._view.slice(4)))
                     : this._view === 'waiting' ? this._versions && !this._versions.runner

@@ -34,6 +34,7 @@ class ElfFrame extends LitElement {
         _ask: { state: true },       // {action, label, text, params, resolve}
         _settings: { state: true },  // {keys, heading}
         _shown: { state: true },     // the frame has spoken (or loaded): until then the desk's placeholder stands in
+        _fill: { state: true },      // its tab asked to fill the rest of the window (elf.fill): the page doesn't scroll
     };
 
     static styles = [shared, css`
@@ -92,6 +93,8 @@ class ElfFrame extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
+        this._onResize = () => this._fit();
+        window.addEventListener('resize', this._onResize);
         window.addEventListener('message', this._onMessage);
         window.addEventListener('elfdesk-theme', this._onTheme);
         this._offPush = onPush('desk.elves', d => {
@@ -101,11 +104,33 @@ class ElfFrame extends LitElement {
     }
 
     disconnectedCallback() {
+        window.removeEventListener('resize', this._onResize);
+        if (this._fill) this._announceFill(false);
         window.removeEventListener('message', this._onMessage);
         window.removeEventListener('elfdesk-theme', this._onTheme);
         this._offPush?.();
         this._ask?.resolve(false);
         super.disconnectedCallback();
+    }
+
+    /** The desk drops the room it keeps under a page while a tab fills the window (see elf-desk). */
+    _announceFill(on) {
+        this.dispatchEvent(new CustomEvent('elf-fill', { detail: { on }, bubbles: true, composed: true }));
+    }
+
+    /** Filling the window: as tall as what's left of it below the frame's top, so the page has nothing to scroll. */
+    _fit() {
+        if (!this._fill) return;
+        const top = this.getBoundingClientRect().top + window.scrollY;
+        this._height = Math.max(360, Math.floor(window.innerHeight - top - 12));
+    }
+
+    updated() {
+        if (this._fill) {
+            const h = this._height;
+            this._fit();
+            if (h !== this._height) this.requestUpdate();
+        }
     }
 
     get _frame() {
@@ -126,7 +151,17 @@ class ElfFrame extends LitElement {
         const { id, op, args = {} } = e.data;
         if (op === 'size') {
             const h = Number(args.height);
-            if (Number.isFinite(h)) this._height = Math.max(0, Math.min(h, 100_000));
+            // Filling the window, its height is the window's, not its content's.
+            if (Number.isFinite(h) && !this._fill) this._height = Math.max(0, Math.min(h, 100_000));
+            return;
+        }
+        if (op === 'fill') {
+            // Its tab takes the rest of the window and scrolls inside itself (Sessions' chat), so the page doesn't.
+            if (this.view !== 'tab') return;
+            this._fill = args.on !== false;
+            this._announceFill(this._fill);
+            await this.updateComplete;
+            this._fit();
             return;
         }
         if (op === 'card') {
