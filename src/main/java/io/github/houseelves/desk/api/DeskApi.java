@@ -294,6 +294,11 @@ public class DeskApi {
         return elves.action(elf, action, params);
     }
 
+    /** Installs a coding agent, after you confirmed it (the settings' Install, or an elf's tab through the desk's bar). */
+    public com.fasterxml.jackson.databind.JsonNode installAgent(String agent) {
+        return elves.installAgent(agent);
+    }
+
     /** Removes one of an elf's slots: a session's clone, when the session is deleted. */
     public com.fasterxml.jackson.databind.JsonNode removeElfSlot(String elf, String repo, String slot) {
         return elves.removeSlot(elf, repo, slot);

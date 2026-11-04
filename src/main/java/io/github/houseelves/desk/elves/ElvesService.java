@@ -315,6 +315,15 @@ public class ElvesService {
                 RunnerHub.ELF_SLOTS_SINCE);
     }
 
+    /**
+     * Installs a coding agent you confirmed (its own npm package, into ~/.local, by the runner). Takes a while: npm
+     * downloads it. Answers {agent, label, installed, next}, next being what's left for you (its login, its licence).
+     */
+    public JsonNode installAgent(String agent) {
+        if (agent == null || !agent.matches("[a-z]{1,20}")) throw new IllegalArgumentException("Not a coding agent");
+        return ask(hub.message("agent.install").put("agent", agent), 660, RunnerHub.AGENT_INSTALL_SINCE);
+    }
+
     /** When an elf refreshes on its own: a calendar time, null for never, or "default" for its elf.yaml's. */
     public JsonNode schedule(String elf, String calendar) {
         ObjectNode msg = hub.message("elf.schedule").put("elf", name(elf));

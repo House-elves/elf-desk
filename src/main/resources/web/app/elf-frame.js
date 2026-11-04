@@ -148,6 +148,29 @@ class ElfFrame extends LitElement {
             case 'act': return this._act(desk, String(args.action ?? ''), object(args.params) ?? {});
             case 'cancelAgent': return desk.cancelElfAgent({ elf, id: String(args.id ?? '') });
             case 'removeSlot': return desk.removeElfSlot({ elf, repo: String(args.repo ?? ''), slot: String(args.slot ?? '') });
+            case 'installAgent': {
+                // A coding agent this machine doesn't have: only after you confirm it in the desk's own bar, which
+                // says what the runner runs (that agent's own npm package, from the runner's settings).
+                const agent = String(args.agent ?? '');
+                const settings = await desk.elfSettings({ elf: 'elf-runner' });
+                const o = (settings?.settings ?? []).flatMap(x => x.options ?? []).find(x => x.value === agent);
+                if (!o) throw new Error('Not a coding agent the desk installs');
+                if (o.installed) return { agent, label: o.label, installed: true, next: '' };
+                if (!o.install) throw new Error(o.installNeeds ?? `The desk can't install ${o.label} here`);
+                const yes = await new Promise(resolve => {
+                    this._ask?.resolve(false);
+                    this._ask = { action: { label: `Install ${o.label}` }, params: {},
+                        text: `Install ${o.label} on this machine? It runs ${o.install} as you, outside the sandbox: ${o.label}'s own package, from npm.`,
+                        resolve };
+                });
+                this._ask = null;
+                if (!yes) {
+                    const e = new Error('Cancelled');
+                    e.cancelled = true;
+                    throw e;
+                }
+                return desk.installAgent({ agent });
+            }
             case 'settings':
                 if (this.view === 'settings') return null; // already in them
                 this._settings = { keys: args.keys ? strings(args.keys) : null, heading: String(args.heading ?? `${installedElf(elf)?.title ?? elf} settings`).slice(0, 80) };

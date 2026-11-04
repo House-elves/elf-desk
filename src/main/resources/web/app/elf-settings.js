@@ -21,6 +21,7 @@ class ElfSettings extends LitElement {
         _busy: { state: true },
         _saved: { state: true },
         _error: { state: true },
+        _install: { state: true },      // {agent, label, command, phase: confirm | busy | done | failed, text}
     };
 
     static styles = [shared, css`
@@ -41,6 +42,9 @@ class ElfSettings extends LitElement {
         .help { font-size: 13px; color: var(--muted); margin: 0; }
         .wrong { font-size: 13px; color: var(--bad); margin: 0; }
         .secret { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding-top: 4px; }
+        .install { display: grid; gap: 8px; padding-top: 6px; font-size: 13px; }
+        .install code { font-family: var(--font-code); font-size: 12px; overflow-wrap: anywhere; }
+        .install .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
         input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); margin: 0; }
         .check { display: flex; gap: 10px; align-items: center; padding-top: 7px; }
         .acts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 14px 18px; border-top: 1px solid var(--line); }
@@ -145,10 +149,11 @@ class ElfSettings extends LitElement {
             const options = s.options ?? [];
             const current = options.some(o => o.value === value) ? value : (options[0]?.value ?? '');
             return html`<div class="row"><label for=${id}>${s.label}${needed}</label><div class="field">
-                <select id=${id} aria-describedby="${id}-help" @change=${e => this._set(s.key, e.target.value)}>
+                <select id=${id} aria-describedby="${id}-help" @change=${e => { this._install = null; this._set(s.key, e.target.value); }}>
                     ${options.map(o => html`<option value=${o.value} ?selected=${o.value === current}>
                         ${o.label}${o.installed ? '' : ' (not installed)'}</option>`)}
                 </select>
+                ${this._installer(options.find(o => o.value === current))}
                 ${help}</div></div>`;
         }
         if (s.kind === 'secret') {
@@ -166,6 +171,48 @@ class ElfSettings extends LitElement {
                 min=${s.min ?? ''} max=${s.max ?? ''} spellcheck="false" aria-invalid=${wrong ? 'true' : 'false'}
                 @input=${e => this._set(s.key, e.target.value)}>
             ${help}</div></div>`;
+    }
+
+    /**
+     * The chosen agent isn't installed here: Install, which says exactly what it runs and asks once more, then what's
+     * left for you (its login, its licence). The runner installs only that agent's own npm package.
+     */
+    _installer(o) {
+        const i = this._install;
+        if (i && i.phase === 'done' && (!o || o.value === i.agent || o.installed)) {
+            return html`<div class="install" role="status"><span class="chip ok">${i.label} installed</span>${i.text ? html`<span>${i.text}</span>` : ''}</div>`;
+        }
+        if (!o || o.installed || !o.value) return '';
+        if (!o.install) return o.installNeeds ? html`<div class="install"><span>${o.installNeeds}.</span></div>` : '';
+        if (i?.agent === o.value && i.phase === 'confirm') {
+            return html`<div class="install" role="group" aria-label="Install ${o.label}">
+                <span>Install ${o.label} on this machine? It runs <code>${o.install}</code> as you, outside the sandbox: ${o.label}'s own package, from npm.</span>
+                <div class="acts"><button type="button" class="sm primary" @click=${() => this._installAgent(o)}>Install ${o.label}</button>
+                    <button type="button" class="sm quiet" @click=${() => { this._install = null; }}>Cancel</button></div></div>`;
+        }
+        if (i?.agent === o.value && i.phase === 'busy') {
+            return html`<div class="install" role="status"><span>${spinner}Installing ${o.label}… npm is downloading it, which can take a few minutes.</span></div>`;
+        }
+        return html`<div class="install">
+            ${i?.agent === o.value && i.phase === 'failed' ? html`<span class="wrong" role="alert">${i.text}</span>` : ''}
+            <div class="acts"><button type="button" class="sm" @click=${() => { this._install = { agent: o.value, label: o.label, phase: 'confirm' }; }}>
+                Install ${o.label}</button></div></div>`;
+    }
+
+    async _installAgent(o) {
+        this._install = { agent: o.value, label: o.label, phase: 'busy' };
+        try {
+            const desk = await api();
+            const r = await desk.installAgent({ agent: o.value });
+            this._install = { agent: o.value, label: o.label, phase: 'done', text: r?.next ?? '' };
+            this.dispatchEvent(new CustomEvent('agent-installed', { detail: { agent: o.value }, bubbles: true, composed: true }));
+            // Read again (it's installed now), keeping what you changed and haven't saved, such as picking this agent.
+            const unsaved = this._values;
+            await this._load();
+            this._values = unsaved;
+        } catch (err) {
+            this._install = { agent: o.value, label: o.label, phase: 'failed', text: errorMessage(err) };
+        }
     }
 
     render() {

@@ -169,6 +169,12 @@ export const elf = {
      * agent's sessions there. Runner 0.46.0 and later; refused while one of its agents works there.
      */
     removeSlot: (repo, slot) => call('removeSlot', { repo, slot }),
+    /**
+     * Installs a coding agent this machine doesn't have (claude, codex, pi or bob), once you confirm it in the desk's
+     * bar, which says the npm command the runner runs. Resolves with {agent, label, installed, next}: next is what's
+     * left for you (its login, its licence). Rejects with cancelled when you said no. Runner 0.48.0 and later.
+     */
+    installAgent: agent => call('installAgent', { agent }),
 
     /** Opens the desk's settings for this elf, with only these keys (default: all). Secrets never reach the tab. */
     settings: (keys, heading) => call('settings', { keys, heading }),
