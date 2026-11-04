@@ -21,11 +21,11 @@ class ElfTab extends LitElement {
 
     static styles = [shared, css`
         :host { display: block; }
-        .setup { display: grid; gap: 22px; max-width: 52rem; }
+        .setup { display: grid; gap: 22px; }
         h1 { font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.022em; }
-        .sub { margin: 6px 0 0; color: var(--muted); font-size: 15px; max-width: 44rem; }
+        .sub { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
         .when { padding: 16px 18px; }
-        ol.steps { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 4px; color: var(--muted); font-size: 14px; max-width: 44rem; }
+        ol.steps { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 4px; color: var(--muted); font-size: 14px; }
         ol.steps strong { color: var(--ink); font-weight: 600; }
         @media (max-width: 600px) { h1 { font-size: 26px; } }
     `];

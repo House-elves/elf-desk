@@ -145,7 +145,7 @@ class DeskBoard extends LitElement {
     };
 
     static styles = [shared, css`
-        .hero { display: grid; gap: 10px; max-width: 46rem; }
+        .hero { display: grid; gap: 10px; }
         .board-top { margin-bottom: 34px; }
         .board-top + .settings-area { margin: -12px 0 34px; }
         .date { color: var(--muted); font-size: 15px; }
@@ -256,11 +256,11 @@ class DeskBoard extends LitElement {
         .seg i.done { background: color-mix(in srgb, var(--accent) 45%, var(--line)); }
         .seg i.now { background: var(--accent); }
         .stage { font-weight: 500; }
-        .acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; max-width: 26rem; }
+        .acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
         .inline { grid-column: 2 / -1; padding: 8px 0 4px; min-width: 0; }
         .empty { color: var(--muted); padding: 16px 18px; margin: 0; font-size: 14px; }
 
-        .notice { padding: 18px 20px; margin-bottom: 26px; display: grid; gap: 8px; max-width: 46rem; }
+        .notice { padding: 18px 20px; margin-bottom: 26px; display: grid; gap: 8px; }
         .notice p { margin: 0; }
 
         details summary {

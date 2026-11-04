@@ -300,7 +300,7 @@ class ElfRunBar extends LitElement {
         .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
         .bar select { max-width: 100%; }
         .status { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--accent); }
-        .note { margin: 8px 0 0; font-size: 13px; color: var(--muted); max-width: 46rem; }
+        .note { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
         .failed { margin-top: 12px; display: grid; gap: 8px; }
         pre {
             margin: 0; padding: 12px 14px; border-radius: var(--r-control); overflow-x: auto;

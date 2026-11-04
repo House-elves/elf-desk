@@ -59,7 +59,7 @@ class DeskThread extends LitElement {
         .back { font-size: 14px; color: var(--muted); text-decoration: none; display: inline-flex; gap: 6px; }
         .back:hover { color: var(--ink); }
         .layout { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 40px; align-items: start; margin-top: 18px; }
-        .convo { display: grid; gap: 22px; min-width: 0; max-width: 780px; }
+        .convo { display: grid; gap: 22px; min-width: 0; }
         .title-block { display: grid; gap: 8px; }
         .files, .change { display: grid; gap: 10px; min-width: 0; }
         .files-toggle { justify-self: start; }
@@ -118,7 +118,7 @@ class DeskThread extends LitElement {
         }
         .turn.agent .preview:hover { color: var(--ink); background: var(--surface-2); }
         .turn.system { justify-items: center; }
-        .turn.system .body { color: var(--muted); font-size: 13px; text-align: center; max-width: 36rem; }
+        .turn.system .body { color: var(--muted); font-size: 13px; text-align: center; }
 
         .live { overflow: hidden; }
         .live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 14px 18px; }

@@ -21,7 +21,7 @@ class DeskSettings extends LitElement {
     static styles = [shared, css`
         .page { display: grid; gap: 30px; }
         h1 { font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.022em; }
-        .intro { color: var(--muted); margin: 0; max-width: 40rem; }
+        .intro { color: var(--muted); margin: 0; }
         section { display: grid; gap: 12px; }
         .head { display: grid; gap: 2px; }
         h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }

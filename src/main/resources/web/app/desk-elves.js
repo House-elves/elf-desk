@@ -33,7 +33,7 @@ class DeskElves extends LitElement {
     static styles = [shared, css`
         .page { display: grid; gap: 30px; }
         h1 { font-size: 34px; line-height: 1.15; font-weight: 600; letter-spacing: -0.022em; }
-        .intro { color: var(--muted); margin: 6px 0 0; max-width: 44rem; }
+        .intro { color: var(--muted); margin: 6px 0 0; }
         section { display: grid; gap: 12px; }
         h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
         .hint { font-size: 14px; color: var(--muted); margin: 0; }
@@ -42,7 +42,7 @@ class DeskElves extends LitElement {
         .elf { padding: 18px 20px; display: grid; gap: 12px; min-width: 0; }
         .top { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; justify-content: space-between; }
         h3 { font-size: 16px; font-weight: 600; }
-        .desc { margin: 0; max-width: 46rem; }
+        .desc { margin: 0; }
         .meta { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
         .meta a { color: inherit; }
         .acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -50,7 +50,7 @@ class DeskElves extends LitElement {
         dt { color: var(--muted); }
         dd { margin: 0; min-width: 0; }
         dd ul { margin: 0; padding-left: 18px; }
-        .warn-note { margin: 0; font-size: 13.5px; color: var(--warn); max-width: 46rem; }
+        .warn-note { margin: 0; font-size: 13.5px; color: var(--warn); }
         .empty { color: var(--muted); padding: 16px 18px; margin: 0; }
         code { font: 13px var(--font-code); background: var(--surface-2); padding: 2px 6px; border-radius: 5px; }
         .sk { height: 120px; }
@@ -58,7 +58,7 @@ class DeskElves extends LitElement {
         h3 code { font-weight: 400; color: var(--muted); margin-left: 6px; }
         a.chip { text-decoration: none; }
         .make { padding: 18px 20px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; }
-        .make p { margin: 0; max-width: 40rem; }
+        .make p { margin: 0; }
         .focus { outline: 2px solid var(--accent); outline-offset: 2px; }
         @media (max-width: 600px) {
             h1 { font-size: 26px; }

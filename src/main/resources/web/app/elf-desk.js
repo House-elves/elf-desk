@@ -53,7 +53,7 @@ class ElfDesk extends LitElement {
             border-bottom: 1px solid var(--line);
         }
         .bar {
-            max-width: 1180px; margin: 0 auto; padding: 10px 24px;
+            padding: 10px 24px;
             display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px;
         }
         .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
@@ -101,7 +101,7 @@ class ElfDesk extends LitElement {
         .lost {
             background: var(--bad-soft); color: var(--bad); padding: 9px 24px; text-align: center; font-size: 14px;
         }
-        main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+        main { padding: 32px 24px 80px; }
         /* Its version, quietly, right after the name (the bar's gap would push it away). */
         button.version { position: relative; border: 0; background: none; padding: 2px 12px 2px 0; cursor: pointer; }
         button.version .update-dot { top: 0; right: 2px; }
