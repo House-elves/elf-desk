@@ -66,6 +66,14 @@ class ElfManage extends LitElement {
     async _lookForUpdate() {
         try {
             const e = installedElf(this.elf);
+            // The elves that come with the desk aren't on the + page's list: their repo is looked up directly, so their
+            // updates show here as any elf's do (the desk also moves them when it updates itself).
+            if (WITH_DESK.includes(this.elf)) {
+                const r = await (await api()).checkElfUpdate({ elf: this.elf });
+                setCatalogEntry(r);
+                this._latest = r ?? false;
+                return;
+            }
             const catalog = (await (await api()).elfCatalog()).elves ?? [];
             setCatalog(catalog); // the tabs' update marks, while we're at it
             this._latest = catalog.find(c => c.repo === e?.repo) ?? false;
@@ -179,7 +187,7 @@ class ElfManage extends LitElement {
                     <span class="hint">Say what to change. You read the new version before it's published.</span>
                 </div>
             </section>` : ''}
-            ${WITH_DESK.includes(e.name) ? html`<p class="hint">${e.title || e.name} comes with the desk, and updates with it.</p>` : html`<section aria-label="Remove">
+            ${WITH_DESK.includes(e.name) ? html`<p class="hint">${e.title || e.name} comes with the desk: updating the desk updates it too, and you can update it here sooner.</p>` : html`<section aria-label="Remove">
                 <h3>Remove</h3>
                 ${this._removing ? html`<div class="confirm" role="group" aria-label="Remove ${e.title || e.name}">
                     Remove ${e.title || e.name}${e.tab ? ' and its tab' : ''}? Its settings stay, for if you add it again.
