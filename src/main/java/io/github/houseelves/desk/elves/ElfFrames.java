@@ -40,6 +40,26 @@ public class ElfFrames {
             "json", "application/json", "svg", "image/svg+xml", "png", "image/png", "jpg", "image/jpeg", "webp", "image/webp",
             "woff2", "font/woff2");
     static final Set<String> VIEWS = Set.of("tab", "card", "settings");
+    /** The frame's first paint: the desk's colour scheme (light, dark, or as the system says) and its placeholder look. */
+    static final String FIRST_PAINT = """
+            :root { color-scheme: light; --sk: #edf1ea; }
+            @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --sk: #1d2621; } }
+            :root[data-theme="dark"] { color-scheme: dark; --sk: #1d2621; }
+            html, body { margin: 0; background: transparent; }
+            #elf-loading { display: grid; gap: 14px; padding: 2px 0; }
+            body:has(> :not(#elf-loading):not(link):not(script)) > #elf-loading { display: none; }
+            #elf-loading .sk { border-radius: 6px; background: var(--sk); animation: elf-sk 1.4s ease-in-out infinite; }
+            @keyframes elf-sk { 50% { opacity: 0.55; } }
+            @media (prefers-reduced-motion: reduce) { #elf-loading .sk { animation: none; } }
+            """.replace("\n", " ");
+
+    /** The placeholder's shape for each view: a sentence on a card; a title, a line and a panel on a tab. */
+    static final Map<String, String> PLACEHOLDERS = Map.of(
+            "card", "<div class=\"sk\" style=\"height:28px;width:min(30rem,100%)\"></div>",
+            "tab", "<div class=\"sk\" style=\"height:40px;width:min(16rem,60%)\"></div>"
+                    + "<div class=\"sk\" style=\"height:16px;width:min(28rem,85%)\"></div>"
+                    + "<div class=\"sk\" style=\"height:12rem;margin-top:10px\"></div>");
+
     static final String FONTS = "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700"
             + "&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap";
 
@@ -107,14 +127,20 @@ public class ElfFrames {
             return;
         }
         String themeAttr = theme.equals("light") || theme.equals("dark") ? " data-theme=\"" + theme + "\"" : "";
+        // Drawn before anything else arrives: on a slow network the elf's scripts (and the kit's colours) can take a
+        // while. So the page's colour scheme and a transparent background come with the page itself (else a dark desk
+        // shows the frame as a white block), with a placeholder in the shape of the view, which goes when the elf's
+        // own element arrives. The fonts come last, so they never hold up that first paint.
         rc.response().end("""
                 <!doctype html>
                 <html lang="en"%s><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>%s</title>
-                <link rel="stylesheet" href="%s">
+                <style>%s</style>
                 <script type="module" src="/elf-files/%s/%s"></script>
-                </head><body></body></html>
-                """.formatted(themeAttr, t.title().replace("&", "&amp;").replace("<", "&lt;"), FONTS.replace("&", "&amp;"), key(t.elf(), t.commit()), t.page()));
+                </head><body><div id="elf-loading" role="status" aria-label="Loading">%s</div>
+                <link rel="stylesheet" href="%s"></body></html>
+                """.formatted(themeAttr, t.title().replace("&", "&amp;").replace("<", "&lt;"), FIRST_PAINT,
+                key(t.elf(), t.commit()), t.page(), PLACEHOLDERS.getOrDefault(view, ""), FONTS.replace("&", "&amp;")));
     }
 
     void file(RoutingContext rc) {

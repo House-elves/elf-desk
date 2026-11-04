@@ -33,11 +33,17 @@ class ElfFrame extends LitElement {
         _height: { state: true },
         _ask: { state: true },       // {action, label, text, params, resolve}
         _settings: { state: true },  // {keys, heading}
+        _shown: { state: true },     // the frame has spoken (or loaded): until then the desk's placeholder stands in
     };
 
     static styles = [shared, css`
         :host { display: block; }
         iframe { display: block; width: 100%; border: 0; background: transparent; }
+        /* Until the frame's page is there, the browser draws an empty frame as an opaque box (white, on a dark desk):
+           the frame waits unseen under a placeholder of the desk's own. */
+        .frame { position: relative; }
+        .frame.waiting iframe { visibility: hidden; }
+        .waiting-sk { position: absolute; inset: 0 0 auto 0; display: grid; gap: 14px; padding: 2px 0; }
         .ask {
             position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 20;
             width: min(44rem, calc(100vw - 32px)); box-sizing: border-box;
@@ -116,6 +122,7 @@ class ElfFrame extends LitElement {
         if (!frame || e.source !== frame.contentWindow || e.data?.elfdesk !== 1) return;
         // The key in this load's URL: a page the frame navigated to (a link clicked inside it) can't speak for the elf.
         if (e.data.key !== this._key) return;
+        this._shown = true;
         const { id, op, args = {} } = e.data;
         if (op === 'size') {
             const h = Number(args.height);
@@ -335,6 +342,7 @@ class ElfFrame extends LitElement {
                 + (theme === 'system' ? '' : `&theme=${theme}`) + (this.route ? `&route=${encodeURIComponent(this.route)}` : '')
                 + `&key=${this._key}`;
             this._sentRoute = this.route ?? '';
+            this._shown = false;
         } else if (changed.has('route') && (this.route ?? '') !== this._sentRoute) {
             // A new place in the same tab (a link, Back): the elf goes there without reloading.
             this._sentRoute = this.route ?? '';
@@ -342,11 +350,24 @@ class ElfFrame extends LitElement {
         }
     }
 
+    /** The desk's placeholder while the frame's page comes: a sentence on a card; a title, a line and a panel on a tab. */
+    _placeholder() {
+        if (this._shown || this.view === 'settings') return '';
+        return html`<div class="waiting-sk" role="status" aria-label="Loading">${this.view === 'card'
+            ? html`<div class="skeleton" style="height:28px;width:min(30rem,100%)"></div>`
+            : html`<div class="skeleton" style="height:40px;width:min(16rem,60%)"></div>
+                <div class="skeleton" style="height:16px;width:min(28rem,85%)"></div>
+                <div class="skeleton" style="height:12rem;margin-top:10px"></div>`}</div>`;
+    }
+
     render() {
         return html`
+            <div class="frame ${this._shown || this.view === 'settings' ? '' : 'waiting'}">
             <iframe src=${this._src} title=${installedElf(this.elf)?.title ?? this.elf} style="height:${this._height || { card: 60, settings: 24 }[this.view] || 400}px"
                     sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox" allow="clipboard-write"
-                    referrerpolicy="no-referrer"></iframe>
+                    referrerpolicy="no-referrer" @load=${() => { this._shown = true; }}></iframe>
+            ${this._placeholder()}
+            </div>
             ${this._askBar()}
             ${this._settingsDialog()}
         `;

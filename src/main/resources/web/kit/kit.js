@@ -63,6 +63,23 @@ tokens.textContent = `
     color-scheme: dark;`);
 document.head.append(tokens);
 
+// The desk's placeholder (in the frame's own page, for a slow network) goes once the elf has put its element in the
+// page; the page's CSS hides it then too, where the browser knows :has.
+const loading = document.getElementById('elf-loading');
+if (loading) {
+    const shown = () => [...document.body.children].some(c => c !== loading && !['LINK', 'SCRIPT', 'STYLE'].includes(c.tagName));
+    if (shown()) loading.remove();
+    else {
+        const watch = new MutationObserver(() => {
+            if (shown()) {
+                loading.remove();
+                watch.disconnect();
+            }
+        });
+        watch.observe(document.body, { childList: true });
+    }
+}
+
 // ---- the bridge ----
 
 let next = 0;
