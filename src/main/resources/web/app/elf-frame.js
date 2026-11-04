@@ -122,7 +122,8 @@ class ElfFrame extends LitElement {
     _fit() {
         if (!this._fill) return;
         const top = this.getBoundingClientRect().top + window.scrollY;
-        this._height = Math.max(360, Math.floor(window.innerHeight - top - 12));
+        // A little room at least, but never more than the window has: the page doesn't scroll.
+        this._height = Math.max(220, Math.floor(window.innerHeight - top - 12));
     }
 
     updated() {
