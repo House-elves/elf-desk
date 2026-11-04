@@ -140,6 +140,10 @@ class ElfDesk extends LitElement {
     connectedCallback() {
         super.connectedCallback();
         window.addEventListener('hashchange', this._onHash);
+        // A file dropped on the desk outside an elf's frame (which takes its own drops) would make the browser open it
+        // in place of the desk: it's ignored instead.
+        window.addEventListener('dragover', this._noFileDrop);
+        window.addEventListener('drop', this._noFileDrop);
         // Settings saved anywhere (a tab's dialog or setup, the + page) may finish an elf's setup: its tab shows then.
         this.addEventListener('elf-settings-saved', () => this._loadElves());
         this._offTabs = onTabsChange(() => {
@@ -176,8 +180,16 @@ class ElfDesk extends LitElement {
         });
     }
 
+    _noFileDrop = e => {
+        if (!e.dataTransfer?.types?.includes('Files') || e.composedPath().some(n => n.localName === 'input' && n.type === 'file')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'none';
+    };
+
     disconnectedCallback() {
         window.removeEventListener('hashchange', this._onHash);
+        window.removeEventListener('dragover', this._noFileDrop);
+        window.removeEventListener('drop', this._noFileDrop);
         this._offTabs?.();
         this._offConn?.();
         this._offBusy?.();
