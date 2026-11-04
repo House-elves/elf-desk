@@ -188,13 +188,19 @@ class ElfFrame extends LitElement {
                 const c = await desk.elfSettings({ elf });
                 return Object.fromEntries((c.settings ?? []).filter(s => s.kind !== 'secret').map(s => [s.key, s.value ?? '']));
             }
+            case 'has-elf': {
+                // Whether another elf with a tab is on this desk (the Todo list offering Sessions' links): yes or no only.
+                return !!findTab(String(args.elf ?? ''));
+            }
             case 'open': {
                 // Its own tab, or another installed elf's (the GitHub board pointing at mvnpm's, say): only a tab.
                 const to = args.elf == null ? elf : String(args.elf);
                 if (to !== elf && !findTab(to)) throw new Error(`There's no ${to} tab`);
                 // A page of its tab: a plain path, the part of the address after #<elf>/.
                 const route = args.route == null ? '' : String(args.route);
-                if (route && (!/^[A-Za-z0-9._~-]+(\/[A-Za-z0-9._~-]+)*$/.test(route) || route.split('/').includes('..') || route.length > 300)) {
+                // Letters, digits, . _ ~ - and %-escapes (a title an elf hands another: Start a session on a todo).
+                if (route && (!/^(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+(\/(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+)*$/.test(route)
+                        || route.split('/').includes('..') || route.length > 600)) {
                     throw new Error('Not a page');
                 }
                 location.hash = route ? `#${to}/${route}` : `#${to}`;

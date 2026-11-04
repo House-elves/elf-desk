@@ -229,6 +229,8 @@ export const elf = {
      * to that page of its tab (the GitHub elf's thread of a PR, say: 'thread/quarkusio/quarkus/123').
      */
     openElf: (name, route) => call('open', route == null ? { elf: name } : { elf: name, route }),
+    /** Whether another elf with a tab is on this desk (by its name), to offer a link to it only when it is. */
+    hasElf: name => call('has-elf', { elf: name }),
 
     /** A little memory for the tab (unsent edits, say), kept by the desk in this browser. Values are strings. */
     store: {
