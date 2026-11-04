@@ -116,6 +116,20 @@ public class ElvesService {
         return entry(r, i);
     }
 
+    /**
+     * An installed elf's repo as it is on GitHub now (its settings' Check now): looked up directly, not through
+     * search, which can be minutes behind, and for the elves that come with the desk too. Its catalog entry, with the
+     * newest commit.
+     */
+    public JsonNode checkUpdate(String login, String token, String elf) {
+        JsonNode mine = null;
+        for (JsonNode e : installed().path("elves")) if (e.path("name").asText().equals(name(elf))) mine = e;
+        if (mine == null) throw new IllegalArgumentException("That elf isn't on your desk");
+        GitHub.ElfRepo r = github.elfRepo(token, login, mine.path("repo").asText(), sources());
+        if (r == null) throw new IllegalStateException(mine.path("repo").asText() + " isn't an elf repo GitHub shows you any more");
+        return entry(r, mine);
+    }
+
     ObjectNode entry(GitHub.ElfRepo r, JsonNode installed) {
         ObjectNode n = mapper.createObjectNode().put("repo", r.repo()).put("description", r.description())
                 .put("private", r.isPrivate()).put("official", r.repo().startsWith(OFFICIAL)).put("url", r.url())

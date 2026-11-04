@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { shared, spinner } from './shared.js';
 import { api, errorMessage } from './rpc.js';
-import { BUILTIN, WITH_DESK, installedElf, setInstalledElves, setCatalog } from './tabs.js';
+import { BUILTIN, WITH_DESK, installedElf, setInstalledElves, setCatalog, setCatalogEntry } from './tabs.js';
 import './elf-changes.js';
 
 const short = sha => (sha ?? '').slice(0, 7);
@@ -17,6 +17,7 @@ class ElfManage extends LitElement {
         elf: {},                        // the installed elf's name
         only: {},                       // "update": just the update waiting, if any (the top of a settings pop-up); "rest": all but that
         _latest: { state: true },       // its catalog entry: the newest commit, or null while looking
+        _checked: { state: true },      // when Check now last looked, this time the dialog is open
         _changes: { state: true },      // {from, to, commits, diff, truncated, notes} being looked at
         _removing: { state: true },
         _busy: { state: true },         // changes, update or remove
@@ -40,6 +41,26 @@ class ElfManage extends LitElement {
     connectedCallback() {
         super.connectedCallback();
         this._lookForUpdate();
+        // The other half of the dialog (its update banner, its version) hears what Check now found.
+        this._onChecked = ev => {
+            if (ev.detail?.repo === installedElf(this.elf)?.repo) this._latest = ev.detail;
+        };
+        window.addEventListener('elf-checked', this._onChecked);
+    }
+
+    disconnectedCallback() {
+        window.removeEventListener('elf-checked', this._onChecked);
+        super.disconnectedCallback();
+    }
+
+    /** Check now: its repo as GitHub has it this moment, not as the catalog last said. */
+    async _checkNow(e) {
+        const r = await this._do('check', desk => desk.checkElfUpdate({ elf: e.name }));
+        if (!r) return;
+        this._checked = new Date();
+        this._changes = null;
+        setCatalogEntry(r);
+        this._latest = r;
     }
 
     async _lookForUpdate() {
@@ -145,7 +166,9 @@ class ElfManage extends LitElement {
                         : behind ? html`<button class="sm" ?disabled=${!!this._busy} aria-expanded=${c ? 'true' : 'false'}
                                 @click=${() => c ? (this._changes = null) : this._showChanges(e)}>
                             ${this._busy === 'changes' ? spinner : ''}${c ? 'Hide the changes' : `See the changes to ${short(this._latest.commit)}`}</button>`
-                        : this._latest ? html`<span class="hint">Up to date.</span>` : ''}
+                        : this._latest ? html`<span class="hint">Up to date${this._checked ? ', checked just now' : ''}.</span>` : ''}
+                    ${this._latest !== undefined ? html`<button class="sm quiet" ?disabled=${!!this._busy} @click=${() => this._checkNow(e)}
+                        title="Look on GitHub now for a newer version">${this._busy === 'check' ? spinner : ''}Check now</button>` : ''}
                 </div>
                 ${c ? this._renderChanges(e, c) : ''}
             </section>

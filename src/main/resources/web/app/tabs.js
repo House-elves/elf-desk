@@ -90,6 +90,14 @@ export function setCatalog(catalog) {
     recomputeUpdates();
 }
 
+/** One elf's entry, looked up just now (its settings' Check now): replaces what the catalog said about its repo. */
+export function setCatalogEntry(entry) {
+    if (!entry?.repo) return;
+    lastCatalog = [...lastCatalog.filter(c => c.repo !== entry.repo), entry];
+    recomputeUpdates();
+    window.dispatchEvent(new CustomEvent('elf-checked', { detail: entry }));
+}
+
 /** Against the elves as installed now: an elf just updated loses its mark straight away. */
 function recomputeUpdates() {
     const next = {};

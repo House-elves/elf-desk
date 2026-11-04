@@ -228,6 +228,11 @@ public class DeskApi {
         return elves.catalog(user.login(), user.githubToken());
     }
 
+    /** An installed elf's repo as GitHub has it now, for its settings' Check now. */
+    public com.fasterxml.jackson.databind.JsonNode checkElfUpdate(String elf) {
+        return elves.checkUpdate(user.login(), user.githubToken(), elf);
+    }
+
     /** One elf repo, as the catalog shows it: an elf Elf Maker just published, before search lists it. */
     public com.fasterxml.jackson.databind.JsonNode elfRepo(String repo) {
         return elves.elfRepo(user.login(), user.githubToken(), repo);
