@@ -315,7 +315,26 @@ class ElfFrame extends LitElement {
                 else if (location.hash !== hash) history.pushState(null, '', hash);
                 return null;
             }
-            case 'voice-start': return this._voiceStart(args.mode);
+            case 'voice-start': {
+                // Only on your click or key, never on the elf's own say: browsers pass a click in the frame up to the
+                // desk's page, and the elf can't make one. Where the browser can't tell, the desk asks in its bar.
+                const active = navigator.userActivation?.isActive;
+                if (active === false) throw new Error('Click to start listening');
+                if (active === undefined) {
+                    const yes = await new Promise(resolve => {
+                        this._ask?.resolve(false);
+                        this._ask = { action: { label: 'Listen' }, params: {}, text: 'Listen to your microphone, for this tab?', resolve };
+                    });
+                    this._ask = null;
+                    if (!yes) {
+                        const e = new Error('Cancelled');
+                        e.cancelled = true;
+                        throw e;
+                    }
+                }
+                // The way it listens is yours, from the desk's bar, never the elf's.
+                return this._voiceStart(null);
+            }
             case 'voice-stop':
                 this._voice?.stop();
                 return true;
@@ -390,7 +409,7 @@ class ElfFrame extends LitElement {
         if (this.view !== 'tab') throw new Error('Only an elf\'s tab can listen');
         // Switching the way it listens, from the bar: the tab is still listening, so it isn't told it stopped.
         this._voiceEnd(true, switching);
-        let use = mode === 'whisper' || mode === 'browser' ? mode : voiceMode();
+        let use = switching && (mode === 'whisper' || mode === 'browser') ? mode : voiceMode();
         const status = await whisperStatus();
         if (use === 'whisper' && !status.whisper) {
             if (!browserSpeech()) throw new Error(`Whisper isn't set up on the desk's machine: ${status.how ?? 'install whisper.cpp and a model'}`);
