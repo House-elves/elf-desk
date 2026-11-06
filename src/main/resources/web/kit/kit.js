@@ -193,6 +193,12 @@ export const elf = {
      */
     removeSlot: (repo, slot) => call('removeSlot', { repo, slot }),
     /**
+     * Downloads a file from one of its slots (a video its session's agent made): path is its place in the clone, or
+     * its full path there as the agent said it. Only on a click (like listen), and the browser saves it. Resolves
+     * with {name, size}. Desk 0.6.42 and runner 0.54.0 and later.
+     */
+    download: (repo, slot, path) => call('download', { repo, slot, path }),
+    /**
      * Installs a coding agent this machine doesn't have (claude, codex, pi or bob), once you confirm it in the desk's
      * bar, which says the npm command the runner runs. Resolves with {agent, label, installed, next}: next is what's
      * left for you (its login, its licence). Rejects with cancelled when you said no. Runner 0.48.0 and later.

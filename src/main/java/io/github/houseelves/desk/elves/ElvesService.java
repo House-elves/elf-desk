@@ -330,6 +330,52 @@ public class ElvesService {
     }
 
     /**
+     * A file from one of an elf's slots (a video its session's agent made), fetched from the runner in pieces into a
+     * file of the desk's own, for one download (Downloads). Answers {url, name, size}.
+     */
+    public JsonNode slotFile(String elf, String repo, String slot, String path) {
+        if (repo == null || !repo.matches("[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}")) throw new IllegalArgumentException("Not a repo");
+        if (slot == null || !slot.matches("[a-z0-9][a-z0-9-]{0,39}")) throw new IllegalArgumentException("Not a slot");
+        if (path == null || path.isBlank() || path.length() > 1000 || path.chars().anyMatch(c -> c < 0x20)) throw new IllegalArgumentException("Not a file");
+        String who = name(elf);
+        java.nio.file.Path tmp = null;
+        try {
+            tmp = java.nio.file.Files.createTempFile("desk-download-", ".bin");
+            String fileName = null;
+            long size = -1, at = 0;
+            try (var out = java.nio.file.Files.newOutputStream(tmp)) {
+                do {
+                    JsonNode r = ask(hub.message("elf.slotFile").put("elf", who).put("repo", repo).put("slot", slot)
+                            .put("path", path).put("offset", at), 60, RunnerHub.ELF_SLOT_FILE_SINCE);
+                    if (size < 0) {
+                        size = r.path("size").asLong(-1);
+                        fileName = r.path("name").asText("");
+                    } else if (r.path("size").asLong(-1) != size) {
+                        throw new IllegalStateException("The file changed while it was fetched: try again");
+                    }
+                    byte[] piece = java.util.Base64.getDecoder().decode(r.path("data").asText(""));
+                    if (piece.length == 0 && at < size) throw new IllegalStateException("The runner sent the file short");
+                    out.write(piece);
+                    at += piece.length;
+                } while (at < size);
+            }
+            JsonNode out = Downloads.add(tmp, fileName, size);
+            tmp = null; // Downloads has it now
+            return out;
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Couldn't keep the file for you: " + e.getMessage());
+        } finally {
+            if (tmp != null) {
+                try {
+                    java.nio.file.Files.deleteIfExists(tmp);
+                } catch (java.io.IOException ignored) {
+                    // the system's temp folder clears it
+                }
+            }
+        }
+    }
+
+    /**
      * Installs a coding agent you confirmed (its own npm package, into ~/.local, by the runner). Takes a while: npm
      * downloads it. Answers {agent, label, installed, next}, next being what's left for you (its login, its licence).
      */

@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { shared, closeX } from './shared.js';
-import { api, errorMessage, onPush } from './rpc.js';
+import { api, errorMessage, onPush, withKey } from './rpc.js';
 import { currentTheme } from './theme.js';
 import { BUILTIN, findTab, installedElf, installedElves, setInstalledElves, tabOf } from './tabs.js';
 import { listen, voiceMode, setVoiceMode, browserSpeech, whisperStatus } from './voice.js';
@@ -338,6 +338,34 @@ class ElfFrame extends LitElement {
             case 'voice-stop':
                 this._voice?.stop();
                 return true;
+            case 'download': {
+                // A file from one of its slots (a video its session's agent made), saved by your browser: only on your
+                // click, like the microphone. Where the browser can't tell, the desk asks in its bar.
+                const repo = String(args.repo ?? ''), slot = String(args.slot ?? ''), path = String(args.path ?? '');
+                const active = navigator.userActivation?.isActive;
+                if (active === false) throw new Error('Click the file to download it');
+                if (active === undefined) {
+                    const yes = await new Promise(resolve => {
+                        this._ask?.resolve(false);
+                        this._ask = { action: { label: 'Download' }, params: {}, text: `Download ${path.split('/').pop().slice(0, 120)}?`, resolve };
+                    });
+                    this._ask = null;
+                    if (!yes) {
+                        const e = new Error('Cancelled');
+                        e.cancelled = true;
+                        throw e;
+                    }
+                }
+                const r = await desk.elfSlotFile({ elf, repo, slot, path });
+                const a = document.createElement('a');
+                a.href = withKey(r.url);
+                a.download = r.name;
+                a.rel = 'noopener';
+                document.body.append(a);
+                a.click();
+                a.remove();
+                return { name: r.name, size: r.size };
+            }
             case 'store-get': return storage(elf, args.key);
             case 'store-set': {
                 const value = args.value == null ? null : String(args.value);

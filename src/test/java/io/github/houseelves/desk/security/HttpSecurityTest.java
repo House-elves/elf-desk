@@ -144,6 +144,27 @@ class HttpSecurityTest {
     }
 
     @Test
+    void aDownloadNeedsTheSessionAndThePageKeyAndGoesOnce() throws Exception {
+        SignedIn in = signIn();
+        Path f = Files.createTempFile("download-test", ".bin");
+        Files.writeString(f, "<html><script>alert(1)</script></html>");
+        String url = io.github.houseelves.desk.elves.Downloads.add(f, "../demo.html", Files.size(f)).path("url").asText();
+        // Signed out, or without the page's key: refused, and it's still there for the page.
+        desk().when().get(url).then().statusCode(302);
+        desk().cookie(cookie(), in.session()).when().get(url).then().statusCode(302);
+        // With both: a download, never a page, under a name of its own.
+        desk().cookie(cookie(), in.session()).when().get(url + "?k=" + in.pageKey()).then().statusCode(200)
+                .header("Content-Type", "application/octet-stream")
+                .header("Content-Disposition", "attachment; filename=\".._demo.html\"")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(containsString("alert(1)"));
+        // Once.
+        desk().cookie(cookie(), in.session()).when().get(url + "?k=" + in.pageKey()).then().statusCode(404);
+        Thread.sleep(200);
+        assertFalse(Files.exists(f));
+    }
+
+    @Test
     void deletingTheSessionsSignsEveryoneOut() throws Exception {
         String session = signIn().session();
         desk().cookie(cookie(), session).when().get("/").then().statusCode(200);

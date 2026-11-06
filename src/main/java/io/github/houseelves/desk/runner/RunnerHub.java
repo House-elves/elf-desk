@@ -107,6 +107,8 @@ public class RunnerHub {
     public static final String HOUSE_UPDATE_SINCE = "0.35.0";
     /** elf.agentSlotRemove, and agents with a slot, a goal or no schema (Sessions). */
     public static final String ELF_SLOTS_SINCE = "0.46.0";
+    /** elf.slotFile: a file from one of an elf's slots, for you to download from its tab. */
+    public static final String ELF_SLOT_FILE_SINCE = "0.54.0";
     /** agent.install: the desk's Install button for a coding agent that isn't installed. */
     public static final String AGENT_INSTALL_SINCE = "0.48.0";
     static final String PR_SINCE = "0.15.0";

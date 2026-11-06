@@ -309,6 +309,11 @@ public class DeskApi {
         return elves.removeSlot(elf, repo, slot);
     }
 
+    /** A file from one of an elf's slots, for you to download from its tab: {url, name, size}, the url good once. */
+    public com.fasterxml.jackson.databind.JsonNode elfSlotFile(String elf, String repo, String slot, String path) {
+        return elves.slotFile(elf, repo, slot, path);
+    }
+
     /** Stops one of an elf's agents (its tab's Stop). */
     public com.fasterxml.jackson.databind.JsonNode cancelElfAgent(String elf, String id) {
         return elves.cancelAgent(elf, id);
