@@ -431,3 +431,90 @@ class ElfRunBar extends LitElement {
 }
 
 customElements.define('elf-run-bar', ElfRunBar);
+
+/** Puts dictated words at the cursor of a text box (or a text field), and tells it so, as if you'd typed them. */
+export function insertAtCursor(box, text) {
+    if (!box || !text) return;
+    const start = box.selectionStart ?? box.value.length, end = box.selectionEnd ?? start;
+    const before = box.value.slice(0, start), after = box.value.slice(end);
+    const lead = before && !/\s$/.test(before) ? ' ' : '';
+    const trail = after && !/^\s/.test(after) ? ' ' : '';
+    box.value = before + lead + text + trail + after;
+    const at = (before + lead + text).length;
+    box.setSelectionRange?.(at, at);
+    box.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+}
+
+/**
+ * A 🎤 button for a text box (desk 0.6.42 and later): the desk listens, as elf.listen does, and what you say goes in
+ * at the box's cursor as you speak. Clicked again (or Esc), it stops.
+ *
+ *   <textarea id="reply"></textarea>
+ *   <elf-mic .target=${() => this.renderRoot.querySelector('#reply')}></elf-mic>
+ *
+ * target is the box, or a function that finds it when you click; without one, it's the text box just before it
+ * (<textarea></textarea><elf-mic></elf-mic>). On an older desk the kit has no elf-mic, and the tag shows nothing.
+ */
+class ElfMic extends LitElement {
+    static properties = { target: { attribute: false }, label: {}, _on: { state: true }, _error: { state: true } };
+
+    static styles = css`
+        :host { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+        button {
+            font: inherit; font-size: 14px; line-height: 1; padding: 5px 8px; cursor: pointer; color: var(--muted);
+            background: transparent; border: 1px solid var(--line); border-radius: var(--r-control, 9px);
+        }
+        button:hover { color: var(--ink); border-color: var(--muted); }
+        button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+        button.on { color: var(--bad); border-color: var(--bad); animation: blink 1.2s ease-in-out infinite; }
+        @keyframes blink { 50% { opacity: 0.45; } }
+        @media (prefers-reduced-motion: reduce) { button.on { animation: none; } }
+        .err { font-size: 12.5px; color: var(--bad); max-width: 22rem; }
+    `;
+
+    disconnectedCallback() {
+        this._on?.stop?.();
+        super.disconnectedCallback();
+    }
+
+    /** The box it's for: its target, or else the nearest text box just before it. */
+    get _box() {
+        if (this.target) return typeof this.target === 'function' ? this.target() : this.target;
+        for (let p = this.previousElementSibling; p; p = p.previousElementSibling) {
+            if (p.tagName === 'TEXTAREA' || (p.tagName === 'INPUT' && ['text', 'search', ''].includes(p.type))) return p;
+        }
+        return null;
+    }
+
+    async _toggle() {
+        if (this._on) {
+            this._on.stop?.();
+            return;
+        }
+        const box = this._box;
+        if (!box) return;
+        this._error = null;
+        this._on = {};
+        try {
+            const l = await elf.listen(t => {
+                if (t.final && box.isConnected) insertAtCursor(box, t.final);
+                if (t.error) this._error = t.error;
+                if (t.done) this._on = null;
+            });
+            if (this._on) this._on = l;
+            box.focus();
+        } catch (e) {
+            this._on = null;
+            if (!e.cancelled) this._error = e.message;
+        }
+    }
+
+    render() {
+        const what = this.label ?? 'Speak';
+        return html`<button type="button" class=${this._on ? 'on' : ''} aria-pressed=${this._on ? 'true' : 'false'}
+                aria-label=${this._on ? 'Stop listening' : what} title=${this._on ? 'Stop listening' : `${what}: the desk listens, and your words go in at the cursor`}
+                @click=${this._toggle}>${this._on ? '■' : '🎤'}</button>${this._error ? html`<span class="err" role="alert">${this._error}</span>` : ''}`;
+    }
+}
+
+if (!customElements.get('elf-mic')) customElements.define('elf-mic', ElfMic);

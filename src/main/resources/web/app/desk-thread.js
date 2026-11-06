@@ -7,6 +7,7 @@ import './conflict-menu.js';
 import './pr-activity.js';
 import './diff-view.js';
 import { lastBoard } from './desk-board.js';
+import './desk-mic.js';
 
 const EVENTS = {
     COMMENT: 'Comment',
@@ -1060,6 +1061,7 @@ class DeskThread extends LitElement {
                 <div class="row">
                     <button class="primary" type="submit" ?disabled=${this._busy || working}>${this._spin('send')}${t ? 'Send' : 'Ask'}</button>
                     <span class="muted">${working ? "You can reply once the agent has finished." : 'Ctrl+Enter sends'}</span>
+                    <desk-mic .target=${() => this.renderRoot.querySelector('#reply')}></desk-mic>
                 </div>
             </form>
         `;
