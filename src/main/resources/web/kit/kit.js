@@ -85,6 +85,8 @@ if (loading) {
 let next = 0;
 const waiting = new Map();
 const changeListeners = new Set();
+/** Who hears what the desk hears, while it listens for this tab (elf.listen). */
+let voiceListener = null;
 
 function post(op, args) {
     parent.postMessage({ elfdesk: 1, key, op, args }, '*');
@@ -117,6 +119,10 @@ window.addEventListener('message', e => {
     } else if (m.event === 'route') {
         route = String(m.route ?? '');
         routeListeners.forEach(l => l(route));
+    } else if (m.event === 'voice') {
+        const l = voiceListener;
+        if (m.done) voiceListener = null;
+        l?.({ final: m.final ?? null, interim: m.interim ?? null, error: m.error ?? null, done: !!m.done });
     } else if (m.event === 'theme') {
         if (m.data === 'light' || m.data === 'dark') document.documentElement.dataset.theme = m.data;
         else delete document.documentElement.dataset.theme;
@@ -237,6 +243,23 @@ export const elf = {
     fill: (on = true) => call('fill', { on }),
     /** Whether another elf with a tab is on this desk (by its name), to offer a link to it only when it is. */
     hasElf: name => call('has-elf', { elf: name }),
+
+    /**
+     * Voice input (desk 0.6.41 and later, its tab only): the desk listens, with the microphone and the speech
+     * recognition you chose for this browser (the browser's own, or Whisper on the desk's machine), and calls
+     * onText({final, interim, error, done}) as you speak: final is words to add, interim what it's still hearing
+     * (to show, then replace), done that it stopped. Answers {mode, stop()}; rejects when it can't listen here.
+     */
+    async listen(onText) {
+        voiceListener = onText;
+        try {
+            const r = await call('voice-start');
+            return { mode: r?.mode ?? null, stop: () => call('voice-stop') };
+        } catch (e) {
+            voiceListener = null;
+            throw e;
+        }
+    },
 
     /** A little memory for the tab (unsent edits, say), kept by the desk in this browser. Values are strings. */
     store: {

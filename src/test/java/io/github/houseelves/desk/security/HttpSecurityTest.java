@@ -129,6 +129,21 @@ class HttpSecurityTest {
     }
 
     @Test
+    void voiceNeedsTheSessionAndThePageKey() throws Exception {
+        SignedIn in = signIn();
+        // Signed out, or without the page's key: refused (a recording is never a page, so no welcome page), never Whisper.
+        desk().body(new byte[] { 1, 2, 3 }).when().post("/voice/transcribe").then().statusCode(401);
+        desk().cookie(cookie(), in.session()).body(new byte[] { 1, 2, 3 }).when().post("/voice/transcribe").then().statusCode(401);
+        desk().cookie(cookie(), in.session()).when().get("/voice/status").then().statusCode(302);
+        // With both: whether Whisper is here, and how to set it up when it isn't.
+        desk().cookie(cookie(), in.session()).when().get("/voice/status?k=" + in.pageKey()).then().statusCode(200)
+                .body(containsString("\"whisper\":"));
+        // A recording from another site is refused before it's read.
+        desk().cookie(cookie(), in.session()).header("Origin", "http://localhost:8080").body(new byte[] { 1, 2, 3 }).when()
+                .post("/voice/transcribe?k=" + in.pageKey()).then().statusCode(403);
+    }
+
+    @Test
     void deletingTheSessionsSignsEveryoneOut() throws Exception {
         String session = signIn().session();
         desk().cookie(cookie(), session).when().get("/").then().statusCode(200);

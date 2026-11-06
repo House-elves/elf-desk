@@ -3,6 +3,7 @@ import { shared, closeX } from './shared.js';
 import { api, errorMessage, onPush } from './rpc.js';
 import { currentTheme } from './theme.js';
 import { BUILTIN, findTab, installedElf, installedElves, setInstalledElves, tabOf } from './tabs.js';
+import { listen, voiceMode, setVoiceMode, browserSpeech, whisperStatus } from './voice.js';
 import './elf-settings.js';
 import './elf-manage.js';
 import './elf-schedule.js';
@@ -35,6 +36,7 @@ class ElfFrame extends LitElement {
         _settings: { state: true },  // {keys, heading}
         _shown: { state: true },     // the frame has spoken (or loaded): until then the desk's placeholder stands in
         _fill: { state: true },      // its tab asked to fill the rest of the window (elf.fill): the page doesn't scroll
+        _voiceState: { state: true }, // listening for its tab: {mode, state, interim, error}
     };
 
     static styles = [shared, css`
@@ -64,6 +66,31 @@ class ElfFrame extends LitElement {
             color-scheme: dark; box-shadow: 0 10px 40px rgb(23 32 27 / 0.35);
         }
         .ask { color: var(--ink); }
+        /* Listening: at the top, out of the way of a chat's message box at the bottom. */
+        .voice {
+            position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 21;
+            width: min(40rem, calc(100vw - 32px)); box-sizing: border-box; color: var(--ink);
+            background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-panel);
+            padding: 12px 14px; display: flex; gap: 12px; align-items: center;
+        }
+        .voice.on-dark {
+            --surface: #ffffff; --ink: #17201b; --muted: #56635b; --line: #dde3da; --accent: #24533f; --accent-ink: #ffffff;
+            --bad: #c3352a; color-scheme: light; box-shadow: 0 10px 40px rgb(0 0 0 / 0.55);
+        }
+        .voice.on-light {
+            --surface: #161d19; --ink: #e6ece7; --muted: #94a39a; --line: #27322c; --accent: #7db68a; --accent-ink: #0e1f15;
+            --bad: #ff7d72; color-scheme: dark; box-shadow: 0 10px 40px rgb(23 32 27 / 0.35);
+        }
+        .voice .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--bad); flex: none; }
+        .voice .dot.listening { animation: voice-pulse 1.2s ease-in-out infinite; }
+        .voice .dot.writing, .voice .dot.starting { background: var(--accent); animation: voice-pulse 0.8s ease-in-out infinite; }
+        .voice .dot.failed { background: var(--muted); }
+        @keyframes voice-pulse { 50% { opacity: 0.35; transform: scale(0.8); } }
+        @media (prefers-reduced-motion: reduce) { .voice .dot { animation: none !important; } }
+        .voice .say { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 14px; }
+        .voice .how { font-size: 12.5px; color: var(--muted); }
+        .voice .interim { font-style: italic; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .voice .acts { display: flex; gap: 8px; flex: none; }
         .ask .from { font-size: 12.5px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
         .ask .from svg { width: 14px; height: 14px; color: var(--accent); }
         .ask .text { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
@@ -110,6 +137,7 @@ class ElfFrame extends LitElement {
         window.removeEventListener('elfdesk-theme', this._onTheme);
         this._offPush?.();
         this._ask?.resolve(false);
+        this._voiceEnd(true);
         super.disconnectedCallback();
     }
 
@@ -287,6 +315,10 @@ class ElfFrame extends LitElement {
                 else if (location.hash !== hash) history.pushState(null, '', hash);
                 return null;
             }
+            case 'voice-start': return this._voiceStart(args.mode);
+            case 'voice-stop':
+                this._voice?.stop();
+                return true;
             case 'store-get': return storage(elf, args.key);
             case 'store-set': {
                 const value = args.value == null ? null : String(args.value);
@@ -351,6 +383,80 @@ class ElfFrame extends LitElement {
         </div>`;
     }
 
+    // ---- voice: the desk listens for the elf's tab, and hands it the words (see voice.js) ----
+
+    /** Starts listening for its tab: the way you chose in this browser, or the other one when this one can't. */
+    async _voiceStart(mode, switching = false) {
+        if (this.view !== 'tab') throw new Error('Only an elf\'s tab can listen');
+        // Switching the way it listens, from the bar: the tab is still listening, so it isn't told it stopped.
+        this._voiceEnd(true, switching);
+        let use = mode === 'whisper' || mode === 'browser' ? mode : voiceMode();
+        const status = await whisperStatus();
+        if (use === 'whisper' && !status.whisper) {
+            if (!browserSpeech()) throw new Error(`Whisper isn't set up on the desk's machine: ${status.how ?? 'install whisper.cpp and a model'}`);
+            use = 'browser';
+        }
+        if (use === 'browser' && !browserSpeech()) {
+            if (!status.whisper) throw new Error(`This browser has no speech recognition. To use Whisper on the desk's machine instead: ${status.how}`);
+            use = 'whisper';
+        }
+        this._voiceState = { mode: use, state: 'starting', interim: '', whisper: !!status.whisper, how: status.how, model: status.model };
+        this._voice = listen(use, {
+            onText: t => {
+                if (t.interim != null) this._voiceState = { ...this._voiceState, interim: t.interim };
+                if (t.final) this._voiceState = { ...this._voiceState, interim: '' };
+                this._send({ event: 'voice', ...t });
+            },
+            onState: s => {
+                this._voiceState = { ...this._voiceState, state: s };
+                if (s === 'done') this._voiceEnd(false);
+            },
+            onError: message => {
+                this._send({ event: 'voice', error: message, done: true });
+                this._voice = null;
+                this._voiceState = { ...this._voiceState, state: 'failed', error: message };
+            },
+        });
+        this._voiceKeys ??= e => { if (e.key === 'Escape' && this._voice) this._voice.stop(); };
+        window.addEventListener('keydown', this._voiceKeys);
+        return { mode: use };
+    }
+
+    /** It's done listening (stopped, or ended on its own): the tab hears so. With drop, what it was still hearing goes. */
+    _voiceEnd(drop, quiet = false) {
+        if (this._voiceKeys) window.removeEventListener('keydown', this._voiceKeys);
+        if (!this._voice && !this._voiceState) return;
+        if (drop) this._voice?.cancel();
+        this._voice = null;
+        this._voiceState = null;
+        if (!quiet) this._send({ event: 'voice', done: true });
+    }
+
+    _voiceBar() {
+        const v = this._voiceState;
+        if (!v) return '';
+        const other = v.mode === 'browser' ? 'whisper' : 'browser';
+        const canSwitch = other === 'whisper' ? v.whisper : !!browserSpeech();
+        const how = v.mode === 'browser' ? 'with your browser\'s speech recognition (Google\'s or Microsoft\'s service)'
+            : `with Whisper on the desk's machine${v.model ? ` (${v.model})` : ''}: your audio stays here`;
+        return html`<div class="voice ${pageIsDark() ? 'on-dark' : 'on-light'}" role="status" aria-live="polite">
+            <span class="dot ${v.state}" aria-hidden="true"></span>
+            <div class="say">
+                <b>${v.state === 'failed' ? 'Voice stopped' : v.state === 'writing' ? 'Writing it down…' : v.state === 'starting' ? 'Starting…' : 'Listening'}</b>
+                <span class="how">${v.state === 'failed' ? v.error : how}</span>
+                ${v.interim ? html`<span class="interim">${v.interim}</span>` : ''}
+            </div>
+            <div class="acts">
+                ${v.state === 'failed' ? html`<button class="quiet" @click=${() => { this._voiceState = null; }}>Close</button>`
+                    : html`${canSwitch && v.state !== 'writing' ? html`<button class="quiet" title=${other === 'whisper' ? 'Your audio stays on the desk\'s machine; the words come when you stop'
+                        : 'Words appear as you speak; the audio goes to the browser\'s speech service'}
+                        @click=${() => { setVoiceMode(other); this._voiceStart(other, true).catch(e => this._send({ event: 'voice', error: e.message, done: true })); }}>
+                        ${other === 'whisper' ? 'Use Whisper here' : 'Use the browser\'s'}</button>` : ''}
+                    <button class="primary" ?disabled=${v.state === 'writing'} @click=${() => this._voice?.stop()}>${v.state === 'writing' ? 'Writing…' : 'Stop'}</button>`}
+            </div>
+        </div>`;
+    }
+
     _settingsDialog() {
         const s = this._settings;
         const own = !s?.keys && ownSettings(this.elf);
@@ -411,6 +517,7 @@ class ElfFrame extends LitElement {
             ${this._placeholder()}
             </div>
             ${this._askBar()}
+            ${this._voiceBar()}
             ${this._settingsDialog()}
         `;
     }
