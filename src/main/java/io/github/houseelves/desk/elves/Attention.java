@@ -49,7 +49,7 @@ public class Attention {
                 }
                 if (on.keySet().retainAll(seen)) live.attention(now());
             } catch (RuntimeException e) {
-                LOG.debugf("Couldn't read which elves need you: %s", e.getMessage());
+                LOG.warnf("Couldn't read which elves need you: %s", e.getMessage());
             }
         });
     }
@@ -67,7 +67,7 @@ public class Attention {
                 }
                 if (on.remove(elf) != null) live.attention(now());
             } catch (RuntimeException e) {
-                LOG.debugf("Couldn't read whether %s needs you: %s", elf, e.getMessage());
+                LOG.warnf("Couldn't read whether %s needs you: %s", elf, e.getMessage());
             }
         });
     }
