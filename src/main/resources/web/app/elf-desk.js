@@ -32,6 +32,7 @@ class ElfDesk extends LitElement {
         _view: { state: true },
         _fill: { state: true },      // an elf's tab fills the window (elf.fill): no room kept under it
         _conn: { state: true },
+        _attention: { state: true }, // {elf: why}: elves that need you (a green dot on the tab)
         _update: { state: true },    // {desk, deskLatest, runner, runnerLatest, available}: a newer Elf Desk is out
         _updating: { state: true },  // the update was asked for: the desk restarts
         _updateError: { state: true },
@@ -75,6 +76,9 @@ class ElfDesk extends LitElement {
         /* An update waiting: a small dot on the tab, as on an app with something new. */
         .update-dot { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%;
             background: var(--bobble); box-shadow: 0 0 0 2px var(--bg); }
+        /* The elf needs you (Weekly status on a Monday): a green dot, on the other corner from an update's. */
+        .attention-dot { position: absolute; top: 3px; left: 3px; width: 7px; height: 7px; border-radius: 50%;
+            background: var(--ok); box-shadow: 0 0 0 2px var(--bg); }
         nav a.add { font-size: 18px; line-height: 1; padding: 4px 11px 6px; margin-left: 4px; border: 1px dashed var(--line); }
         .right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
         .conn { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
@@ -163,7 +167,9 @@ class ElfDesk extends LitElement {
         this._loadElves();
         this._loadVersions();
         // The runner came or went: what's running, and once it's back, which elves there are.
-        this._offRunner = onPush('desk.runner', () => { this._loadVersions(); this._loadElves(); });
+        this._offRunner = onPush('desk.runner', () => { this._loadVersions(); this._loadElves(); this._loadAttention(); });
+        this._offAttention = onPush('desk.attention', d => { this._attention = d?.attention ?? {}; });
+        this._loadAttention();
         // Which elves, and whether Elf Desk, have an update waiting (a mark): now, every 10 minutes, and when you come
         // back to the page after a while.
         this._lookForUpdates();
@@ -194,6 +200,7 @@ class ElfDesk extends LitElement {
         this._offConn?.();
         this._offBusy?.();
         this._offRunner?.();
+        this._offAttention?.();
         clearInterval(this._updatesTimer);
         document.removeEventListener('visibilitychange', this._onVisible);
         super.disconnectedCallback();
@@ -237,6 +244,15 @@ class ElfDesk extends LitElement {
             setCatalog((await desk.elfCatalog()).elves);
         } catch {
             // GitHub or the runner didn't answer: no marks until the next look
+        }
+    }
+
+    /** Which elves need you, for their green dots. */
+    async _loadAttention() {
+        try {
+            this._attention = await (await api()).elvesAttention() ?? {};
+        } catch {
+            // An older desk: no dots.
         }
     }
 
@@ -472,8 +488,10 @@ class ElfDesk extends LitElement {
                                @dragstart=${e => this._dragStart(e, t)} @dragover=${e => this._dragOver(e, t)}
                                @drop=${e => this._drop(e, t)} @dragend=${() => this._dragEnd()} @keydown=${e => this._tabKey(e, t)}
                                aria-keyshortcuts="Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
-                               title=${!updateFor(t.elf) ? 'Drag to move it, or Alt+Shift+arrow' : this._current(t.id) ? `${t.label} has an update: click to see it`
-                                   : `${t.label} has an update: click the tab again to see it`}>${t.label}${updateFor(t.elf)
+                               title=${[this._attention?.[t.elf] ? `${t.label}: ${this._attention[t.elf]}` : '',
+                                   !updateFor(t.elf) ? 'Drag to move it, or Alt+Shift+arrow' : this._current(t.id) ? `${t.label} has an update: click to see it`
+                                   : `${t.label} has an update: click the tab again to see it`].filter(Boolean).join('. ')}>${t.label}${this._attention?.[t.elf]
+                                ? html`<span class="attention-dot" aria-label=", ${this._attention[t.elf]}"></span>` : ''}${updateFor(t.elf)
                                 ? html`<span class="update-dot" aria-label=", has an update"></span>` : ''}</a>`)}
                         <a href="#elves" class="add" aria-current=${this._view === 'elves' || this._view === `tab:${BUILTIN}` ? 'page' : 'false'}
                            aria-label="Add an elf${this._tablessUpdate() ? ', an elf without a tab has an update' : ''}"

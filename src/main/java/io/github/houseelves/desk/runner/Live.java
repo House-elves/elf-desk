@@ -21,6 +21,8 @@ public class Live {
     public static final String RUNNER = "desk.runner";
     public static final String BOARD = "desk.board";
     public static final String ELVES = "desk.elves";
+    /** Which elves need you: {attention: {elf: why}}, for the green dots on their tabs. */
+    public static final String ATTENTION = "desk.attention";
     static final int KEEP_LINES = 300;
 
     @Inject
@@ -73,6 +75,10 @@ public class Live {
     public void elves(String elf, String what) {
         if (elf == null) return;
         broadcaster.broadcast(ELVES, what == null ? Map.of("changed", true, "elf", elf) : Map.of("changed", true, "elf", elf, "what", what));
+    }
+
+    public void attention(Map<String, String> now) {
+        broadcaster.broadcast(ATTENTION, Map.of("attention", now));
     }
 
     public void runner(boolean connected) {

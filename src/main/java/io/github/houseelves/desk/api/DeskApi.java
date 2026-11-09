@@ -249,12 +249,20 @@ public class DeskApi {
     }
 
     public com.fasterxml.jackson.databind.JsonNode updateElf(String elf, String commit) {
-        return elves.update(elf, commit);
+        try {
+            return elves.update(elf, commit);
+        } finally {
+            attention.read(elf);
+        }
     }
 
     /** Removes an elf's program; its settings stay. */
     public com.fasterxml.jackson.databind.JsonNode removeElf(String elf) {
-        return elves.remove(elf);
+        try {
+            return elves.remove(elf);
+        } finally {
+            attention.read(elf);
+        }
     }
 
     /** Runs one of an elf's own commands (what its tab's button runs), with the values it takes. */
@@ -296,8 +304,20 @@ public class DeskApi {
      */
     public com.fasterxml.jackson.databind.JsonNode elfAction(String elf, String action,
             com.fasterxml.jackson.databind.JsonNode params) {
-        return elves.action(elf, action, params);
+        try {
+            return elves.action(elf, action, params);
+        } finally {
+            attention.read(elf);
+        }
     }
+
+    /** Which elves need you, {elf: why}: a green dot on each one's tab. */
+    public java.util.Map<String, String> elvesAttention() {
+        return attention.now();
+    }
+
+    @Inject
+    io.github.houseelves.desk.elves.Attention attention;
 
     /** Installs a coding agent, after you confirmed it (the settings' Install, or an elf's tab through the desk's bar). */
     public com.fasterxml.jackson.databind.JsonNode installAgent(String agent) {

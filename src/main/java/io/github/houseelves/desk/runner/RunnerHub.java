@@ -58,6 +58,9 @@ public class RunnerHub {
     Instance<io.github.houseelves.desk.elves.ElvesService> elves;
 
     @Inject
+    Instance<io.github.houseelves.desk.elves.Attention> attention;
+
+    @Inject
     io.github.houseelves.desk.security.GhAccount account;
 
     @ConfigProperty(name = "elfdesk.data-dir")
@@ -222,11 +225,16 @@ public class RunnerHub {
         if (type.equals("elf.changed")) {
             // One elf's data changed outside its runs (an agent's report): only its own tab reloads.
             live.elves(msg.path("elf").asText(null), msg.path("what").asText(null));
+            attention.get().read(msg.path("elf").asText(null));
             return;
         }
         if (type.equals("elves.state")) {
             List<String> keys = new ArrayList<>();
             msg.path("running").forEach(k -> keys.add(k.asText()));
+            // A run that ended may have changed whether its elf needs you (Weekly status's Monday draft).
+            for (String was : elvesRunning) {
+                if (!keys.contains(was) && was.contains(":")) attention.get().read(was.substring(0, was.indexOf(':')));
+            }
             elvesRunning = List.copyOf(keys);
             elvesSince.keySet().retainAll(keys);
             keys.forEach(k -> elvesSince.putIfAbsent(k, java.time.Instant.now()));
@@ -312,6 +320,7 @@ public class RunnerHub {
             } catch (RuntimeException e) {
                 LOG.warnf("Couldn't look after the elves that come with the desk: %s", e.getMessage());
             }
+            attention.get().readAll();
         });
     }
 
