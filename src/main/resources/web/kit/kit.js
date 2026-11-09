@@ -108,7 +108,9 @@ window.addEventListener('message', e => {
         if (!w) return;
         waiting.delete(m.id);
         if (m.error) {
-            const err = new Error(m.error);
+            // The desk's page was loaded before the desk was updated: it doesn't know what this kit asks of it yet.
+            const err = new Error(/^Not something the desk does: /.test(m.error)
+                ? 'The desk\'s page is older than the desk: reload the page, then try again.' : m.error);
             err.cancelled = !!m.cancelled;
             w.reject(err);
         } else {
