@@ -3,6 +3,7 @@ import { keyed } from 'lit/directives/keyed.js';
 import { shared, itemKeyFromHash, closeX } from './shared.js';
 import { api, connectionState, onConnectionChange, onBusyChange, onPush, errorMessage } from './rpc.js';
 import { currentTheme, setTheme } from './theme.js';
+import { hostMode, startHost } from './host.js';
 import { BUILTIN, WITH_DESK, tabs, shownTabs, findTab, onTabsChange, setInstalledElves, installedElves, installedElf, githubElf, setCatalog, updateFor, setTabOrder, tabOrder } from './tabs.js';
 import './desk-settings.js';
 import './elf-tab.js';
@@ -166,6 +167,7 @@ class ElfDesk extends LitElement {
         });
         this._loadElves();
         this._loadVersions();
+        startHost();
         // The runner came or went: what's running, and once it's back, which elves there are.
         this._offRunner = onPush('desk.runner', () => { this._loadVersions(); this._loadElves(); this._loadAttention(); });
         this._offAttention = onPush('desk.attention', d => { this._attention = d?.attention ?? {}; });
@@ -466,7 +468,7 @@ class ElfDesk extends LitElement {
     render() {
         return html`
             <header>
-                <div class="bar">
+                ${hostMode() ? '' : html`<div class="bar">
                     <a class="brand" href="#" aria-label="Elf Desk, dashboard">
                         <svg viewBox="0 0 120 120" aria-hidden="true">
                             <rect width="120" height="120" rx="28" fill="#24533f"/>
@@ -503,7 +505,7 @@ class ElfDesk extends LitElement {
                             <span class="conn ${this._conn}">${this._conn === 'lost' ? 'Disconnected' : 'Connecting…'}</span>` : ''}
                         ${this._renderTheme()}
                     </div>
-                </div>
+                </div>`}
                 <div class="progress ${this._busy ? 'on' : ''}" role="progressbar" aria-label="Loading"
                      aria-hidden=${this._busy ? 'false' : 'true'}><span></span></div>
                 ${this._conn === 'lost' ? html`
@@ -516,7 +518,8 @@ class ElfDesk extends LitElement {
             </header>
             ${this._renderElfUpdate()}
             <main class=${this._fill && this._view.startsWith('tab:') ? 'fill' : ''} @elf-fill=${e => { this._fill = e.detail.on; }}>
-                ${this._view === 'elves' ? html`<desk-elves></desk-elves>`
+                ${hostMode() === 'host' ? '' /* the desktop app's state page: nobody sees it, so it draws nothing */
+                    : this._view === 'elves' ? html`<desk-elves></desk-elves>`
                     : this._view.startsWith('tab:') ? this._elfTab(findTab(this._view.slice(4)))
                     : this._view === 'waiting' ? this._versions && !this._versions.runner
                         ? html`<p class="muted">The runner isn't connected, so the elves' tabs can't show yet. They come back when it
